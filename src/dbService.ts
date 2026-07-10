@@ -20,7 +20,6 @@ import {
   Shelf, 
   ScentPrice, 
   StockItem, 
-  SaleItem,
   Transaction, 
   Salary, 
   CashMutation, 
@@ -30,8 +29,7 @@ import {
   Customer,
   ResellerStock,
   ResellerPackageStock,
-  BundlingPackage,
-  MasterProduct
+  BundlingPackage
 } from "./types";
 
 // Helper for unique ID generation if Firestore auto-id isn't used
@@ -326,11 +324,54 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
     const cashRef = doc(db, "config", "cash");
     const cashSnap = await transaction.get(cashRef);
 
-    // B. Promo Config Ref & Read
-    const promoRef = doc(db, "config", "promo");
-    const promoSnap = await transaction.get(promoRef);
+    // B. Essence Stock Ref & Read
+    let essenceRef = null;
+    let essenceSnap = null;
+    if (tx.type === "sale") {
+      if (tx.scentName && (tx.volumeMl || 0) > 0) {
+        const essenceId = `essence_${tx.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+        essenceRef = doc(db, "stocks", essenceId);
+        essenceSnap = await transaction.get(essenceRef);
+      }
+    } else if (tx.type === "purchase") {
+      if (tx.category === "bibit" && tx.scentName && (tx.volumeMl || 0) > 0) {
+        const essenceId = `essence_${tx.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+        essenceRef = doc(db, "stocks", essenceId);
+        essenceSnap = await transaction.get(essenceRef);
+      }
+    }
 
-    // C. Customer Document Ref & Read (if valid)
+    // C. Scent Price Ref & Read (for purchase of a new bibit)
+    let priceRef = null;
+    let priceSnap = null;
+    if (tx.type === "purchase" && tx.category === "bibit" && tx.scentName) {
+      priceRef = doc(db, "prices", tx.scentName);
+      priceSnap = await transaction.get(priceRef);
+    }
+
+    // D. Alcohol Stock Refs & Reads
+    const alcoholCairRef = doc(db, "stocks", "alcohol_cair");
+    const alcoholCairSnap = await transaction.get(alcoholCairRef);
+
+    const alcoholGelRef = doc(db, "stocks", "alcohol_gel");
+    const alcoholGelSnap = await transaction.get(alcoholGelRef);
+
+    // E. Bottle Stock Ref & Read
+    let bottleRef = null;
+    let bottleSnap = null;
+    const bottleSize = tx.bottleSize || "None";
+    const bottleCount = tx.bottleCount || 0;
+    if (tx.type === "sale" && bottleSize !== "None" && bottleCount > 0) {
+      const bottleId = `bottle_${bottleSize}_${tx.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+      bottleRef = doc(db, "stocks", bottleId);
+      bottleSnap = await transaction.get(bottleRef);
+    } else if (tx.type === "purchase" && tx.category === "botol" && bottleSize !== "None" && bottleCount > 0) {
+      const bottleId = `bottle_${bottleSize}_${tx.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+      bottleRef = doc(db, "stocks", bottleId);
+      bottleSnap = await transaction.get(bottleRef);
+    }
+
+    // F. Customer Document Ref & Read
     let customerRef = null;
     let customerSnap = null;
     const hasValidCustomer = tx.type === "sale" && tx.customerName && tx.customerName.trim().toLowerCase() !== "pelanggan umum";
@@ -340,297 +381,177 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
       customerSnap = await transaction.get(customerRef);
     }
 
-    // D. Fetch any Bundling Packages referenced in Sales items
-    const pkgsMap: Record<string, any> = {};
+    // G. Promo Config Ref & Read
+    const promoRef = doc(db, "config", "promo");
+    const promoSnap = await transaction.get(promoRef);
+
+    // H. Multi-item Refs & Reads (Sales)
+    const essenceRefsMap: any = {};
+    const essenceSnapsMap: any = {};
+    const bottleRefsMap: any = {};
+    const bottleSnapsMap: any = {};
+
     if (tx.type === "sale" && tx.items && tx.items.length > 0) {
       for (const item of tx.items) {
-        if (item.bundlingPackageId) {
-          const pkgRef = doc(db, "bundling_packages", item.bundlingPackageId);
-          const pkgSnap = await transaction.get(pkgRef);
-          if (pkgSnap.exists()) {
-            pkgsMap[item.bundlingPackageId] = pkgSnap.data();
-          } else {
-            throw new Error(`Paket bundling ID ${item.bundlingPackageId} tidak ditemukan!`);
+        if (item.scentName && (item.volumeMl || 0) > 0) {
+          const essenceId = `essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+          if (!essenceRefsMap[essenceId]) {
+            const ref = doc(db, "stocks", essenceId);
+            essenceRefsMap[essenceId] = ref;
+            essenceSnapsMap[essenceId] = await transaction.get(ref);
+          }
+        }
+        if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
+          const bottleId = `bottle_${item.bottleSize}_${item.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+          if (!bottleRefsMap[bottleId]) {
+            const ref = doc(db, "stocks", bottleId);
+            bottleRefsMap[bottleId] = ref;
+            bottleSnapsMap[bottleId] = await transaction.get(ref);
           }
         }
       }
-    }
-
-    // E. Collect all unique stock document IDs that need to be read for Sales / Purchases
-    const stockIdsToRead = new Set<string>();
-
-    if (tx.type === "sale") {
-      const itemsList = (tx.items && tx.items.length > 0) ? tx.items : [{
-        id: "legacy",
-        scentName: tx.scentName || "",
-        volumeMl: tx.volumeMl || 0,
-        bottleSize: tx.bottleSize || "None",
-        bottleType: tx.bottleType,
-        bottleCount: tx.bottleCount || 0,
-        noBottleStockDeduct: tx.noBottleStockDeduct
-      } as SaleItem];
-
-      for (const item of itemsList) {
-        if (item.bundlingPackageId) {
-          const pkg = pkgsMap[item.bundlingPackageId];
-          if (pkg) {
-            // Bottle
-            const bType = pkg.bottleType || "Kaca";
-            const bSize = pkg.bottleSize;
-            stockIdsToRead.add(`bottle_${bSize}_${bType.toLowerCase()}`);
-            
-            // Formula
-            if (pkg.formula && pkg.formula.length > 0) {
-              for (const fItem of pkg.formula) {
-                if (fItem.type === "essence") {
-                  stockIdsToRead.add(`essence_${fItem.name.replace(/\s+/g, "_").toLowerCase()}`);
-                } else if (fItem.type === "alcohol") {
-                  stockIdsToRead.add(fItem.name === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair");
-                }
-              }
-            } else {
-              // Legacy package formula
-              if (pkg.scentName) {
-                stockIdsToRead.add(`essence_${pkg.scentName.replace(/\s+/g, "_").toLowerCase()}`);
-              }
-              stockIdsToRead.add(pkg.solventType === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair");
-            }
-          }
-        } else if (item.itemType === "direct_master" && item.masterProductId) {
-          // Direct Master Product Deduction
-          if (item.scentName.toLowerCase().includes("absolut") || item.scentName.toLowerCase().includes("alkohol")) {
-            stockIdsToRead.add(item.scentName.includes("Gel") ? "alcohol_gel" : "alcohol_cair");
-          } else if (item.bottleSize && item.bottleSize !== "None") {
-            const bType = item.bottleType === "Plastik" ? "plastik" : "kaca";
-            stockIdsToRead.add(`bottle_${item.bottleSize}_${bType}`);
-          } else {
-            stockIdsToRead.add(`essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`);
-          }
-        } else {
-          // Standard custom racikan
-          if (item.scentName && item.scentName !== "Hanya Botol" && (item.volumeMl || 0) > 0) {
-            stockIdsToRead.add(`essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`);
-          }
-          if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0 && !item.noBottleStockDeduct) {
-            stockIdsToRead.add(`bottle_${item.bottleSize}_${item.bottleType === "Plastik" ? "plastik" : "kaca"}`);
-          }
-          if (item.bottleSize && item.bottleSize !== "None" && item.scentName !== "Hanya Botol") {
-            stockIdsToRead.add("alcohol_cair");
-            stockIdsToRead.add("alcohol_gel");
-          }
-        }
-      }
-    } else if (tx.type === "purchase") {
-      // For purchases, add target stocks
-      if (tx.category === "bibit" && tx.scentName && (tx.volumeMl || 0) > 0) {
-        stockIdsToRead.add(`essence_${tx.scentName.replace(/\s+/g, "_").toLowerCase()}`);
-      } else if (tx.category === "alkohol" && (tx.volumeMl || 0) > 0) {
-        stockIdsToRead.add(tx.scentName === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair");
-      } else if (tx.category === "botol" && tx.bottleSize && tx.bottleSize !== "None" && (tx.bottleCount || 0) > 0) {
-        stockIdsToRead.add(`bottle_${tx.bottleSize}_${tx.bottleType === "Plastik" ? "plastik" : "kaca"}`);
-      }
-    }
-
-    // F. Execute reads for all identified stock items
-    const stockSnapsMap: Record<string, any> = {};
-    const stockRefsMap: Record<string, any> = {};
-    for (const stockId of stockIdsToRead) {
-      const ref = doc(db, "stocks", stockId);
-      stockRefsMap[stockId] = ref;
-      stockSnapsMap[stockId] = await transaction.get(ref);
     }
 
     // ==========================================
     // 2. NOW PERFORM ALL WRITE OPERATIONS (SETS/UPDATES)
     // ==========================================
 
-    let currentBalance = 15000000;
+    let currentBalance = 15000000; // default initial if config/cash doesn't exist yet
     if (cashSnap.exists()) {
       currentBalance = cashSnap.data().balance;
     }
 
     if (tx.type === "sale") {
-      const itemsList = (tx.items && tx.items.length > 0) ? tx.items : [{
-        id: "legacy",
-        scentName: tx.scentName || "",
-        volumeMl: tx.volumeMl || 0,
-        bottleSize: tx.bottleSize || "None",
-        bottleType: tx.bottleType,
-        bottleCount: tx.bottleCount || 0,
-        noBottleStockDeduct: tx.noBottleStockDeduct
-      } as SaleItem];
+      let mutationDescription = "";
 
-      const localStocks: Record<string, number> = {};
-      for (const stockId of stockIdsToRead) {
-        const snap = stockSnapsMap[stockId];
-        localStocks[stockId] = snap.exists() ? (snap.data().quantity || 0) : 0;
-      }
+      if (tx.items && tx.items.length > 0) {
+        // Multi-item sales stock deduction
+        const localEssenceStock: Record<string, number> = {};
+        const localBottleStock: Record<string, number> = {};
 
-      for (const item of itemsList) {
-        if (item.bundlingPackageId) {
-          const pkg = pkgsMap[item.bundlingPackageId];
-          if (pkg) {
-            const qtyMultiplier = item.bottleCount || 1;
-            
-            // Deduct Bottle
-            const bType = pkg.bottleType || "Kaca";
-            const bSize = pkg.bottleSize;
-            const bottleStockId = `bottle_${bSize}_${bType.toLowerCase()}`;
-            const bottleRef = stockRefsMap[bottleStockId];
-            const currentBottleQty = localStocks[bottleStockId] ?? 0;
-            const neededBottle = qtyMultiplier;
-            if (currentBottleQty < neededBottle) {
-              throw new Error(`Stok botol ${bType} ukuran ${bSize} untuk bundling ${pkg.packageName} tidak mencukupi! Tersisa: ${currentBottleQty} unit.`);
-            }
-            localStocks[bottleStockId] = currentBottleQty - neededBottle;
-            if (bottleRef) {
-              transaction.set(bottleRef, { id: bottleStockId, type: "bottle", size: bSize, bottleType: bType, quantity: localStocks[bottleStockId] }, { merge: true });
-            }
+        // Initialize local stocks from snapshot reads
+        Object.keys(essenceSnapsMap).forEach((essId) => {
+          const snap = essenceSnapsMap[essId];
+          localEssenceStock[essId] = snap.exists() ? snap.data().quantity : 0;
+        });
 
-            // Deduct Formula Components
-            if (pkg.formula && pkg.formula.length > 0) {
-              for (const fItem of pkg.formula) {
-                const neededQty = (fItem.quantity || 0) * qtyMultiplier;
-                if (neededQty > 0) {
-                  const stockId = fItem.type === "essence"
-                    ? `essence_${fItem.name.replace(/\s+/g, "_").toLowerCase()}`
-                    : (fItem.name === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair");
-                  const ref = stockRefsMap[stockId];
-                  const currentQty = localStocks[stockId] ?? 0;
-                  if (currentQty < neededQty) {
-                    throw new Error(`Stok bahan ${fItem.name} untuk bundling ${pkg.packageName} tidak mencukupi! Tersisa: ${currentQty} unit.`);
-                  }
-                  localStocks[stockId] = currentQty - neededQty;
-                  if (ref) {
-                    transaction.update(ref, { quantity: localStocks[stockId] });
-                  }
-                }
-              }
-            } else {
-              // Legacy package formula
-              const totalEssence = pkg.essenceMl * qtyMultiplier;
-              const totalAlcohol = pkg.alcoholMl * qtyMultiplier;
+        Object.keys(bottleSnapsMap).forEach((botId) => {
+          const snap = bottleSnapsMap[botId];
+          localBottleStock[botId] = snap.exists() ? snap.data().quantity : 0;
+        });
 
-              if (pkg.scentName && totalEssence > 0) {
-                const stockId = `essence_${pkg.scentName.replace(/\s+/g, "_").toLowerCase()}`;
-                const ref = stockRefsMap[stockId];
-                const currentQty = localStocks[stockId] ?? 0;
-                if (currentQty < totalEssence) {
-                  throw new Error(`Stok bibit ${pkg.scentName} untuk bundling tidak mencukupi! Tersisa: ${currentQty} ml.`);
-                }
-                localStocks[stockId] = currentQty - totalEssence;
-                if (ref) {
-                  transaction.update(ref, { quantity: localStocks[stockId] });
-                }
-              }
+        let totalAlcoholDeduct = 0;
 
-              if (totalAlcohol > 0) {
-                const stockId = pkg.solventType === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair";
-                const ref = stockRefsMap[stockId];
-                const currentQty = localStocks[stockId] ?? 0;
-                if (currentQty < totalAlcohol) {
-                  throw new Error(`Stok cairan pelarut ${pkg.solventType || "Absolut"} untuk bundling tidak mencukupi! Tersisa: ${currentQty} ml.`);
-                }
-                localStocks[stockId] = currentQty - totalAlcohol;
-                if (ref) {
-                  transaction.update(ref, { quantity: localStocks[stockId] });
-                }
-              }
-            }
-          }
-        } else if (item.itemType === "direct_master" && item.masterProductId) {
-          // Direct Master Product Deduction
-          const count = item.bottleCount || 1;
-          if (item.scentName.toLowerCase().includes("absolut") || item.scentName.toLowerCase().includes("alkohol")) {
-            const stockId = item.scentName.includes("Gel") ? "alcohol_gel" : "alcohol_cair";
-            const ref = stockRefsMap[stockId];
-            const currentQty = localStocks[stockId] ?? 0;
-            const neededQty = (item.volumeMl || 1) * count;
-            if (currentQty < neededQty) {
-              throw new Error(`Stok ${item.scentName} tidak mencukupi! Tersisa: ${currentQty} ml.`);
-            }
-            localStocks[stockId] = currentQty - neededQty;
-            if (ref) {
-              transaction.update(ref, { quantity: localStocks[stockId] });
-            }
-          } else if (item.bottleSize && item.bottleSize !== "None") {
-            const bType = item.bottleType === "Plastik" ? "plastik" : "kaca";
-            const stockId = `bottle_${item.bottleSize}_${bType}`;
-            const ref = stockRefsMap[stockId];
-            const currentQty = localStocks[stockId] ?? 0;
-            const neededQty = count;
-            if (currentQty < neededQty) {
-              throw new Error(`Stok botol ${bType} ${item.bottleSize} tidak mencukupi! Tersisa: ${currentQty} unit.`);
-            }
-            localStocks[stockId] = currentQty - neededQty;
-            if (ref) {
-              transaction.update(ref, { quantity: localStocks[stockId] });
-            }
-          } else {
-            // Essence/bibit
-            const stockId = `essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`;
-            const ref = stockRefsMap[stockId];
-            const currentQty = localStocks[stockId] ?? 0;
-            const neededQty = (item.volumeMl || 1) * count;
-            if (currentQty < neededQty) {
-              throw new Error(`Stok bibit ${item.scentName} tidak mencukupi! Tersisa: ${currentQty} ml.`);
-            }
-            localStocks[stockId] = currentQty - neededQty;
-            if (ref) {
-              transaction.update(ref, { quantity: localStocks[stockId] });
-            }
-          }
-        } else {
-          // Standard custom racikan
+        for (const item of tx.items) {
+          const essenceId = `essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`;
           const volumeToDeduct = item.volumeMl || 0;
           const bottleCountToDeduct = item.bottleCount || 0;
           const bSize = item.bottleSize || "None";
-          const bType = item.bottleType || "Kaca";
 
-          // Essence
-          if (item.scentName && item.scentName !== "Hanya Botol" && volumeToDeduct > 0) {
-            const stockId = `essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`;
-            const ref = stockRefsMap[stockId];
-            const currentQty = localStocks[stockId] ?? 0;
+          // A. Essence Stock Deduction
+          if (item.scentName && volumeToDeduct > 0) {
+            const currentQty = localEssenceStock[essenceId] ?? 0;
             if (currentQty < volumeToDeduct) {
               throw new Error(`Stok bibit ${item.scentName} tidak mencukupi! Tersisa: ${currentQty} ml.`);
             }
-            localStocks[stockId] = currentQty - volumeToDeduct;
+            const updatedQty = currentQty - volumeToDeduct;
+            localEssenceStock[essenceId] = updatedQty;
+            const ref = essenceRefsMap[essenceId];
             if (ref) {
-              transaction.update(ref, { quantity: localStocks[stockId] });
+              transaction.update(ref, { quantity: updatedQty });
             }
           }
 
-          // Alcohol capacity check & deduction
-          if (bSize !== "None" && item.scentName !== "Hanya Botol") {
-            const bottleCapacity = parseInt(bSize) || 0;
-            const diff = bottleCapacity - volumeToDeduct;
-            if (diff > 0) {
-              const alcoholDeduct = diff * bottleCountToDeduct;
-              const stockId = "alcohol_cair";
-              const ref = stockRefsMap[stockId];
-              const currentQty = localStocks[stockId] ?? 0;
-              localStocks[stockId] = Math.max(0, currentQty - alcoholDeduct);
-              if (ref) {
-                transaction.update(ref, { quantity: localStocks[stockId] });
+          // B. Alcohol Stock Calculation
+          if (bSize !== "None") {
+            const bottleCapacity = parseInt(bSize);
+            if (!isNaN(bottleCapacity)) {
+              const diff = bottleCapacity - volumeToDeduct;
+              if (diff > 0) {
+                totalAlcoholDeduct += diff * bottleCountToDeduct;
               }
             }
           }
 
-          // Bottle stock deduction
+          // C. Bottle Stock Deduction
           if (!item.noBottleStockDeduct && bSize !== "None" && bottleCountToDeduct > 0) {
-            const stockId = `bottle_${bSize}_${bType.toLowerCase()}`;
-            const ref = stockRefsMap[stockId];
-            const currentQty = localStocks[stockId] ?? 0;
+            const bottleId = `bottle_${bSize}_${item.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+            const currentQty = localBottleStock[bottleId] ?? 0;
             if (currentQty < bottleCountToDeduct) {
-              throw new Error(`Stok botol ${bType} ukuran ${bSize} tidak mencukupi! Tersisa: ${currentQty} unit.`);
+              throw new Error(`Stok botol ${item.bottleType || "Kaca"} ukuran ${bSize} tidak mencukupi! Tersisa: ${currentQty} unit.`);
             }
-            localStocks[stockId] = currentQty - bottleCountToDeduct;
+            const updatedQty = currentQty - bottleCountToDeduct;
+            localBottleStock[bottleId] = updatedQty;
+            const ref = bottleRefsMap[bottleId];
             if (ref) {
-              transaction.set(ref, { id: stockId, type: "bottle", size: bSize, bottleType: bType, quantity: localStocks[stockId] }, { merge: true });
+              transaction.update(ref, { quantity: updatedQty });
             }
           }
         }
+
+        // D. Final Alcohol Deduction
+        if (totalAlcoholDeduct > 0 && alcoholCairSnap.exists()) {
+          const alcoholQty = alcoholCairSnap.data().quantity || 0;
+          transaction.update(alcoholCairRef, { quantity: Math.max(0, alcoholQty - totalAlcoholDeduct) });
+        }
+
+        // Construct mutation description
+        mutationDescription = "Penjualan (Multi-item): " + tx.items.map(item => {
+          const bSizeStr = item.bottleSize !== "None" ? ` + Botol ${item.bottleSize} x ${item.bottleCount}` : " (Hanya Bibit)";
+          return `${item.scentName} (${item.volumeMl}ml)${bSizeStr}`;
+        }).join(", ");
+        if (mutationDescription.length > 250) {
+          mutationDescription = mutationDescription.substring(0, 247) + "...";
+        }
+      } else {
+        // Fallback to original single-item stock deduction
+        const volumeToDeduct = tx.volumeMl || 0;
+        const bottleCountToDeduct = tx.bottleCount || 0;
+
+        // Deduct essence stock
+        if (tx.scentName && volumeToDeduct > 0 && essenceRef && essenceSnap) {
+          if (essenceSnap.exists()) {
+            const currentQty = essenceSnap.data().quantity;
+            if (currentQty < volumeToDeduct) {
+              throw new Error(`Stok bibit ${tx.scentName} tidak mencukupi! Tersisa: ${currentQty} ml.`);
+            }
+            transaction.update(essenceRef, { quantity: currentQty - volumeToDeduct });
+          } else {
+            throw new Error(`Stok master bibit ${tx.scentName} tidak ditemukan!`);
+          }
+
+          // Deduct alcohol stock dynamically: bottle size capacity minus essence volume, no deduction if 'Hanya Refill' (None)
+          let alcoholDeduct = 0;
+          if (bottleSize !== "None") {
+            const bottleCapacity = parseInt(bottleSize);
+            if (!isNaN(bottleCapacity)) {
+              const diff = bottleCapacity - volumeToDeduct;
+              if (diff > 0) {
+                alcoholDeduct = diff * bottleCountToDeduct;
+              }
+            }
+          }
+
+          if (alcoholDeduct > 0 && alcoholCairSnap.exists()) {
+            const alcoholQty = alcoholCairSnap.data().quantity || 0;
+            transaction.update(alcoholCairRef, { quantity: Math.max(0, alcoholQty - alcoholDeduct) });
+          }
+        }
+
+        // Deduct bottle stock
+        if (!tx.noBottleStockDeduct && bottleSize !== "None" && bottleCountToDeduct > 0 && bottleRef && bottleSnap) {
+          if (bottleSnap.exists()) {
+            const currentQty = bottleSnap.data().quantity;
+            if (currentQty < bottleCountToDeduct) {
+              throw new Error(`Stok botol ${tx.bottleType || "Kaca"} ukuran ${bottleSize} tidak mencukupi! Tersisa: ${currentQty} unit.`);
+            }
+            transaction.update(bottleRef, { quantity: currentQty - bottleCountToDeduct });
+          } else {
+            throw new Error(`Stok master botol ${tx.bottleType || "Kaca"} ${bottleSize} tidak ditemukan!`);
+          }
+        }
+
+        mutationDescription = `Penjualan: ${tx.scentName || "Parfum"} (${tx.volumeMl}ml) + Botol ${tx.bottleSize} x ${tx.bottleCount}`;
       }
 
       // Update Cash Balance (Uang Masuk)
@@ -641,9 +562,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
         transaction.set(cashRef, { balance: newBalance });
       }
 
-      // Cash Ledger Description
-      const mutationDescription = tx.description || `Penjualan kasir senilai ${tx.totalPrice}`;
-
+      // Record Cash Ledger Mutation
       const mutId = "mut_" + generateId();
       const mutationRef = doc(db, "cash_ledger", mutId);
       transaction.set(mutationRef, {
@@ -657,7 +576,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
         referenceId: id
       });
 
-      // Customer Loyalty Points Accumulation
+      // Update Customer Accumulation
       if (hasValidCustomer && customerRef && tx.customerName) {
         if (customerSnap && customerSnap.exists()) {
           const currentTotal = customerSnap.data().totalPurchase || 0;
@@ -692,60 +611,77 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
           });
         }
       }
+
     } else if (tx.type === "purchase") {
-      // PEMBELIAN STOK (Kas Toko berkurang, Stok bertambah)
+      // PEMBELIAN: menambah stok bibit/alkohol/botol, mengurangi kas
+      const volumeToAdd = tx.volumeMl || 0;
+      const bottleCountToAdd = tx.bottleCount || 0;
+
       if (currentBalance < tx.totalPrice) {
         throw new Error(`Saldo kas tidak mencukupi untuk pembelian ini! Tersisa: Rp ${currentBalance.toLocaleString("id-ID")}`);
       }
 
-      const volumeToAdd = tx.volumeMl || 0;
-      const bottleCountToAdd = tx.bottleCount || 0;
+      // Update essence stock
+      if (tx.category === "bibit" && tx.scentName && volumeToAdd > 0 && essenceRef && essenceSnap) {
+        if (essenceSnap.exists()) {
+          transaction.update(essenceRef, { quantity: essenceSnap.data().quantity + volumeToAdd });
+        } else {
+          // Create new essence stock item
+          const essenceId = `essence_${tx.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+          transaction.set(essenceRef, {
+            id: essenceId,
+            type: "essence",
+            scentName: tx.scentName,
+            quantity: volumeToAdd
+          });
+        }
 
-      // Essence
-      if (tx.category === "bibit" && tx.scentName && volumeToAdd > 0) {
-        const stockId = `essence_${tx.scentName.replace(/\s+/g, "_").toLowerCase()}`;
-        const ref = doc(db, "stocks", stockId);
-        const snap = stockSnapsMap[stockId];
-        const currentQty = snap && snap.exists() ? (snap.data().quantity || 0) : 0;
-        transaction.set(ref, {
-          id: stockId,
-          type: "essence",
-          scentName: tx.scentName,
-          quantity: currentQty + volumeToAdd
-        }, { merge: true });
+        // Check and create in price list if not exists
+        if (priceRef && (!priceSnap || !priceSnap.exists())) {
+          transaction.set(priceRef, {
+            scentName: tx.scentName,
+            pricePerMl: 3500, // starting default price if new
+            updatedAt: new Date().toISOString()
+          });
+        }
       }
 
-      // Alcohol
+      // Update alcohol stock
       if (tx.category === "alkohol" && volumeToAdd > 0) {
-        const stockId = tx.scentName === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair";
-        const ref = doc(db, "stocks", stockId);
-        const snap = stockSnapsMap[stockId];
-        const currentQty = snap && snap.exists() ? (snap.data().quantity || 0) : 0;
-        transaction.set(ref, {
-          id: stockId,
-          type: "alcohol",
-          scentName: tx.scentName || (tx.scentName === "Absolut Gel" ? "Absolut Gel" : "Absolut Cair"),
-          quantity: currentQty + volumeToAdd
-        }, { merge: true });
+        const isGel = tx.scentName === "Absolut Gel";
+        const targetRef = isGel ? alcoholGelRef : alcoholCairRef;
+        const targetSnap = isGel ? alcoholGelSnap : alcoholCairSnap;
+        const targetId = isGel ? "alcohol_gel" : "alcohol_cair";
+        const targetName = isGel ? "Absolut Gel" : "Absolut Cair";
+
+        if (targetSnap && targetSnap.exists()) {
+          transaction.update(targetRef, { quantity: targetSnap.data().quantity + volumeToAdd });
+        } else {
+          transaction.set(targetRef, {
+            id: targetId,
+            type: "alcohol",
+            scentName: targetName,
+            quantity: volumeToAdd
+          });
+        }
       }
 
-      // Bottle
-      if (tx.category === "botol" && tx.bottleSize && tx.bottleSize !== "None" && bottleCountToAdd > 0) {
-        const bType = tx.bottleType || "Kaca";
-        const stockId = `bottle_${tx.bottleSize}_${bType.toLowerCase()}`;
-        const ref = doc(db, "stocks", stockId);
-        const snap = stockSnapsMap[stockId];
-        const currentQty = snap && snap.exists() ? (snap.data().quantity || 0) : 0;
-        transaction.set(ref, {
-          id: stockId,
-          type: "bottle",
-          size: tx.bottleSize,
-          bottleType: bType,
-          quantity: currentQty + bottleCountToAdd
-        }, { merge: true });
+      // Update bottle stock
+      if (tx.category === "botol" && bottleSize !== "None" && bottleCountToAdd > 0 && bottleRef && bottleSnap) {
+        if (bottleSnap.exists()) {
+          transaction.update(bottleRef, { quantity: bottleSnap.data().quantity + bottleCountToAdd });
+        } else {
+          transaction.set(bottleRef, {
+            id: `bottle_${bottleSize}_${tx.bottleType === "Plastik" ? "plastik" : "kaca"}`,
+            type: "bottle",
+            size: bottleSize,
+            bottleType: tx.bottleType || "Kaca",
+            quantity: bottleCountToAdd
+          });
+        }
       }
 
-      // Deduct global cash balance
+      // Update Cash Balance (Uang Keluar)
       const newBalance = currentBalance - tx.totalPrice;
       if (cashSnap.exists()) {
         transaction.update(cashRef, { balance: newBalance });
@@ -753,7 +689,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
         transaction.set(cashRef, { balance: newBalance });
       }
 
-      // Log Out Mutation
+      // Record Cash Ledger Mutation
       const mutId = "mut_" + generateId();
       const mutationRef = doc(db, "cash_ledger", mutId);
       transaction.set(mutationRef, {
@@ -763,7 +699,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
         amount: tx.totalPrice,
         balanceBefore: currentBalance,
         balanceAfter: newBalance,
-        description: tx.description || `Pembelian stok: ${tx.category === "bibit" ? `Bibit ${tx.scentName}` : tx.category === "botol" ? `Botol ${tx.bottleSize}` : "Absolut"}`,
+        description: `Pembelian stok: ${tx.category === "bibit" ? `Bibit ${tx.scentName}` : tx.category === "botol" ? `Botol ${tx.bottleSize}` : "Absolut"}`,
         referenceId: id
       });
     }
@@ -2075,280 +2011,6 @@ export async function settleResellerTransaction(txId: string, operatorEmail: str
     });
   });
 }
-
-// ==========================================
-// MASTER PRODUCTS SERVICES
-// ==========================================
-export function subscribeToMasterProducts(callback: (products: MasterProduct[]) => void) {
-  return onSnapshot(collection(db, "master_products"), async (snapshot) => {
-    let list: MasterProduct[] = [];
-    snapshot.forEach((docSnap) => {
-      list.push(docSnap.data() as MasterProduct);
-    });
-
-    if (list.length === 0) {
-      console.log("Master products empty. Attempting auto-migration/seeding...");
-      
-      // 1. Fetch existing prices (scents)
-      const pricesSnapshot = await getDocs(collection(db, "prices"));
-      const existingPrices: ScentPrice[] = [];
-      pricesSnapshot.forEach((docSnap) => {
-        existingPrices.push(docSnap.data() as ScentPrice);
-      });
-
-      // 2. Fetch existing bottle sizes
-      const bottlesSnapshot = await getDocs(collection(db, "bottle_sizes"));
-      const existingBottles: BottleSize[] = [];
-      bottlesSnapshot.forEach((docSnap) => {
-        existingBottles.push(docSnap.data() as BottleSize);
-      });
-
-      const seedList: MasterProduct[] = [];
-
-      // Add essences
-      existingPrices.forEach((p) => {
-        const id = "prod_essence_" + p.scentName.toLowerCase().replace(/\s+/g, "_");
-        seedList.push({
-          id,
-          name: p.scentName,
-          type: "essence",
-          price: p.pricePerMl,
-          addedAt: p.updatedAt || new Date().toISOString(),
-        });
-      });
-
-      // If no existing prices, add a few default scents to make it look great
-      if (seedList.filter(p => p.type === "essence").length === 0) {
-        const defaultScents = [
-          { name: "Avicenna", price: 3500 },
-          { name: "Bacarat Rouge", price: 5000 },
-          { name: "Black Opium", price: 4000 },
-          { name: "Blue de Chanel", price: 4500 },
-          { name: "Bombshell", price: 3000 },
-          { name: "Savage Sauvage", price: 4500 }
-        ];
-        defaultScents.forEach((sc) => {
-          const id = "prod_essence_" + sc.name.toLowerCase().replace(/\s+/g, "_");
-          seedList.push({
-            id,
-            name: sc.name,
-            type: "essence",
-            price: sc.price,
-            addedAt: new Date().toISOString()
-          });
-        });
-      }
-
-      // Add bottles
-      existingBottles.forEach((b) => {
-        const idKaca = "prod_bottle_kaca_" + b.size.toLowerCase().replace(/\s+/g, "");
-        seedList.push({
-          id: idKaca,
-          name: b.size,
-          type: "bottle_kaca",
-          price: b.priceKaca || b.price || 10000,
-          addedAt: b.addedAt || new Date().toISOString(),
-        });
-
-        const idPlastik = "prod_bottle_plastik_" + b.size.toLowerCase().replace(/\s+/g, "");
-        seedList.push({
-          id: idPlastik,
-          name: b.size,
-          type: "bottle_plastik",
-          price: b.pricePlastik || 0,
-          addedAt: b.addedAt || new Date().toISOString(),
-        });
-      });
-
-      // If no bottles, seed default sizes
-      if (seedList.filter(p => p.type.startsWith("bottle")).length === 0) {
-        const defaultSizes = ["30ml", "50ml", "100ml"];
-        defaultSizes.forEach((sz) => {
-          const idKaca = "prod_bottle_kaca_" + sz.toLowerCase();
-          seedList.push({
-            id: idKaca,
-            name: sz,
-            type: "bottle_kaca",
-            price: sz === "30ml" ? 10000 : sz === "50ml" ? 15000 : 25000,
-            addedAt: new Date().toISOString()
-          });
-          const idPlastik = "prod_bottle_plastik_" + sz.toLowerCase();
-          seedList.push({
-            id: idPlastik,
-            name: sz,
-            type: "bottle_plastik",
-            price: 0,
-            addedAt: new Date().toISOString()
-          });
-        });
-      }
-
-      // Add alcohol defaults
-      seedList.push({
-        id: "prod_alcohol_cair",
-        name: "Absolut Cair",
-        type: "alcohol",
-        price: 0,
-        addedAt: new Date().toISOString(),
-      });
-      seedList.push({
-        id: "prod_alcohol_gel",
-        name: "Absolut Gel",
-        type: "alcohol",
-        price: 0,
-        addedAt: new Date().toISOString(),
-      });
-
-      // Write to Firestore
-      try {
-        for (const prod of seedList) {
-          await setDoc(doc(db, "master_products", prod.id), prod);
-        }
-      } catch (err) {
-        console.error("Gagal auto-seed master_products:", err);
-      }
-      return;
-    }
-
-    // Sort by name
-    list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-    callback(list);
-  });
-}
-
-export async function addMasterProduct(product: Omit<MasterProduct, "id" | "addedAt">) {
-  const cleanName = product.name.trim();
-  // Generate ID based on type and name
-  const safeName = cleanName.toLowerCase().replace(/\s+/g, "_").replace(/[^a-z0-9_]+/g, "");
-  const id = `prod_${product.type}_${safeName}`;
-  const addedAt = new Date().toISOString();
-
-  await setDoc(doc(db, "master_products", id), {
-    ...product,
-    name: cleanName,
-    id,
-    addedAt
-  });
-
-  // Backward compatibility check:
-  if (product.type === "essence") {
-    await setDoc(doc(db, "prices", cleanName), {
-      scentName: cleanName,
-      pricePerMl: product.price,
-      updatedAt: addedAt
-    });
-    // Ensure stock document exists for Essence
-    const stockId = `essence_${cleanName.replace(/\s+/g, "_").toLowerCase()}`;
-    const stockRef = doc(db, "stocks", stockId);
-    const stockSnap = await getDoc(stockRef);
-    if (!stockSnap.exists()) {
-      await setDoc(stockRef, {
-        id: stockId,
-        type: "essence",
-        scentName: cleanName,
-        quantity: 0
-      });
-    }
-  } else if (product.type === "bottle_kaca" || product.type === "bottle_plastik") {
-    const size = cleanName;
-    const sizeId = size.toLowerCase().replace(/\s+/g, "");
-    
-    // We update/create bottle_sizes doc
-    const bRef = doc(db, "bottle_sizes", sizeId);
-    const bSnap = await getDoc(bRef);
-    const existing = bSnap.exists() ? bSnap.data() : {};
-    
-    await setDoc(bRef, {
-      id: sizeId,
-      size,
-      price: product.type === "bottle_kaca" ? product.price : (existing.price || 10000),
-      priceKaca: product.type === "bottle_kaca" ? product.price : (existing.priceKaca || 10000),
-      pricePlastik: product.type === "bottle_plastik" ? product.price : (existing.pricePlastik || 0),
-      purchasePriceKaca: existing.purchasePriceKaca || 5000,
-      purchasePricePlastik: existing.purchasePricePlastik || 3000,
-      addedAt: existing.addedAt || addedAt
-    });
-
-    // Ensure stocks document exists for both kaca and plastik
-    const stKId = `bottle_${size}_kaca`;
-    const stKRef = doc(db, "stocks", stKId);
-    if (!(await getDoc(stKRef)).exists()) {
-      await setDoc(stKRef, { id: stKId, type: "bottle", size, bottleType: "Kaca", quantity: 0 });
-    }
-    const stPId = `bottle_${size}_plastik`;
-    const stPRef = doc(db, "stocks", stPId);
-    if (!(await getDoc(stPRef)).exists()) {
-      await setDoc(stPRef, { id: stPId, type: "bottle", size, bottleType: "Plastik", quantity: 0 });
-    }
-  }
-
-  return id;
-}
-
-export async function updateMasterProductPrice(id: string, newPrice: number) {
-  const ref = doc(db, "master_products", id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) {
-    throw new Error("Master produk tidak ditemukan!");
-  }
-  const prod = snap.data() as MasterProduct;
-  await updateDoc(ref, { price: newPrice });
-
-  // Keep backward compatibility in sync!
-  const addedAt = new Date().toISOString();
-  if (prod.type === "essence") {
-    // Sync to prices table
-    await setDoc(doc(db, "prices", prod.name), {
-      scentName: prod.name,
-      pricePerMl: newPrice,
-      updatedAt: addedAt
-    });
-
-    // Cascade update to shelves if it exists
-    const shelvesQuery = query(collection(db, "shelves"), where("scentName", "==", prod.name));
-    const shelvesSnap = await getDocs(shelvesQuery);
-    
-    // Perform serial batched updates if needed, or simple sequential updates
-    for (const shelfDoc of shelvesSnap.docs) {
-      await updateDoc(doc(db, "shelves", shelfDoc.id), { pricePerMl: newPrice });
-    }
-  } else if (prod.type === "bottle_kaca" || prod.type === "bottle_plastik") {
-    const sizeId = prod.name.toLowerCase().replace(/\s+/g, "");
-    const bRef = doc(db, "bottle_sizes", sizeId);
-    const bSnap = await getDoc(bRef);
-    if (bSnap.exists()) {
-      if (prod.type === "bottle_kaca") {
-        await updateDoc(bRef, { priceKaca: newPrice, price: newPrice });
-      } else {
-        await updateDoc(bRef, { pricePlastik: newPrice });
-      }
-    }
-  }
-}
-
-export async function deleteMasterProduct(id: string) {
-  const ref = doc(db, "master_products", id);
-  const snap = await getDoc(ref);
-  if (!snap.exists()) return;
-  const prod = snap.data() as MasterProduct;
-
-  await deleteDoc(ref);
-
-  // Sync delete for legacy tables
-  if (prod.type === "essence") {
-    await deleteDoc(doc(db, "prices", prod.name));
-  } else if (prod.type === "bottle_kaca" || prod.type === "bottle_plastik") {
-    // Only delete if BOTH are gone
-    const otherType = prod.type === "bottle_kaca" ? "bottle_plastik" : "bottle_kaca";
-    const otherId = `prod_${otherType}_${prod.name.toLowerCase().replace(/\s+/g, "")}`;
-    const otherSnap = await getDoc(doc(db, "master_products", otherId));
-    if (!otherSnap.exists()) {
-      const sizeId = prod.name.toLowerCase().replace(/\s+/g, "");
-      await deleteDoc(doc(db, "bottle_sizes", sizeId));
-    }
-  }
-}
-
 
 
 

@@ -13,8 +13,6 @@ export interface Shelf {
   rackNumber: string;
   scentName: string;
   pricePerMl: number;
-  masterProductId?: string;
-  rowsCount?: number;
 }
 
 export interface ScentPrice {
@@ -40,10 +38,6 @@ export interface SaleItem {
   bottleType?: "Kaca" | "Plastik";
   bottleCount: number;
   noBottleStockDeduct?: boolean;
-  itemType?: "racikan" | "paket_bundling" | "direct_master";
-  masterProductId?: string;
-  bundlingPackageId?: string;
-  isFree?: boolean;
 }
 
 export interface Transaction {
@@ -144,32 +138,15 @@ export interface ResellerPackageStock {
   quantity: number;
 }
 
-export interface BundlingFormulaItem {
-  productId: string;
-  name: string;
-  type: "essence" | "alcohol";
-  quantity: number;
-}
-
 export interface BundlingPackage {
   id: string;
   packageName: string;
   scentName?: string;
   bottleSize: string;
-  bottleType?: "Kaca" | "Plastik";
   essenceMl: number;
   alcoholMl: number;
   price: number;
   solventType?: "Absolut Cair" | "Absolut Gel";
-  addedAt: string;
-  formula?: BundlingFormulaItem[];
-}
-
-export interface MasterProduct {
-  id: string;
-  name: string;
-  type: "essence" | "bottle_kaca" | "bottle_plastik" | "alcohol";
-  price: number;
   addedAt: string;
 }
 
