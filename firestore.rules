@@ -1,0 +1,128 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Global default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Helper functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function getUserEmail() {
+      return (isAuthenticated() && request.auth.token.email != null) ? request.auth.token.email.lower() : '';
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        getUserEmail() == 'bastikacorp@gmail.com' ||
+        getUserEmail() == 'adminbastika@gmail.com' ||
+        (getUserEmail() != '' && exists(/databases/$(database)/documents/users/$(getUserEmail())) && 
+         get(/databases/$(database)/documents/users/$(getUserEmail())).data.role == 'admin')
+      );
+    }
+
+    function isClient() {
+      return isAuthenticated() && getUserEmail() != '' && (
+        exists(/databases/$(database)/documents/users/$(getUserEmail())) && 
+        get(/databases/$(database)/documents/users/$(getUserEmail())).data.role == 'client'
+      );
+    }
+
+    function isReseller() {
+      return isAuthenticated() && getUserEmail() != '' && (
+        exists(/databases/$(database)/documents/users/$(getUserEmail())) && 
+        get(/databases/$(database)/documents/users/$(getUserEmail())).data.role == 'reseller'
+      );
+    }
+
+    function isWhitelisted() {
+      return isAdmin() || isClient() || isReseller();
+    }
+
+    // Whitelist / Users Collection
+    match /users/{email} {
+      allow read: if isAuthenticated();
+      allow write: if isAdmin();
+    }
+
+    // Config Collection (Cash balance and seeding status)
+    match /config/{configId} {
+      allow read: if isWhitelisted();
+      allow write: if isWhitelisted();
+    }
+
+    // Shelves / Rak
+    match /shelves/{shelfId} {
+      allow read: if isWhitelisted();
+      allow write: if isAdmin();
+    }
+
+    // Scent Prices / Harga Master
+    match /prices/{priceId} {
+      allow read: if isWhitelisted();
+      allow write: if isAdmin();
+    }
+
+    // Bottle Sizes / Kategori Ukuran Botol
+    match /bottle_sizes/{sizeId} {
+      allow read: if isWhitelisted();
+      allow write: if isAdmin();
+    }
+
+    // Stocks / Stok Master
+    match /stocks/{stockId} {
+      allow read: if isWhitelisted();
+      allow write: if isWhitelisted();
+    }
+
+    // Transactions / Transaksi
+    match /transactions/{txId} {
+      allow read: if isWhitelisted() || (isAuthenticated() && resource.data.resellerEmail == getUserEmail());
+      // Client or reseller can only record SALES, not purchases or modifications
+      allow create: if isAdmin() || (
+        (isClient() || isReseller() || (isAuthenticated() && request.resource.data.resellerEmail == getUserEmail())) && 
+        request.resource.data.type == 'sale'
+      );
+      allow update, delete: if isAdmin();
+    }
+
+    // Salaries / Gaji Karyawan
+    match /salaries/{salaryId} {
+      allow read, write: if isAdmin();
+    }
+
+    // Cash Ledger / Kas Besar
+    match /cash_ledger/{ledgerId} {
+      allow read: if isWhitelisted();
+      allow write: if isWhitelisted();
+    }
+
+    // Customers / Pelanggan & Promo
+    match /customers/{customerId} {
+      allow read: if isWhitelisted();
+      allow write: if isWhitelisted();
+    }
+
+    // Bundling Packages / Paket Bundling
+    match /bundling_packages/{pkgId} {
+      allow read: if isWhitelisted();
+      allow write: if isAdmin();
+    }
+
+    // Reseller Stocks / Stok Komponen Reseller
+    match /reseller_stocks/{stockId} {
+      allow read: if isWhitelisted() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
+      allow write: if isAdmin() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
+    }
+
+    // Reseller Package Stocks / Stok Paket Bundling Reseller
+    match /reseller_package_stocks/{stockId} {
+      allow read: if isWhitelisted() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
+      allow write: if isAdmin() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
+    }
+  }
+}

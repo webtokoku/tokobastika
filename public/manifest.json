@@ -1,0 +1,16 @@
+{
+  "short_name": "Bastika Parfum",
+  "name": "Bastika Parfum - POS & Manajemen",
+  "icons": [
+    {
+      "src": "icon.jpg",
+      "type": "image/jpeg",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": ".",
+  "background_color": "#0f172a",
+  "theme_color": "#059669",
+  "display": "standalone",
+  "orientation": "portrait"
+}

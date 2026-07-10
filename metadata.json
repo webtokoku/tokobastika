@@ -1,0 +1,6 @@
+{
+  "name": "Bastika Parfum",
+  "description": "Sistem manajemen usaha toko parfum profesional dengan integrasi cloud database Firestore, sistem kasir, inventori stok, pencatatan rak, mutasi kas, penggajian, dan akuntansi laba bersih otomatis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
