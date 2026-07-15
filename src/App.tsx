@@ -83,7 +83,8 @@ import {
   ResellerStock,
   ResellerPackageStock,
   BundlingPackage,
-  MasterProduct
+  MasterProduct,
+  FormulaIngredient
 } from "./types";
 import { 
   ShoppingBag, 
@@ -185,6 +186,23 @@ export default function App() {
     customSuffix: ""
   });
 
+  const [formulaCart, setFormulaCart] = useState<FormulaIngredient[]>([]);
+  const [cartInput, setCartInput] = useState<{
+    type: "essence" | "alcohol" | "bottle";
+    scentName: string;
+    size: string;
+    bottleType: "Kaca" | "Plastik";
+    solventType: "Absolut Cair" | "Absolut Gel";
+    quantity: number;
+  }>({
+    type: "essence",
+    scentName: "",
+    size: "30ml",
+    bottleType: "Kaca",
+    solventType: "Absolut Cair",
+    quantity: 10
+  });
+
   // Sync newBundling initial state with lastFormula on mount
   useEffect(() => {
     setNewBundling(prev => ({
@@ -196,6 +214,304 @@ export default function App() {
       solventType: lastFormula.solventType || "Absolut Cair"
     }));
   }, [lastFormula]);
+
+  // Printer Configuration & Auto-connect State
+  const [printerConfig, setPrinterConfig] = useState<{
+    mode: "system" | "bluetooth" | "usb";
+    autoConnect: boolean;
+    deviceName: string;
+    usbVendorId: string;
+  }>(() => {
+    try {
+      const saved = localStorage.getItem("printer_config_v2");
+      if (saved) {
+        return JSON.parse(saved);
+      }
+    } catch (e) {}
+    return {
+      mode: "system",
+      autoConnect: true,
+      deviceName: "",
+      usbVendorId: ""
+    };
+  });
+
+  const [btDevice, setBtDevice] = useState<any>(null);
+  const [btCharacteristic, setBtCharacteristic] = useState<any>(null);
+  const [usbDevice, setUsbDevice] = useState<any>(null);
+  const [isPrinterConnecting, setIsPrinterConnecting] = useState(false);
+  const [printerStatus, setPrinterStatus] = useState<string>("Disconnected");
+
+  const savePrinterConfig = (config: typeof printerConfig) => {
+    setPrinterConfig(config);
+    try {
+      localStorage.setItem("printer_config_v2", JSON.stringify(config));
+    } catch (e) {}
+  };
+
+  // Helper to format receipt for thermal printers using standard ESC/POS
+  const formatReceiptToEscPos = (tx: SaleItem, settings: InvoiceSettings): Uint8Array => {
+    const encoder = new TextEncoder();
+    const chunks: Uint8Array[] = [];
+
+    const addBytes = (bytes: number[]) => {
+      chunks.push(new Uint8Array(bytes));
+    };
+
+    const addText = (text: string) => {
+      chunks.push(encoder.encode(text));
+    };
+
+    const addLine = (text: string = "") => {
+      chunks.push(encoder.encode(text + "\n"));
+    };
+
+    // Initialize printer
+    addBytes([0x1B, 0x40]);
+
+    // Center align for header
+    addBytes([0x1B, 0x61, 0x01]);
+    addBytes([0x1B, 0x45, 0x01]); // Bold on
+    addLine(settings.storeName.toUpperCase());
+    addBytes([0x1B, 0x45, 0x00]); // Bold off
+    
+    if (settings.address) addLine(settings.address);
+    if (settings.phone) addLine(`HP: ${settings.phone}`);
+    addLine("-".repeat(32));
+
+    // Left align for body
+    addBytes([0x1B, 0x61, 0x00]);
+    addLine(`No. Nota : ${tx.invoiceNo || tx.id}`);
+    addLine(`Tanggal  : ${new Date(tx.createdAt).toLocaleString("id-ID")}`);
+    addLine(`Kasir    : ${tx.createdByName || "Kasir"}`);
+    if (tx.customerName) addLine(`Pelanggan: ${tx.customerName}`);
+    addLine("-".repeat(32));
+
+    // Items
+    tx.items.forEach(item => {
+      addLine(item.name);
+      const qtyPrice = `${item.quantity} x ${item.price.toLocaleString("id-ID")}`;
+      const total = (item.quantity * item.price).toLocaleString("id-ID");
+      const spaces = 32 - qtyPrice.length - total.length;
+      addLine(qtyPrice + " ".repeat(Math.max(1, spaces)) + total);
+    });
+
+    addLine("-".repeat(32));
+
+    // Totals
+    const totalLabel = "Total:";
+    const totalVal = tx.totalPrice.toLocaleString("id-ID");
+    addLine(totalLabel + " ".repeat(32 - totalLabel.length - totalVal.length) + totalVal);
+
+    if (tx.discount > 0) {
+      const discLabel = "Diskon:";
+      const discVal = `-${tx.discount.toLocaleString("id-ID")}`;
+      addLine(discLabel + " ".repeat(32 - discLabel.length - discVal.length) + discVal);
+    }
+
+    const netLabel = "Grand Total:";
+    const netVal = tx.netPrice.toLocaleString("id-ID");
+    addBytes([0x1B, 0x45, 0x01]); // Bold
+    addLine(netLabel + " ".repeat(32 - netLabel.length - netVal.length) + netVal);
+    addBytes([0x1B, 0x45, 0x00]); // Bold off
+
+    if (tx.paymentMethod) {
+      const payLabel = `Metode: ${tx.paymentMethod.toUpperCase()}`;
+      addLine(payLabel);
+    }
+
+    addLine("-".repeat(32));
+
+    // Center footer
+    addBytes([0x1B, 0x61, 0x01]);
+    if (settings.footerMessage1 || settings.footerMessage2) {
+      if (settings.footerMessage1) addLine(settings.footerMessage1);
+      if (settings.footerMessage2) addLine(settings.footerMessage2);
+    } else {
+      addLine("Terima Kasih");
+      addLine("Selamat Belanja Kembali");
+    }
+
+    // Extra line feeds and cut
+    addLine("\n\n\n");
+    addBytes([0x1D, 0x56, 0x41, 0x03]); // Partial cut
+
+    // Merge chunks
+    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    const result = new Uint8Array(totalLength);
+    let offset = 0;
+    for (const chunk of chunks) {
+      result.set(chunk, offset);
+      offset += chunk.length;
+    }
+    return result;
+  };
+
+  // Web Bluetooth Connect
+  const connectBluetoothPrinter = async (silent = false) => {
+    const nav = navigator as any;
+    if (!nav.bluetooth) {
+      if (!silent) showToast("Web Bluetooth tidak didukung di browser ini!", "error");
+      return;
+    }
+
+    setIsPrinterConnecting(true);
+    setPrinterStatus("Connecting...");
+    try {
+      const device = await nav.bluetooth.requestDevice({
+        filters: [
+          { services: ["0000ffe0-0000-1000-8000-00805f9b34fb"] },
+          { services: ["000018f0-0000-1000-8000-00805f9b34fb"] }
+        ],
+        optionalServices: ["0000ffe1-0000-1000-8000-00805f9b34fb"]
+      });
+
+      const server = await device.gatt?.connect();
+      let service;
+      try {
+        service = await server?.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
+      } catch (err) {
+        service = await server?.getPrimaryService("000018f0-0000-1000-8000-00805f9b34fb");
+      }
+
+      const characteristics = await service?.getCharacteristics();
+      const writeChar = characteristics?.find((c: any) => c.properties.write || c.properties.writeWithoutResponse);
+
+      if (writeChar) {
+        setBtDevice(device);
+        setBtCharacteristic(writeChar);
+        setPrinterStatus(`Connected to ${device.name || "Bluetooth Printer"}`);
+        savePrinterConfig({
+          ...printerConfig,
+          deviceName: device.name || "Bluetooth Printer"
+        });
+        if (!silent) showToast("Printer Bluetooth berhasil terhubung!", "success");
+      } else {
+        throw new Error("Karakteristik write printer tidak ditemukan!");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setPrinterStatus("Disconnected");
+      if (!silent) showToast(`Koneksi Bluetooth gagal: ${err.message}`, "error");
+    } finally {
+      setIsPrinterConnecting(false);
+    }
+  };
+
+  // Web USB Connect
+  const connectUsbPrinter = async (silent = false) => {
+    const nav = navigator as any;
+    if (!nav.usb) {
+      if (!silent) showToast("Web USB tidak didukung di browser ini!", "error");
+      return;
+    }
+
+    setIsPrinterConnecting(true);
+    setPrinterStatus("Connecting...");
+    try {
+      const device = await nav.usb.requestDevice({
+        filters: []
+      });
+
+      await device.open();
+      if (device.configuration === null) {
+        await device.selectConfiguration(1);
+      }
+      await device.claimInterface(0);
+
+      setUsbDevice(device);
+      setPrinterStatus(`Connected to ${device.productName || "USB Printer"}`);
+      savePrinterConfig({
+        ...printerConfig,
+        usbVendorId: device.vendorId.toString()
+      });
+      if (!silent) showToast("Printer USB berhasil terhubung!", "success");
+    } catch (err: any) {
+      console.error(err);
+      setPrinterStatus("Disconnected");
+      if (!silent) showToast(`Koneksi USB gagal: ${err.message}`, "error");
+    } finally {
+      setIsPrinterConnecting(false);
+    }
+  };
+
+  // Auto connect logic
+  useEffect(() => {
+    const autoReconnect = async () => {
+      const nav = navigator as any;
+      if (printerConfig.autoConnect) {
+        if (printerConfig.mode === "bluetooth" && printerConfig.deviceName) {
+          setPrinterStatus("Bluetooth Auto-connect ready (Requires print action)");
+        } else if (printerConfig.mode === "usb" && printerConfig.usbVendorId && nav.usb) {
+          try {
+            const devices = await nav.usb.getDevices();
+            const matchedDevice = devices.find((d: any) => d.vendorId.toString() === printerConfig.usbVendorId);
+            if (matchedDevice) {
+              await matchedDevice.open();
+              if (matchedDevice.configuration === null) {
+                await matchedDevice.selectConfiguration(1);
+              }
+              await matchedDevice.claimInterface(0);
+              setUsbDevice(matchedDevice);
+              setPrinterStatus(`Connected to ${matchedDevice.productName || "USB Printer"}`);
+            }
+          } catch (e) {
+            console.log("USB Auto-connect failed:", e);
+          }
+        }
+      }
+    };
+    autoReconnect();
+  }, [printerConfig.mode]);
+
+  const handlePrintTicket = async (tx: SaleItem) => {
+    if (printerConfig.mode === "system") {
+      window.print();
+      return;
+    }
+
+    setIsPrinterConnecting(true);
+    try {
+      const escPosData = formatReceiptToEscPos(tx, invoiceSettings);
+
+      if (printerConfig.mode === "bluetooth") {
+        if (!btCharacteristic) {
+          showToast("Printer Bluetooth belum terhubung! Silakan hubungkan printer.", "error");
+          await connectBluetoothPrinter();
+          return;
+        }
+
+        const chunkSize = 20;
+        for (let i = 0; i < escPosData.length; i += chunkSize) {
+          const chunk = escPosData.slice(i, i + chunkSize);
+          await btCharacteristic.writeValue(chunk);
+        }
+        showToast("Invoice berhasil dikirim ke Printer Bluetooth!", "success");
+      } else if (printerConfig.mode === "usb") {
+        if (!usbDevice) {
+          showToast("Printer USB belum terhubung! Silakan hubungkan printer.", "error");
+          await connectUsbPrinter();
+          return;
+        }
+
+        const endpoint = usbDevice.configuration?.interfaces[0]?.alternates[0]?.endpoints.find(
+          (e: any) => e.direction === "out"
+        );
+        if (!endpoint) {
+          throw new Error("USB out endpoint tidak ditemukan!");
+        }
+
+        await usbDevice.transferOut(endpoint.endpointNumber, escPosData);
+        showToast("Invoice berhasil dikirim ke Printer USB!", "success");
+      }
+    } catch (err: any) {
+      console.error(err);
+      showToast(`Gagal mencetak: ${err.message}. Mengalihkan ke printer system browser...`, "error");
+      window.print();
+    } finally {
+      setIsPrinterConnecting(false);
+    }
+  };
   const [showTransferStock, setShowTransferStock] = useState(false);
   const [transferForm, setTransferForm] = useState({
     resellerEmail: "",
@@ -1953,39 +2269,51 @@ export default function App() {
 
   const handleAddBundlingSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { scentName, bottleSize, essenceMl, price, solventType, customSuffix } = newBundling;
-    if (!scentName.trim()) {
-      showToast("Nama aroma wajib diisi!", "error");
+    if (formulaCart.length === 0) {
+      showToast("Formula minimal harus berisi 1 bahan/item!", "error");
       return;
     }
-    if (!bottleSize) {
-      showToast("Ukuran botol wajib dipilih!", "error");
-      return;
-    }
-    if (essenceMl <= 0 || price <= 0) {
-      showToast("Nilai volume bibit dan harga harus lebih besar dari 0!", "error");
+    const { price, customSuffix } = newBundling;
+    if (price <= 0) {
+      showToast("Harga jual paket harus lebih besar dari 0!", "error");
       return;
     }
 
-    const parseSizeNumber = (sizeStr: string): number => {
-      return parseInt(sizeStr.replace(/[^0-9]/g, "")) || 0;
-    };
+    // Calculate backward-compatible fields
+    const essences = formulaCart.filter(i => i.type === "essence");
+    const bottles = formulaCart.filter(i => i.type === "bottle");
+    const alcohols = formulaCart.filter(i => i.type === "alcohol");
 
-    const capacity = parseSizeNumber(bottleSize);
-    const calculatedAlcoholMl = Math.max(0, capacity - essenceMl);
+    const firstScent = essences[0]?.scentName || "";
+    const firstBottleSize = bottles[0]?.size || "Custom";
+    const totalEssenceMl = essences.reduce((sum, i) => sum + i.quantity, 0);
+    const totalAlcoholMl = alcohols.reduce((sum, i) => sum + i.quantity, 0);
+    const solventType = alcohols[0]?.solventType || "Absolut Cair";
+
     const suffixStr = customSuffix ? customSuffix.trim() : "";
-    const autoPackageName = `Aroma ${scentName.trim()} - ${bottleSize}${suffixStr ? ' (' + suffixStr + ')' : ''}`;
+    
+    // Auto-generate packageName if not custom-specified
+    let autoPackageName = newBundling.packageName.trim();
+    if (!autoPackageName) {
+      const scentNames = essences.map(i => i.scentName).join(" & ");
+      const bottleSizes = bottles.map(i => i.size).join(" & ");
+      const scentStr = scentNames ? `Aroma ${scentNames}` : "Custom Blend";
+      const bottleStr = bottleSizes ? ` - ${bottleSizes}` : "";
+      const suffixPart = suffixStr ? ` (${suffixStr})` : "";
+      autoPackageName = `${scentStr}${bottleStr}${suffixPart}`;
+    }
 
     try {
       if (editingBundling) {
         await updateBundlingPackage(editingBundling.id, {
           packageName: autoPackageName,
-          scentName: scentName.trim(),
-          bottleSize,
-          essenceMl,
-          alcoholMl: calculatedAlcoholMl,
+          scentName: firstScent,
+          bottleSize: firstBottleSize,
+          essenceMl: totalEssenceMl,
+          alcoholMl: totalAlcoholMl,
           price,
-          solventType
+          solventType,
+          ingredients: formulaCart
         });
         
         const prodId = "prod_bundling_" + autoPackageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
@@ -2002,12 +2330,13 @@ export default function App() {
       } else {
         await addBundlingPackage({
           packageName: autoPackageName,
-          scentName: scentName.trim(),
-          bottleSize,
-          essenceMl,
-          alcoholMl: calculatedAlcoholMl,
+          scentName: firstScent,
+          bottleSize: firstBottleSize,
+          essenceMl: totalEssenceMl,
+          alcoholMl: totalAlcoholMl,
           price,
-          solventType
+          solventType,
+          ingredients: formulaCart
         });
 
         const prodId = "prod_bundling_" + autoPackageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
@@ -2021,10 +2350,11 @@ export default function App() {
 
         showToast(`Formula paket bundling "${autoPackageName}" berhasil ditambahkan!`, "success");
       }
+      
       const updatedFormula = {
-        bottleSize,
-        essenceMl,
-        alcoholMl: calculatedAlcoholMl,
+        bottleSize: firstBottleSize,
+        essenceMl: totalEssenceMl,
+        alcoholMl: totalAlcoholMl,
         price,
         solventType
       };
@@ -2036,13 +2366,14 @@ export default function App() {
       setNewBundling({
         packageName: "",
         scentName: "",
-        bottleSize,
-        essenceMl,
-        alcoholMl: calculatedAlcoholMl,
+        bottleSize: firstBottleSize,
+        essenceMl: totalEssenceMl,
+        alcoholMl: totalAlcoholMl,
         price,
         solventType,
         customSuffix: ""
       });
+      setFormulaCart([]);
       setShowAddBundling(false);
     } catch (err: any) {
       showToast(err.message, "error");
@@ -2051,6 +2382,34 @@ export default function App() {
 
   const handleStartEditBundling = (pkg: BundlingPackage) => {
     setEditingBundling(pkg);
+    
+    // Load ingredients from package, or construct from legacy
+    let initialCart: FormulaIngredient[] = [];
+    if (pkg.ingredients && pkg.ingredients.length > 0) {
+      initialCart = [...pkg.ingredients];
+    } else {
+      if (pkg.scentName) {
+        initialCart.push({
+          type: "essence",
+          scentName: pkg.scentName,
+          quantity: pkg.essenceMl
+        });
+      }
+      initialCart.push({
+        type: "bottle",
+        size: pkg.bottleSize,
+        bottleType: "Kaca",
+        quantity: 1
+      });
+      initialCart.push({
+        type: "alcohol",
+        solventType: pkg.solventType || "Absolut Cair",
+        quantity: pkg.alcoholMl
+      });
+    }
+
+    setFormulaCart(initialCart);
+
     let suffix = "";
     const matchResult = pkg.packageName.match(/\(([^)]+)\)$/);
     if (matchResult) {
@@ -2082,6 +2441,7 @@ export default function App() {
       solventType: lastFormula.solventType || "Absolut Cair",
       customSuffix: ""
     });
+    setFormulaCart([]);
     setShowAddBundling(false);
   };
 
@@ -2692,118 +3052,228 @@ export default function App() {
                 <PlusCircle className="h-4.5 w-4.5 text-emerald-600" />
                 {editingBundling ? "Edit Formula Paket Bundling" : "Buat Koleksi Paket Bundling Baru"}
               </h3>
-              <form onSubmit={handleAddBundlingSubmit} className="space-y-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Aroma (Bibit)</label>
-                  {(() => {
-                    const availableScents = Array.from(new Set(stocks.filter(s => s.type === "essence" && s.scentName).map(s => s.scentName)));
-                    return (
-                      <>
-                        <input
-                          type="text"
-                          list="scents-autocomplete-list"
-                          placeholder="Contoh: Black Opium"
-                          value={newBundling.scentName || ""}
-                          onChange={(e) => setNewBundling(prev => ({ ...prev, scentName: e.target.value }))}
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-semibold"
-                          required
-                        />
-                        <datalist id="scents-autocomplete-list">
-                          {availableScents.map(scent => (
-                            <option key={scent} value={scent} />
-                          ))}
-                        </datalist>
-                      </>
-                    );
-                  })()}
-                </div>
 
+              {/* SECTION: Add ingredient to Cart */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <span className="font-bold text-xs text-slate-800 block">Tambah Bahan ke Formula:</span>
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ukuran Botol</label>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jenis Bahan</label>
                   <select
-                    value={newBundling.bottleSize}
-                    onChange={(e) => setNewBundling(prev => ({ ...prev, bottleSize: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 cursor-pointer font-semibold"
-                    required
+                    value={cartInput.type}
+                    onChange={(e) => {
+                      const selectedType = e.target.value as "essence" | "alcohol" | "bottle";
+                      let defaultQty = 10;
+                      if (selectedType === "bottle") defaultQty = 1;
+                      else if (selectedType === "alcohol") defaultQty = 20;
+                      setCartInput(prev => ({ ...prev, type: selectedType, quantity: defaultQty }));
+                    }}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold cursor-pointer"
                   >
-                    {bottleSizes.map(bs => (
-                      <option key={bs.id} value={bs.size}>{bs.size}</option>
-                    ))}
+                    <option value="essence">Bibit Aroma (ml)</option>
+                    <option value="bottle">Botol Kemasan (pcs)</option>
+                    <option value="alcohol">Cairan Pelarut (ml)</option>
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
+                {cartInput.type === "essence" && (
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Bibit (ml)</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={newBundling.essenceMl || ""}
-                      onChange={(e) => setNewBundling(prev => ({ ...prev, essenceMl: parseInt(e.target.value) || 0 }))}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold"
-                      required
-                    />
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Aroma (Bibit)</label>
+                    {(() => {
+                      const availableScents = Array.from(new Set(stocks.filter(s => s.type === "essence" && s.scentName).map(s => s.scentName)));
+                      return (
+                        <>
+                          <input
+                            type="text"
+                            list="cart-scents-autocomplete-list"
+                            placeholder="Contoh: Black Opium"
+                            value={cartInput.scentName}
+                            onChange={(e) => setCartInput(prev => ({ ...prev, scentName: e.target.value }))}
+                            className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                          />
+                          <datalist id="cart-scents-autocomplete-list">
+                            {availableScents.map(scent => (
+                              <option key={scent} value={scent} />
+                            ))}
+                          </datalist>
+                        </>
+                      );
+                    })()}
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Absolut (ml) - Otomatis</label>
-                    <div className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-500 font-bold">
-                      {(() => {
-                        const parseSizeNumber = (sizeStr: string): number => {
-                          return parseInt(sizeStr.replace(/[^0-9]/g, "")) || 0;
-                        };
-                        const capacity = parseSizeNumber(newBundling.bottleSize);
-                        return Math.max(0, capacity - (newBundling.essenceMl || 0));
-                      })()} ml
+                )}
+
+                {cartInput.type === "bottle" && (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ukuran Botol</label>
+                      <select
+                        value={cartInput.size}
+                        onChange={(e) => setCartInput(prev => ({ ...prev, size: e.target.value }))}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold cursor-pointer"
+                      >
+                        {bottleSizes.map(bs => (
+                          <option key={bs.id} value={bs.size}>{bs.size}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Bahan Botol</label>
+                      <select
+                        value={cartInput.bottleType}
+                        onChange={(e) => setCartInput(prev => ({ ...prev, bottleType: e.target.value as "Kaca" | "Plastik" }))}
+                        className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold cursor-pointer"
+                      >
+                        <option value="Kaca">Kaca</option>
+                        <option value="Plastik">Plastik</option>
+                      </select>
                     </div>
                   </div>
+                )}
+
+                {cartInput.type === "alcohol" && (
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jenis Pelarut</label>
+                    <select
+                      value={cartInput.solventType}
+                      onChange={(e) => setCartInput(prev => ({ ...prev, solventType: e.target.value as "Absolut Cair" | "Absolut Gel" }))}
+                      className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold cursor-pointer"
+                    >
+                      <option value="Absolut Cair">Absolut Cair</option>
+                      <option value="Absolut Gel">Absolut Gel</option>
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                    {cartInput.type === "bottle" ? "Jumlah Botol (pcs)" : "Volume (ml)"}
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={cartInput.quantity || ""}
+                    onChange={(e) => setCartInput(prev => ({ ...prev, quantity: parseInt(e.target.value) || 0 }))}
+                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (cartInput.type === "essence" && !cartInput.scentName.trim()) {
+                      showToast("Nama aroma wajib diisi!", "error");
+                      return;
+                    }
+                    if (cartInput.quantity <= 0) {
+                      showToast("Jumlah / Volume harus lebih besar dari 0!", "error");
+                      return;
+                    }
+
+                    const newItem: FormulaIngredient = {
+                      type: cartInput.type,
+                      quantity: cartInput.quantity
+                    };
+
+                    if (cartInput.type === "essence") {
+                      newItem.scentName = cartInput.scentName.trim();
+                    } else if (cartInput.type === "bottle") {
+                      newItem.size = cartInput.size;
+                      newItem.bottleType = cartInput.bottleType;
+                    } else if (cartInput.type === "alcohol") {
+                      newItem.solventType = cartInput.solventType;
+                    }
+
+                    setFormulaCart(prev => [...prev, newItem]);
+                    // Reset name/quantity input
+                    setCartInput(prev => ({ ...prev, scentName: "", quantity: prev.type === "bottle" ? 1 : 10 }));
+                    showToast("Bahan berhasil ditambahkan ke formula!", "success");
+                  }}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2 rounded-lg flex items-center justify-center gap-1 cursor-pointer transition-all shadow-sm"
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  Masukkan ke Formula
+                </button>
+              </div>
+
+              {/* SECTION: Formula Cart Ingredients List */}
+              <div className="space-y-2">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Komposisi Formula Paket:</label>
+                {formulaCart.length === 0 ? (
+                  <div className="border-2 border-dashed border-slate-200 rounded-xl p-6 text-center text-slate-400 text-xs italic">
+                    Keranjang Formula Kosong.<br />Silakan tambahkan bahan (bibit, botol, pelarut) di atas.
+                  </div>
+                ) : (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100 bg-slate-50/50">
+                    {formulaCart.map((ing, idx) => (
+                      <div key={idx} className="flex justify-between items-center p-2.5 text-xs bg-white">
+                        <div className="flex items-start gap-2">
+                          <span className={`inline-block text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                            ing.type === "essence" ? "bg-amber-100 text-amber-800" :
+                            ing.type === "bottle" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"
+                          }`}>
+                            {ing.type === "essence" ? "Bibit" : ing.type === "bottle" ? "Botol" : "Pelarut"}
+                          </span>
+                          <span className="font-semibold text-slate-800">
+                            {ing.type === "essence" && ing.scentName}
+                            {ing.type === "bottle" && `${ing.size} (${ing.bottleType})`}
+                            {ing.type === "alcohol" && ing.solventType}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <span className="font-bold text-slate-700">
+                            {ing.quantity} {ing.type === "bottle" ? "pcs" : "ml"}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setFormulaCart(prev => prev.filter((_, i) => i !== idx))}
+                            className="text-rose-500 hover:text-rose-700 p-0.5 transition-colors cursor-pointer"
+                            title="Hapus Bahan"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* SECTION: Package Configuration Form */}
+              <form onSubmit={handleAddBundlingSubmit} className="space-y-4 pt-2 border-t border-slate-200">
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Paket Bundling (Kustom / Kosongkan untuk Auto-fill)</label>
+                  <input
+                    type="text"
+                    placeholder="Contoh: Paket Premium Black Opium 30ml"
+                    value={newBundling.packageName}
+                    onChange={(e) => setNewBundling(prev => ({ ...prev, packageName: e.target.value }))}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:ring-1 focus:ring-emerald-500"
+                  />
+                  <p className="text-[9px] text-slate-400 mt-0.5">Jika dikosongkan, nama akan dirangkai otomatis dari bahan-bahan di atas.</p>
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jenis Pelarut (Solvent)</label>
-                  <select
-                    value={newBundling.solventType || "Absolut Cair"}
-                    onChange={(e) => setNewBundling(prev => ({ ...prev, solventType: e.target.value as "Absolut Cair" | "Absolut Gel" }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 cursor-pointer font-semibold mb-3"
-                    required
-                  >
-                    <option value="Absolut Cair">Absolut Cair</option>
-                    <option value="Absolut Gel">Absolut Gel</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Harga Jual (Rp)</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Harga Jual Paket (Rp)</label>
                   <input
                     type="number"
                     min="1000"
                     value={newBundling.price || ""}
                     onChange={(e) => setNewBundling(prev => ({ ...prev, price: parseInt(e.target.value) || 0 }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:ring-1 focus:ring-emerald-500"
                     required
                   />
                 </div>
 
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Label / Nama Tambahan (Opsional)</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Label / Sufiks Tambahan (Opsional)</label>
                   <input
                     type="text"
                     placeholder="Contoh: Premium, Formula B, Varian 2"
                     value={newBundling.customSuffix || ""}
                     onChange={(e) => setNewBundling(prev => ({ ...prev, customSuffix: e.target.value }))}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 font-semibold focus:ring-1 focus:ring-emerald-500"
                   />
-                  <p className="text-[9px] text-slate-400 mt-0.5">Gunakan label berbeda jika ingin membuat variasi paket lain dengan aroma & ukuran botol yang sama.</p>
+                  <p className="text-[9px] text-slate-400 mt-0.5">Sufiks kurung tambahan di belakang nama paket.</p>
                 </div>
-
-                {newBundling.scentName.trim() && (
-                  <div className="bg-emerald-50/50 p-3 rounded-lg border border-emerald-100 text-[11px] text-slate-600">
-                    <span className="font-bold text-emerald-800 block mb-0.5">Preview Nama Paket (Otomatis):</span>
-                    <p className="font-mono font-bold text-slate-700">
-                      Aroma {newBundling.scentName.trim()} - {newBundling.bottleSize}
-                      {newBundling.customSuffix?.trim() ? ` (${newBundling.customSuffix.trim()})` : ""}
-                    </p>
-                  </div>
-                )}
 
                 {editingBundling ? (
                   <div className="grid grid-cols-2 gap-2">
@@ -2824,7 +3294,7 @@ export default function App() {
                 ) : (
                   <button
                     type="submit"
-                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2 rounded-xl transition-all cursor-pointer shadow"
+                    className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs py-2.5 rounded-xl transition-all cursor-pointer shadow"
                   >
                     Buat Koleksi Paket
                   </button>
@@ -6861,6 +7331,143 @@ export default function App() {
                   </form>
                 </div>
 
+                {/* PRINTER CONNECTIVITY CONTROL PANEL */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm lg:col-span-7 space-y-4 animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                    <Printer className="h-4.5 w-4.5 text-emerald-600" />
+                    <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Konektivitas Printer Fisik (Thermal Bluetooth / USB)</h4>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Metode Koneksi</label>
+                      <select
+                        value={printerConfig.mode}
+                        onChange={(e) => {
+                          const newMode = e.target.value as "system" | "bluetooth" | "usb";
+                          savePrinterConfig({ ...printerConfig, mode: newMode });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 cursor-pointer"
+                      >
+                        <option value="system">Sistem Print Browser / PDF (Default)</option>
+                        <option value="bluetooth">Bluetooth (Direct ESC/POS Raw)</option>
+                        <option value="usb">USB (Direct ESC/POS Raw)</option>
+                      </select>
+                    </div>
+
+                    {printerConfig.mode !== "system" && (
+                      <>
+                        <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                          <div>
+                            <span className="font-bold block text-xs text-slate-700">Auto-connect</span>
+                            <span className="text-[10px] text-slate-400">Hubungkan otomatis saat aplikasi dibuka</span>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={printerConfig.autoConnect}
+                            onChange={(e) => savePrinterConfig({ ...printerConfig, autoConnect: e.target.checked })}
+                            className="h-4 w-4 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="p-3 border rounded-xl flex items-center justify-between bg-slate-50 border-slate-200">
+                          <div>
+                            <span className="font-semibold block text-[10px] text-slate-400 uppercase tracking-wider">Status Koneksi</span>
+                            <span className={`font-bold text-xs ${
+                              printerStatus.startsWith("Connected") ? "text-emerald-600" :
+                              printerStatus.startsWith("Connecting") ? "text-amber-500" : "text-rose-500"
+                            }`}>
+                              {printerStatus}
+                            </span>
+                            {printerConfig.mode === "bluetooth" && printerConfig.deviceName && (
+                              <p className="text-[9px] text-slate-400 mt-0.5">Device Terakhir: {printerConfig.deviceName}</p>
+                            )}
+                          </div>
+
+                          <div className="flex gap-2">
+                            {printerStatus.startsWith("Connected") ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (btDevice) btDevice.gatt.disconnect();
+                                  setBtDevice(null);
+                                  setBtCharacteristic(null);
+                                  setUsbDevice(null);
+                                  setPrinterStatus("Disconnected");
+                                  showToast("Printer diputuskan.", "info");
+                                }}
+                                className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition-colors"
+                              >
+                                Putuskan
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                disabled={isPrinterConnecting}
+                                onClick={() => {
+                                  if (printerConfig.mode === "bluetooth") connectBluetoothPrinter();
+                                  else connectUsbPrinter();
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-3 py-1.5 rounded-lg text-[10px] cursor-pointer transition-colors"
+                              >
+                                {isPrinterConnecting ? "Menghubungkan..." : "Hubungkan Printer"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {printerStatus.startsWith("Connected") && (
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const encoder = new TextEncoder();
+                                const feedAndCut = new Uint8Array([0x1B, 0x40, 0x1B, 0x61, 0x01, 0x1B, 0x45, 0x01]);
+                                const text = encoder.encode("\n\nTEST PRINTER BASTIKA PARFUM\nKoneksi Berhasil!\n\n\n\n");
+                                const cut = new Uint8Array([0x1D, 0x56, 0x41, 0x03]);
+                                const payload = new Uint8Array(feedAndCut.length + text.length + cut.length);
+                                payload.set(feedAndCut, 0);
+                                payload.set(text, feedAndCut.length);
+                                payload.set(cut, feedAndCut.length + text.length);
+
+                                if (printerConfig.mode === "bluetooth" && btCharacteristic) {
+                                  await btCharacteristic.writeValue(payload);
+                                  showToast("Test print dikirim via Bluetooth!", "success");
+                                } else if (printerConfig.mode === "usb" && usbDevice) {
+                                  const endpoint = usbDevice.configuration?.interfaces[0]?.alternates[0]?.endpoints.find(
+                                    (e: any) => e.direction === "out"
+                                  );
+                                  if (endpoint) {
+                                    await usbDevice.transferOut(endpoint.endpointNumber, payload);
+                                    showToast("Test print dikirim via USB!", "success");
+                                  }
+                                }
+                              } catch (err: any) {
+                                showToast(`Gagal test print: ${err.message}`, "error");
+                              }
+                            }}
+                            className="w-full border border-emerald-200 hover:bg-emerald-50 text-emerald-700 font-bold py-2 rounded-xl text-xs text-center transition-colors cursor-pointer"
+                          >
+                            Test Print Kertas Kasir
+                          </button>
+                        )}
+                      </>
+                    )}
+
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-[10px] text-slate-500 leading-relaxed flex gap-2">
+                      <Info className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                      <div>
+                        <p className="font-bold text-slate-700 mb-0.5">Catatan Printer:</p>
+                        <ul className="list-disc pl-3.5 space-y-0.5">
+                          <li><strong>System Print</strong> menggunakan print dialog internal sistem operasi (sangat direkomendasikan karena kompatibel dengan semua jenis device & PDF).</li>
+                          <li>Koneksi <strong>Bluetooth & USB langsung</strong> memerlukan perangkat & browser yang mendukung Web Bluetooth/USB (seperti Chrome/Edge).</li>
+                          <li>Jika koneksi langsung tidak berhasil atau terblokir hak akses, silakan gunakan mode <strong>System Print</strong> sebagai fallback andalan.</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Real-time Preview (Right Column) */}
                 <div className="lg:col-span-5 flex flex-col items-center animate-in fade-in slide-in-from-right-2 duration-300">
                   <div className="w-full max-w-sm mb-3 text-left">
@@ -7879,7 +8486,7 @@ export default function App() {
                     Tutup
                   </button>
                   <button
-                    onClick={() => window.print()}
+                    onClick={() => handlePrintTicket(printTx)}
                     className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-3 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
                     <Printer className="h-4.5 w-4.5" />

@@ -138,6 +138,15 @@ export interface ResellerPackageStock {
   quantity: number;
 }
 
+export interface FormulaIngredient {
+  type: "essence" | "alcohol" | "bottle";
+  scentName?: string;
+  size?: string;
+  bottleType?: "Kaca" | "Plastik";
+  solventType?: "Absolut Cair" | "Absolut Gel";
+  quantity: number;
+}
+
 export interface BundlingPackage {
   id: string;
   packageName: string;
@@ -148,6 +157,7 @@ export interface BundlingPackage {
   price: number;
   solventType?: "Absolut Cair" | "Absolut Gel";
   addedAt: string;
+  ingredients?: FormulaIngredient[];
 }
 
 export interface MasterProduct {
