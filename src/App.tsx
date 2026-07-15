@@ -1025,16 +1025,12 @@ export default function App() {
       showToast("Nama ukuran botol tidak boleh kosong!", "error");
       return;
     }
-    if (newBottlePriceKaca <= 0) {
-      showToast("Harga jual botol kaca harus lebih besar dari 0!", "error");
+    if (newBottlePriceKaca <= 0 || newBottlePricePlastik <= 0) {
+      showToast("Harga jual botol harus lebih besar dari 0!", "error");
       return;
     }
-    if (newBottlePurchasePriceKaca <= 0) {
-      showToast("Harga belanja botol kaca harus lebih besar dari 0!", "error");
-      return;
-    }
-    if (newBottlePurchasePricePlastik <= 0) {
-      showToast("Harga belanja botol plastik harus lebih besar dari 0!", "error");
+    if (newBottlePurchasePriceKaca <= 0 || newBottlePurchasePricePlastik <= 0) {
+      showToast("Harga belanja botol harus lebih besar dari 0!", "error");
       return;
     }
     try {
@@ -1042,7 +1038,7 @@ export default function App() {
       await addBottleSize(
         cleanSize,
         newBottlePriceKaca,
-        0, // pricePlastik is 0 because plastic bottles are not sold
+        newBottlePricePlastik,
         newBottlePurchasePriceKaca,
         newBottlePurchasePricePlastik
       );
@@ -4159,6 +4155,37 @@ export default function App() {
                       />
                     </div>
 
+                    {/* Bottle material selection */}
+                    {saleBottleSize !== "None" && (
+                      <div className="sm:col-span-2">
+                        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Bahan Botol</label>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setSaleBottleType("Kaca")}
+                            className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                              saleBottleType === "Kaca"
+                                ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            Botol Kaca ({formatRupiah(bottleSizes.find(b => b.size === saleBottleSize)?.priceKaca ?? bottleSizes.find(b => b.size === saleBottleSize)?.price ?? 0)})
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setSaleBottleType("Plastik")}
+                            className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                              saleBottleType === "Plastik"
+                                ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                            }`}
+                          >
+                            Botol Plastik ({formatRupiah(bottleSizes.find(b => b.size === saleBottleSize)?.pricePlastik ?? Math.round((bottleSizes.find(b => b.size === saleBottleSize)?.price ?? 0) / 2))})
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Checkbox Bawa Botol Sendiri */}
                     {saleScent !== "Hanya Botol" && (
                       <div className="sm:col-span-2">
@@ -4993,71 +5020,64 @@ export default function App() {
                         </div>
 
                         {showAddBottleSize && (
-                          <div className="mt-3 bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 space-y-4">
-                            <span className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Tambah Ukuran Botol Baru</span>
+                          <div className="mt-3 bg-emerald-50/50 border border-emerald-100 rounded-xl p-4 space-y-3">
+                            <span className="block text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Tambah Ukuran Botol Baru</span>
                             
-                            <div className="space-y-4">
+                            <div className="grid grid-cols-1 gap-3">
                               <div>
-                                <label className="block text-[10px] text-slate-500 mb-1 font-bold uppercase tracking-wider">Nama Ukuran</label>
+                                <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Nama Ukuran</label>
                                 <input
                                   type="text"
                                   placeholder="Contoh: 60ml"
                                   value={newBottleSize}
                                   onChange={(e) => setNewBottleSize(e.target.value)}
-                                  className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold"
+                                  className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
                                 />
                               </div>
                               
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                {/* Botol Kaca Section */}
-                                <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-3">
-                                  <div className="flex items-center gap-1.5 border-b border-slate-100 pb-1.5">
-                                    <span className="inline-block w-2 h-2 rounded-full bg-emerald-500"></span>
-                                    <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Tipe 1: Botol Kaca (Dijual & Belanja)</span>
-                                  </div>
-                                  <div>
-                                    <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Harga Jual Kaca (Rp)</label>
-                                    <input
-                                      type="number"
-                                      placeholder="Contoh: 18000"
-                                      value={newBottlePriceKaca || ""}
-                                      onChange={(e) => setNewBottlePriceKaca(Number(e.target.value))}
-                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white"
-                                    />
-                                  </div>
-                                  <div>
-                                    <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Harga Belanja Kaca (Rp)</label>
-                                    <input
-                                      type="number"
-                                      placeholder="Contoh: 8000"
-                                      value={newBottlePurchasePriceKaca || ""}
-                                      onChange={(e) => setNewBottlePurchasePriceKaca(Number(e.target.value))}
-                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white"
-                                    />
-                                  </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Harga Jual Kaca (Rp)</label>
+                                  <input
+                                    type="number"
+                                    placeholder="Contoh: 18000"
+                                    value={newBottlePriceKaca || ""}
+                                    onChange={(e) => setNewBottlePriceKaca(Number(e.target.value))}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                  />
                                 </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Harga Jual Plastik (Rp)</label>
+                                  <input
+                                    type="number"
+                                    placeholder="Contoh: 12000"
+                                    value={newBottlePricePlastik || ""}
+                                    onChange={(e) => setNewBottlePricePlastik(Number(e.target.value))}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                </div>
+                              </div>
 
-                                {/* Botol Plastik Section */}
-                                <div className="bg-white border border-slate-200 rounded-xl p-3.5 space-y-3 flex flex-col justify-between">
-                                  <div>
-                                    <div className="flex items-center gap-1.5 border-b border-slate-100 pb-1.5">
-                                      <span className="inline-block w-2 h-2 rounded-full bg-amber-500"></span>
-                                      <span className="text-[10px] font-bold text-slate-700 uppercase tracking-wider">Tipe 2: Botol Plastik (Hanya Belanja)</span>
-                                    </div>
-                                    <div className="mt-3">
-                                      <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Harga Belanja Plastik (Rp)</label>
-                                      <input
-                                        type="number"
-                                        placeholder="Contoh: 5000"
-                                        value={newBottlePurchasePricePlastik || ""}
-                                        onChange={(e) => setNewBottlePurchasePricePlastik(Number(e.target.value))}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white"
-                                      />
-                                    </div>
-                                  </div>
-                                  <p className="text-[9.5px] text-slate-400 leading-relaxed italic mt-2">
-                                    * Botol plastik tidak memiliki harga jual karena hanya digunakan untuk merakit formula bundling.
-                                  </p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Harga Belanja Kaca (Rp)</label>
+                                  <input
+                                    type="number"
+                                    placeholder="Contoh: 8000"
+                                    value={newBottlePurchasePriceKaca || ""}
+                                    onChange={(e) => setNewBottlePurchasePriceKaca(Number(e.target.value))}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="block text-[10px] text-slate-400 mb-0.5 font-semibold">Harga Belanja Plastik (Rp)</label>
+                                  <input
+                                    type="number"
+                                    placeholder="Contoh: 5000"
+                                    value={newBottlePurchasePricePlastik || ""}
+                                    onChange={(e) => setNewBottlePurchasePricePlastik(Number(e.target.value))}
+                                    className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                                  />
                                 </div>
                               </div>
                             </div>
@@ -5066,9 +5086,9 @@ export default function App() {
                               <button
                                 type="button"
                                 onClick={handleAddNewBottleSize}
-                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-[11px] transition-colors cursor-pointer shadow-sm"
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-1.5 px-3 rounded-lg text-[11px] transition-colors cursor-pointer"
                               >
-                                Tambah Ukuran
+                                Tambah
                               </button>
                               <button
                                 type="button"
