@@ -60,7 +60,12 @@ import {
   sendBundlingPackageToReseller,
   returBundlingPackageFromReseller,
   addResellerSaleTransaction,
-  settleResellerTransaction
+  settleResellerTransaction,
+  subscribeToMasterProducts,
+  addMasterProduct,
+  updateMasterProduct,
+  deleteMasterProduct,
+  seedMasterProductsIfEmpty
 } from "./dbService";
 import { 
   Shelf as ShelfType, 
@@ -77,7 +82,8 @@ import {
   SaleItem,
   ResellerStock,
   ResellerPackageStock,
-  BundlingPackage
+  BundlingPackage,
+  MasterProduct
 } from "./types";
 import { 
   ShoppingBag, 
@@ -290,6 +296,19 @@ export default function App() {
   const [saleClaimPromo, setSaleClaimPromo] = useState<boolean>(false);
   const [saleNoBottle, setSaleNoBottle] = useState<boolean>(false);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
+
+  // Master Produk State
+  const [masterProducts, setMasterProducts] = useState<MasterProduct[]>([]);
+  const [newMasterProduct, setNewMasterProduct] = useState<Omit<MasterProduct, "updatedAt">>({
+    id: "",
+    name: "",
+    price: 0,
+    category: "essence",
+    referenceKey: ""
+  });
+  const [editingMasterProduct, setEditingMasterProduct] = useState<MasterProduct | null>(null);
+  const [masterSearch, setMasterSearch] = useState("");
+  const [masterCategoryFilter, setMasterCategoryFilter] = useState<string>("all");
 
   // Purchase stock state
   const [purchaseCategory, setPurchaseCategory] = useState<"bibit" | "alkohol" | "botol" | "other">("bibit");
@@ -509,6 +528,9 @@ export default function App() {
   useEffect(() => {
     if (!userRole) return; // Only sync when logged in
 
+    // Run master products auto-seeding if empty
+    seedMasterProductsIfEmpty();
+
     const unsubCash = subscribeToCashBalance(setCashBalance);
     const unsubShelves = subscribeToShelves(setShelves);
     const unsubPrices = subscribeToPrices(setPrices);
@@ -526,6 +548,7 @@ export default function App() {
     const unsubResellerStocks = subscribeToResellerStocks(setResellerStocks);
     const unsubResellerPackageStocks = subscribeToResellerPackageStocks(setResellerPackageStocks);
     const unsubBundlingPackages = subscribeToBundlingPackages(setBundlingPackages);
+    const unsubMasterProducts = subscribeToMasterProducts(setMasterProducts);
 
     let unsubSalaries = () => {};
     let unsubLedger = () => {};
@@ -550,6 +573,7 @@ export default function App() {
       unsubResellerStocks();
       unsubResellerPackageStocks();
       unsubBundlingPackages();
+      unsubMasterProducts();
     };
   }, [userRole]);
 
@@ -557,6 +581,7 @@ export default function App() {
   useEffect(() => {
     if (customEmail) {
       seedInitialDataIfEmpty();
+      seedMasterProductsIfEmpty();
     }
   }, [customEmail]);
 
@@ -581,15 +606,24 @@ export default function App() {
 
     if (saleItems.length > 0) {
       subtotal = saleItems.reduce((acc, item) => {
-        const matchedPrice = prices.find(p => p.scentName === item.scentName);
-        const pricePerMl = matchedPrice ? matchedPrice.pricePerMl : 0;
+        // Find scent price from Master Products, fallback to prices collection
+        const matchedProduct = masterProducts.find(p => p.category === "essence" && p.referenceKey === item.scentName);
+        const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === item.scentName)?.pricePerMl || 0);
+
         let bottleFee = 0;
         if (item.bottleSize !== "None") {
-          const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
-          if (matchedBottle) {
-            bottleFee = item.bottleType === "Plastik"
-              ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
-              : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+          const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
+          const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
+          if (matchedBottleProduct) {
+            bottleFee = matchedBottleProduct.price;
+          } else {
+            // fallback
+            const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
+            if (matchedBottle) {
+              bottleFee = item.bottleType === "Plastik"
+                ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
+                : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+            }
           }
         }
         if (item.noBottleStockDeduct || saleDiscountType === "free_bottle") {
@@ -600,15 +634,23 @@ export default function App() {
       }, 0);
     } else {
       // Fallback to single item from form
-      const matchedPrice = prices.find(p => p.scentName === saleScent);
-      const pricePerMl = matchedPrice ? matchedPrice.pricePerMl : 0;
+      const matchedProduct = masterProducts.find(p => p.category === "essence" && p.referenceKey === saleScent);
+      const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === saleScent)?.pricePerMl || 0);
+
       let bottleFee = 0;
       if (saleBottleSize !== "None") {
-        const matchedBottle = bottleSizes.find(b => b.size === saleBottleSize);
-        if (matchedBottle) {
-          bottleFee = saleBottleType === "Plastik"
-            ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
-            : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+        const bType = saleBottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
+        const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === saleBottleSize);
+        if (matchedBottleProduct) {
+          bottleFee = matchedBottleProduct.price;
+        } else {
+          // fallback
+          const matchedBottle = bottleSizes.find(b => b.size === saleBottleSize);
+          if (matchedBottle) {
+            bottleFee = saleBottleType === "Plastik"
+              ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
+              : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+          }
         }
       }
       if (saleDiscountType === "free_bottle" || saleNoBottle) {
@@ -625,7 +667,7 @@ export default function App() {
     }
 
     setSaleTotalPrice(computedTotal);
-  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleDiscountNominal, saleNoBottle]);
+  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleDiscountNominal, saleNoBottle, masterProducts, saleBottleType]);
 
   // Currency Formatter helper (Indonesian Rupiah)
   const formatRupiah = (value: number) => {
@@ -744,6 +786,17 @@ export default function App() {
     }
     try {
       await addShelf(newShelf);
+      
+      // Upsert into master products
+      const scentId = "prod_essence_" + newShelf.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await addMasterProduct({
+        id: scentId,
+        name: `Bibit ${newShelf.scentName}`,
+        price: newShelf.pricePerMl || 3500,
+        category: "essence",
+        referenceKey: newShelf.scentName
+      });
+
       showToast(`Rak ${newShelf.rackNumber} (${newShelf.scentName}) berhasil ditambahkan!`);
       setNewShelf({ rackNumber: "", scentName: "", pricePerMl: 3500 });
     } catch (err: any) {
@@ -804,7 +857,19 @@ export default function App() {
     e.preventDefault();
     if (!editingPrice) return;
     try {
+      // 1. Update legacy price
       await updateScentPrice(editingPrice.scentName, editingPrice.pricePerMl);
+
+      // 2. Update or create the Master Product for this essence
+      const id = "prod_essence_" + editingPrice.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await addMasterProduct({
+        id,
+        name: `Bibit ${editingPrice.scentName}`,
+        price: editingPrice.pricePerMl,
+        category: "essence",
+        referenceKey: editingPrice.scentName
+      });
+
       showToast(`Harga aroma ${editingPrice.scentName} berhasil diupdate ke Rp ${editingPrice.pricePerMl.toLocaleString()}/ml!`);
       setEditingPrice(null);
     } catch (err: any) {
@@ -1922,6 +1987,16 @@ export default function App() {
           price,
           solventType
         });
+        
+        const prodId = "prod_bundling_" + autoPackageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+        await addMasterProduct({
+          id: prodId,
+          name: `Paket Bundling ${autoPackageName}`,
+          price: price,
+          category: "bundling",
+          referenceKey: autoPackageName
+        });
+
         showToast(`Formula paket bundling "${autoPackageName}" berhasil diubah!`, "success");
         setEditingBundling(null);
       } else {
@@ -1934,6 +2009,16 @@ export default function App() {
           price,
           solventType
         });
+
+        const prodId = "prod_bundling_" + autoPackageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+        await addMasterProduct({
+          id: prodId,
+          name: `Paket Bundling ${autoPackageName}`,
+          price: price,
+          category: "bundling",
+          referenceKey: autoPackageName
+        });
+
         showToast(`Formula paket bundling "${autoPackageName}" berhasil ditambahkan!`, "success");
       }
       const updatedFormula = {
@@ -2050,7 +2135,8 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {myPackageStocks.map(pkgStock => {
                   const pkgFormula = bundlingPackages.find(p => p.id === pkgStock.packageId);
-                  const price = pkgFormula ? pkgFormula.price : 0;
+                  const matchedMaster = masterProducts.find(p => p.category === "bundling" && p.referenceKey === pkgStock.packageName);
+                  const price = matchedMaster ? matchedMaster.price : (pkgFormula ? pkgFormula.price : 0);
                   const isSelected = resellerSaleForm.packageId === pkgStock.packageId;
 
                   return (
@@ -2117,7 +2203,8 @@ export default function App() {
               }
 
               const pkgFormula = bundlingPackages.find(p => p.id === selectedStock.packageId);
-              const price = pkgFormula ? pkgFormula.price : 0;
+              const matchedMaster = masterProducts.find(p => p.category === "bundling" && p.referenceKey === selectedStock.packageName);
+              const price = matchedMaster ? matchedMaster.price : (pkgFormula ? pkgFormula.price : 0);
               const isStockOk = selectedStock.quantity >= resellerSaleForm.quantity;
               const totalAmount = price * resellerSaleForm.quantity;
 
@@ -2587,7 +2674,12 @@ export default function App() {
 
                       <div className="mt-4 pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
                         <span className="font-semibold text-slate-500">Harga Jual:</span>
-                        <span className="font-extrabold text-emerald-600">Rp {pkg.price.toLocaleString("id-ID")}</span>
+                        <span className="font-extrabold text-emerald-600">
+                          {(() => {
+                            const matchedMaster = masterProducts.find(p => p.category === "bundling" && p.referenceKey === pkg.packageName);
+                            return formatRupiah(matchedMaster ? matchedMaster.price : pkg.price);
+                          })()}
+                        </span>
                       </div>
                     </div>
                   ))}
@@ -3015,6 +3107,19 @@ export default function App() {
             Inventori Stok Master
           </button>
 
+          {userRole === "admin" && (
+            <button
+              id="nav-master-products-btn"
+              onClick={() => setActiveTab("master_products")}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                activeTab === "master_products" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              }`}
+            >
+              <Package className="h-4 w-4" />
+              Master Produk
+            </button>
+          )}
+
           <button
             id="nav-sales-btn"
             onClick={() => setActiveTab("sales")}
@@ -3144,6 +3249,7 @@ export default function App() {
                      activeTab === 'shelves' ? 'Manajemen Rak Aroma' :
                      activeTab === 'stocks' ? 'Manajemen Stok & Inventori' :
                      activeTab === 'sales' ? 'Kasir Penjualan Parfum' :
+                     activeTab === 'master_products' ? 'Master Database Produk (Source of Truth)' :
                      activeTab === 'purchases' ? 'Pencatatan Belanja Stok' :
                      activeTab === 'accounting' ? 'Buku Kas & Laporan Keuangan' :
                      activeTab === 'users' ? 'Manajemen Akses Karyawan (Client)' :
@@ -3766,7 +3872,10 @@ export default function App() {
                               {s.scentName}
                               {userRole === "admin" && (
                                 <button 
-                                  onClick={() => setEditingPrice({ scentName: s.scentName, pricePerMl: s.pricePerMl })}
+                                  onClick={() => {
+                                    const matchedMaster = masterProducts.find(p => p.category === "essence" && p.referenceKey === s.scentName);
+                                    setEditingPrice({ scentName: s.scentName, pricePerMl: matchedMaster ? matchedMaster.price : s.pricePerMl });
+                                  }}
                                   className="text-slate-400 hover:text-emerald-600 p-0.5 rounded transition-colors"
                                   title="Edit Harga Aroma"
                                 >
@@ -3774,7 +3883,12 @@ export default function App() {
                                 </button>
                               )}
                             </td>
-                            <td className="py-3 px-4 font-mono font-bold text-emerald-700">{formatRupiah(s.pricePerMl)}</td>
+                            <td className="py-3 px-4 font-mono font-bold text-emerald-700">
+                              {(() => {
+                                const matchedMaster = masterProducts.find(p => p.category === "essence" && p.referenceKey === s.scentName);
+                                return formatRupiah(matchedMaster ? matchedMaster.price : s.pricePerMl);
+                              })()}
+                            </td>
                             {userRole === "admin" && (
                               <td className="py-3 px-4 text-right">
                                 <button
@@ -3792,6 +3906,356 @@ export default function App() {
                           <tr>
                             <td colSpan={userRole === 'admin' ? 4 : 3} className="py-8 text-center text-slate-400 italic">
                               Tidak ada letak rak atau aroma yang cocok dengan pencarian Anda.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          )}
+
+          {/* ==========================================
+              2B. MASTER PRODUK VIEW (Single Source of Truth)
+              ========================================== */}
+          {activeTab === "master_products" && userRole === "admin" && (
+            <div className="space-y-6">
+              {/* Stats overview */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Master Produk</span>
+                  <span className="text-2xl font-extrabold text-slate-900 block mt-1">{masterProducts.length} <span className="text-xs font-semibold text-slate-500">item</span></span>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Koleksi Bibit Aroma</span>
+                  <span className="text-2xl font-extrabold text-emerald-600 block mt-1">
+                    {masterProducts.filter(p => p.category === "essence").length} <span className="text-xs font-semibold text-slate-500">scent</span>
+                  </span>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Varian Botol Kemasan</span>
+                  <span className="text-2xl font-extrabold text-blue-600 block mt-1">
+                    {masterProducts.filter(p => p.category === "bottle_kaca" || p.category === "bottle_plastik").length} <span className="text-xs font-semibold text-slate-500">jenis</span>
+                  </span>
+                </div>
+                <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Paket Bundling Aktif</span>
+                  <span className="text-2xl font-extrabold text-indigo-600 block mt-1">
+                    {masterProducts.filter(p => p.category === "bundling").length} <span className="text-xs font-semibold text-slate-500">paket</span>
+                  </span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Form Tambah/Edit Master Product */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm h-fit">
+                  <h3 className="font-bold text-sm text-slate-900 mb-4 flex items-center gap-2">
+                    <PlusCircle className="h-4 w-4 text-emerald-600" />
+                    {editingMasterProduct ? "Edit Master Produk" : "Tambah Master Produk Baru"}
+                  </h3>
+
+                  <form
+                    onSubmit={async (e) => {
+                      e.preventDefault();
+                      const targetProd = editingMasterProduct || newMasterProduct;
+                      if (!targetProd.id || !targetProd.name || targetProd.price < 0 || !targetProd.referenceKey) {
+                        showToast("Harap isi semua field dengan benar!", "error");
+                        return;
+                      }
+                      try {
+                        if (editingMasterProduct) {
+                          await updateMasterProduct(editingMasterProduct.id, {
+                            name: editingMasterProduct.name,
+                            price: editingMasterProduct.price,
+                            category: editingMasterProduct.category,
+                            referenceKey: editingMasterProduct.referenceKey
+                          });
+                          showToast(`Produk master "${editingMasterProduct.name}" berhasil diperbarui!`, "success");
+                          setEditingMasterProduct(null);
+                        } else {
+                          // Check for duplicate ID
+                          if (masterProducts.some(p => p.id === newMasterProduct.id)) {
+                            showToast("ID Produk sudah digunakan!", "error");
+                            return;
+                          }
+                          await addMasterProduct(newMasterProduct);
+                          showToast(`Produk master "${newMasterProduct.name}" berhasil ditambahkan!`, "success");
+                          setNewMasterProduct({
+                            id: "",
+                            name: "",
+                            price: 0,
+                            category: "essence",
+                            referenceKey: ""
+                          });
+                        }
+                      } catch (err: any) {
+                        showToast(err.message || "Gagal menyimpan master produk", "error");
+                      }
+                    }}
+                    className="space-y-4"
+                  >
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">ID Produk (Unique Key)</label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: prod_essence_bacarat"
+                        disabled={!!editingMasterProduct}
+                        value={editingMasterProduct ? editingMasterProduct.id : newMasterProduct.id}
+                        onChange={(e) => {
+                          if (editingMasterProduct) return;
+                          setNewMasterProduct({ ...newMasterProduct, id: e.target.value.toLowerCase().trim().replace(/[^a-z0-9_]+/g, "") });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white disabled:opacity-50 text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Produk Terkini</label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Bibit Bacarat, Botol Kaca 30ml"
+                        value={editingMasterProduct ? editingMasterProduct.name : newMasterProduct.name}
+                        onChange={(e) => {
+                          if (editingMasterProduct) {
+                            setEditingMasterProduct({ ...editingMasterProduct, name: e.target.value });
+                          } else {
+                            setNewMasterProduct({ ...newMasterProduct, name: e.target.value });
+                          }
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Kategori Produk</label>
+                      <select
+                        value={editingMasterProduct ? editingMasterProduct.category : newMasterProduct.category}
+                        onChange={(e) => {
+                          const cat = e.target.value as any;
+                          if (editingMasterProduct) {
+                            setEditingMasterProduct({ ...editingMasterProduct, category: cat });
+                          } else {
+                            setNewMasterProduct({ ...newMasterProduct, category: cat });
+                          }
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-bold"
+                      >
+                        <option value="essence">Bibit Scent Essence</option>
+                        <option value="bottle_kaca">Botol Kemasan Kaca</option>
+                        <option value="bottle_plastik">Botol Kemasan Plastik</option>
+                        <option value="bundling">Paket Bundling</option>
+                        <option value="other">Lain-lain</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
+                        Key Referensi Relasi 
+                        <span className="text-[9px] text-slate-400 font-normal lowercase block mt-0.5">
+                          (ScentName untuk bibit, Size '30ml' untuk botol, PackageName untuk bundling)
+                        </span>
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Bacarat, 30ml, Paket Hebat"
+                        value={editingMasterProduct ? editingMasterProduct.referenceKey : newMasterProduct.referenceKey}
+                        onChange={(e) => {
+                          if (editingMasterProduct) {
+                            setEditingMasterProduct({ ...editingMasterProduct, referenceKey: e.target.value });
+                          } else {
+                            setNewMasterProduct({ ...newMasterProduct, referenceKey: e.target.value });
+                          }
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Harga Jual Terkini (Single Source of Truth)</label>
+                      <input
+                        type="number"
+                        placeholder="Contoh: 3500"
+                        value={(editingMasterProduct ? editingMasterProduct.price : newMasterProduct.price) || ""}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          if (editingMasterProduct) {
+                            setEditingMasterProduct({ ...editingMasterProduct, price: val });
+                          } else {
+                            setNewMasterProduct({ ...newMasterProduct, price: val });
+                          }
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800 font-medium"
+                      />
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      {editingMasterProduct && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingMasterProduct(null)}
+                          className="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold py-2.5 rounded-xl text-xs transition-colors text-center cursor-pointer"
+                        >
+                          Batal
+                        </button>
+                      )}
+                      <button
+                        type="submit"
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                      >
+                        <Check className="h-4 w-4" />
+                        {editingMasterProduct ? "Simpan" : "Daftarkan"}
+                      </button>
+                    </div>
+                  </form>
+
+                  {/* Seed Sync Info box */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs text-slate-600 leading-relaxed mt-6 space-y-2.5">
+                    <div className="flex gap-2">
+                      <Info className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block text-slate-800">Relational Database Core</span>
+                        Master Produk bertindak sebagai satu-satunya database harga yang sah. Seluruh modul kasir, penataan rak, dan bundling paket akan menarik harga dari modul ini secara real-time.
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        if (confirm("Seeding ulang akan mengimpor seluruh bibit aroma, kemasan botol, dan bundling yang ada saat ini ke database Master Produk. Lanjutkan?")) {
+                          try {
+                            await seedMasterProductsIfEmpty();
+                            showToast("Sinkronisasi & Impor data master produk berhasil!", "success");
+                          } catch (err: any) {
+                            showToast(err.message, "error");
+                          }
+                        }
+                      }}
+                      className="w-full py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl text-[10px] transition-colors uppercase tracking-wider flex items-center justify-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className="h-3 w-3" />
+                      Seed Ulang / Sinkronisasi Data
+                    </button>
+                  </div>
+                </div>
+
+                {/* Master Product List Table */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm lg:col-span-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+                    <div>
+                      <h3 className="font-bold text-sm text-slate-900">Katalog Database Master Produk</h3>
+                      <p className="text-[11px] text-slate-500">Daftar seluruh item, bibit, kemasan, dan bundling dalam sistem.</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Search */}
+                      <div className="relative">
+                        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Cari produk..."
+                          value={masterSearch}
+                          onChange={(e) => setMasterSearch(e.target.value)}
+                          className="bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-medium"
+                        />
+                      </div>
+                      {/* Category Filter */}
+                      <select
+                        value={masterCategoryFilter}
+                        onChange={(e) => setMasterCategoryFilter(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-semibold cursor-pointer"
+                      >
+                        <option value="all">Semua Kategori</option>
+                        <option value="essence">Bibit Scent Essence</option>
+                        <option value="bottle_kaca">Botol Kaca</option>
+                        <option value="bottle_plastik">Botol Plastik</option>
+                        <option value="bundling">Paket Bundling</option>
+                        <option value="other">Lain-lain</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wider text-[10px] font-bold">
+                          <th className="py-3 px-4">ID Produk</th>
+                          <th className="py-3 px-4">Nama Produk</th>
+                          <th className="py-3 px-4">Kategori</th>
+                          <th className="py-3 px-4">Relasi Key</th>
+                          <th className="py-3 px-4">Harga Jual</th>
+                          <th className="py-3 px-4 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {masterProducts
+                          .filter(p => {
+                            const matchSearch = p.name.toLowerCase().includes(masterSearch.toLowerCase()) || p.id.toLowerCase().includes(masterSearch.toLowerCase());
+                            const matchCat = masterCategoryFilter === "all" || p.category === masterCategoryFilter;
+                            return matchSearch && matchCat;
+                          })
+                          .map((p) => (
+                            <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="py-3 px-4 font-mono font-semibold text-slate-500 text-[10px]">
+                                {p.id}
+                              </td>
+                              <td className="py-3 px-4 font-bold text-slate-800">
+                                {p.name}
+                              </td>
+                              <td className="py-3 px-4">
+                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                                  p.category === "essence" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                  p.category === "bottle_kaca" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                  p.category === "bottle_plastik" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                  p.category === "bundling" ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
+                                  "bg-slate-50 text-slate-700 border-slate-200"
+                                }`}>
+                                  {p.category === "essence" ? "Bibit" :
+                                   p.category === "bottle_kaca" ? "Botol Kaca" :
+                                   p.category === "bottle_plastik" ? "Botol Plastik" :
+                                   p.category === "bundling" ? "Bundling" :
+                                   "Lain-lain"}
+                                </span>
+                              </td>
+                              <td className="py-3 px-4 text-slate-600 font-medium">
+                                {p.referenceKey}
+                              </td>
+                              <td className="py-3 px-4 font-mono font-extrabold text-emerald-700">
+                                {formatRupiah(p.price)}
+                              </td>
+                              <td className="py-3 px-4 text-right">
+                                <div className="flex justify-end gap-1.5">
+                                  <button
+                                    onClick={() => setEditingMasterProduct(p)}
+                                    className="text-slate-400 hover:text-emerald-600 p-1 rounded-lg transition-colors cursor-pointer"
+                                    title="Edit Produk"
+                                  >
+                                    <Edit3 className="h-4 w-4" />
+                                  </button>
+                                  <button
+                                    onClick={async () => {
+                                      if (confirm(`Apakah Anda yakin ingin menghapus produk master "${p.name}"? Ini akan mempengaruhi modul relational lainnya.`)) {
+                                        try {
+                                          await deleteMasterProduct(p.id);
+                                          showToast(`Produk master "${p.name}" berhasil dihapus.`);
+                                        } catch (err: any) {
+                                          showToast(err.message, "error");
+                                        }
+                                      }
+                                    }}
+                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-colors cursor-pointer"
+                                    title="Hapus Produk"
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ))}
+                        {masterProducts.length === 0 && (
+                          <tr>
+                            <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                              Tidak ada master produk terdaftar. Klik tombol "Seed Ulang / Sinkronisasi Data" untuk mengimpor otomatis.
                             </td>
                           </tr>
                         )}

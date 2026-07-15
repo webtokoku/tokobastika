@@ -29,7 +29,8 @@ import {
   Customer,
   ResellerStock,
   ResellerPackageStock,
-  BundlingPackage
+  BundlingPackage,
+  MasterProduct
 } from "./types";
 
 // Helper for unique ID generation if Firestore auto-id isn't used
@@ -2010,6 +2011,125 @@ export async function settleResellerTransaction(txId: string, operatorEmail: str
       referenceId: txId
     });
   });
+}
+
+// ==========================================
+// MASTER PRODUK SERVICE (Single Source of Truth)
+// ==========================================
+export function subscribeToMasterProducts(
+  callback: (products: MasterProduct[]) => void,
+  errorCallback?: (error: any) => void
+) {
+  const colRef = collection(db, "master_products");
+  return onSnapshot(
+    query(colRef, orderBy("name", "asc")),
+    async (snapshot) => {
+      const list: MasterProduct[] = [];
+      snapshot.forEach((docSnap) => {
+        list.push(docSnap.data() as MasterProduct);
+      });
+      callback(list);
+    },
+    (error) => {
+      if (errorCallback) {
+        errorCallback(error);
+      } else {
+        console.error("Error in subscribeToMasterProducts:", error);
+      }
+    }
+  );
+}
+
+export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">) {
+  const id = product.id.trim();
+  await setDoc(doc(db, "master_products", id), {
+    ...product,
+    id,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+export async function updateMasterProduct(id: string, updates: Partial<Omit<MasterProduct, "id">>) {
+  await updateDoc(doc(db, "master_products", id), {
+    ...updates,
+    updatedAt: new Date().toISOString()
+  });
+}
+
+export async function deleteMasterProduct(id: string) {
+  await deleteDoc(doc(db, "master_products", id));
+}
+
+export async function seedMasterProductsIfEmpty() {
+  const masterRef = collection(db, "master_products");
+  const masterSnap = await getDocs(masterRef);
+  
+  if (masterSnap.empty) {
+    console.log("Seeding master products from existing data...");
+    
+    // 1. Seed Essences (Scent Prices)
+    const pricesSnap = await getDocs(collection(db, "prices"));
+    for (const docSnap of pricesSnap.docs) {
+      const data = docSnap.data();
+      const scentName = data.scentName;
+      const pricePerMl = data.pricePerMl;
+      const id = "prod_essence_" + scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await setDoc(doc(db, "master_products", id), {
+        id,
+        name: `Bibit ${scentName}`,
+        price: pricePerMl,
+        category: "essence",
+        referenceKey: scentName,
+        updatedAt: new Date().toISOString()
+      });
+    }
+    
+    // 2. Seed Bottle Sizes
+    const bottlesSnap = await getDocs(collection(db, "bottle_sizes"));
+    for (const docSnap of bottlesSnap.docs) {
+      const data = docSnap.data();
+      const size = data.size;
+      const priceKaca = data.priceKaca ?? data.price ?? 10000;
+      const pricePlastik = data.pricePlastik ?? Math.round((data.price ?? 10000) / 2);
+      
+      const idKaca = "prod_bottle_kaca_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await setDoc(doc(db, "master_products", idKaca), {
+        id: idKaca,
+        name: `Botol Kaca ${size}`,
+        price: priceKaca,
+        category: "bottle_kaca",
+        referenceKey: size,
+        updatedAt: new Date().toISOString()
+      });
+      
+      const idPlastik = "prod_bottle_plastik_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await setDoc(doc(db, "master_products", idPlastik), {
+        id: idPlastik,
+        name: `Botol Plastik ${size}`,
+        price: pricePlastik,
+        category: "bottle_plastik",
+        referenceKey: size,
+        updatedAt: new Date().toISOString()
+      });
+    }
+    
+    // 3. Seed Bundling Packages
+    const bundlingSnap = await getDocs(collection(db, "bundling_packages"));
+    for (const docSnap of bundlingSnap.docs) {
+      const data = docSnap.data();
+      const packageName = data.packageName;
+      const price = data.price ?? 35000;
+      const id = "prod_bundling_" + packageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await setDoc(doc(db, "master_products", id), {
+        id,
+        name: `Paket Bundling ${packageName}`,
+        price: price,
+        category: "bundling",
+        referenceKey: packageName,
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
 }
 
 

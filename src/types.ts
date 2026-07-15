@@ -150,5 +150,14 @@ export interface BundlingPackage {
   addedAt: string;
 }
 
+export interface MasterProduct {
+  id: string;
+  name: string;
+  price: number;
+  category: "essence" | "bottle_kaca" | "bottle_plastik" | "bundling" | "other";
+  referenceKey: string; // Linking key: scentName for essence, size for bottles, packageName for bundling
+  updatedAt: string;
+}
+
 
 
