@@ -73,6 +73,12 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // Master Products / Master Database Produk (Source of Truth)
+    match /master_products/{productId} {
+      allow read: if isWhitelisted();
+      allow write: if isAdmin();
+    }
+
     // Stocks / Stok Master
     match /stocks/{stockId} {
       allow read: if isWhitelisted();
