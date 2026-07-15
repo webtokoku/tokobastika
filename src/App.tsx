@@ -250,7 +250,7 @@ export default function App() {
   };
 
   // Helper to format receipt for thermal printers using standard ESC/POS
-  const formatReceiptToEscPos = (tx: SaleItem, settings: InvoiceSettings): Uint8Array => {
+  const formatReceiptToEscPos = (tx: any, settings: InvoiceSettings): Uint8Array => {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
 
@@ -464,7 +464,7 @@ export default function App() {
     autoReconnect();
   }, [printerConfig.mode]);
 
-  const handlePrintTicket = async (tx: SaleItem) => {
+  const handlePrintTicket = async (tx: any) => {
     if (printerConfig.mode === "system") {
       window.print();
       return;
@@ -2205,12 +2205,19 @@ export default function App() {
     const reqEssence = selectedPkg.essenceMl * quantity;
     const reqAlcohol = selectedPkg.alcoholMl * quantity;
 
-    const availBottle = stocks.find(s => s.type === "bottle" && s.size === selectedPkg.bottleSize)?.quantity || 0;
+    const bottleIngredient = selectedPkg.ingredients?.find(i => i.type === "bottle") || { type: "bottle", size: selectedPkg.bottleSize, bottleType: "Kaca" as const };
+    const bType = bottleIngredient.bottleType || "Kaca";
+
+    const availBottle = stocks.find(
+      s => s.type === "bottle" && 
+      s.size === selectedPkg.bottleSize && 
+      (s.bottleType || "Kaca").toLowerCase() === bType.toLowerCase()
+    )?.quantity || 0;
     const availEssence = stocks.find(s => s.type === "essence" && s.scentName?.trim().toLowerCase() === selectedPkg.scentName?.trim().toLowerCase())?.quantity || 0;
     const availAlcohol = stocks.find(s => s.type === "alcohol")?.quantity || 0;
 
     if (availBottle < reqBottle) {
-      showToast(`Stok utama botol ukuran ${selectedPkg.bottleSize} tidak mencukupi! Tersedia: ${availBottle} pcs, Butuh: ${reqBottle} pcs`, "error");
+      showToast(`Stok utama botol ${selectedPkg.bottleSize} (${bType}) tidak mencukupi! Tersedia: ${availBottle} pcs, Butuh: ${reqBottle} pcs`, "error");
       return;
     }
     if (availEssence < reqEssence) {
@@ -2937,7 +2944,14 @@ export default function App() {
                   const reqEssence = selectedPkg.essenceMl * sendPackageForm.quantity;
                   const reqAlcohol = selectedPkg.alcoholMl * sendPackageForm.quantity;
 
-                  const availBottle = stocks.find(s => s.type === "bottle" && s.size === selectedPkg.bottleSize)?.quantity || 0;
+                  const bottleIngredient = selectedPkg.ingredients?.find(i => i.type === "bottle") || { type: "bottle", size: selectedPkg.bottleSize, bottleType: "Kaca" as const };
+                  const bType = bottleIngredient.bottleType || "Kaca";
+
+                  const availBottle = stocks.find(
+                    s => s.type === "bottle" && 
+                    s.size === selectedPkg.bottleSize && 
+                    (s.bottleType || "Kaca").toLowerCase() === bType.toLowerCase()
+                  )?.quantity || 0;
                   const availEssence = stocks.find(s => s.type === "essence" && s.scentName === selectedPkg.scentName)?.quantity || 0;
                   const availAlcohol = stocks.find(s => s.id === (selectedPkg.solventType === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair"))?.quantity || 0;
 
@@ -2950,7 +2964,7 @@ export default function App() {
                     <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-1.5 text-xs">
                       <span className="font-bold text-slate-600 block text-[10px] uppercase">Estimasi Bahan Diperlukan:</span>
                       <div className="flex justify-between">
-                        <span>Botol {selectedPkg.bottleSize}:</span>
+                        <span>Botol {selectedPkg.bottleSize} ({bType}):</span>
                         <span className={hasEnoughBottle ? "text-emerald-600" : "text-rose-600 font-bold"}>
                           {reqBottle} pcs (Stok: {availBottle})
                         </span>
@@ -4789,7 +4803,7 @@ export default function App() {
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stok Botol Kosong</span>
                     <h4 className="text-2xl font-extrabold text-slate-900 font-mono mt-1">
-                      {stocks.filter(s => s.type === "bottle").reduce((sum, s) => sum + s.quantity, 0)} unit
+                      {stocks.filter(s => s.type === "bottle" && s.bottleType).reduce((sum, s) => sum + s.quantity, 0)} unit
                     </h4>
                     <p className="text-[10px] text-slate-500 mt-2">Mencakup botol ukuran 30ml, 50ml, dan 100ml.</p>
                   </div>
@@ -4871,7 +4885,7 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {stocks.filter(s => s.type === "bottle" || s.type === "alcohol").map((s) => (
+                          {stocks.filter(s => s.type === "alcohol" || (s.type === "bottle" && s.bottleType)).map((s) => (
                             <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
                               <td className="py-3 px-4 font-bold text-slate-800">
                                 {s.type === "alcohol" 

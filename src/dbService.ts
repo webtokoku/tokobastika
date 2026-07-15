@@ -266,9 +266,61 @@ export async function updateScentPrice(scentName: string, newPrice: number) {
 export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
   return onSnapshot(collection(db, "stocks"), (snapshot) => {
     const list: StockItem[] = [];
+    const legacyToMigrate: { size: string; quantity: number; docId: string }[] = [];
+
     snapshot.forEach((docSnap) => {
-      list.push(docSnap.data() as StockItem);
+      const data = docSnap.data() as StockItem;
+      list.push(data);
+
+      // If we find a legacy bottle document like bottle_30ml with quantity > 0
+      if (data.type === "bottle" && !data.bottleType && data.id === `bottle_${data.size}`) {
+        if (data.quantity > 0) {
+          legacyToMigrate.push({
+            size: data.size || "30ml",
+            quantity: data.quantity,
+            docId: data.id
+          });
+        }
+      }
     });
+
+    if (legacyToMigrate.length > 0) {
+      // Run async migration in background
+      (async () => {
+        for (const item of legacyToMigrate) {
+          const targetKacaId = `bottle_${item.size}_kaca`;
+          const targetRef = doc(db, "stocks", targetKacaId);
+          try {
+            await runTransaction(db, async (transaction) => {
+              const legacyRef = doc(db, "stocks", item.docId);
+              const legacySnap = await transaction.get(legacyRef);
+              const targetSnap = await transaction.get(targetRef);
+
+              if (legacySnap.exists() && (legacySnap.data().quantity || 0) > 0) {
+                const legacyQty = legacySnap.data().quantity || 0;
+                const currentKacaQty = targetSnap.exists() ? (targetSnap.data().quantity || 0) : 0;
+
+                // Migrate legacy quantity to glass bottle stock
+                transaction.set(targetRef, {
+                  id: targetKacaId,
+                  type: "bottle",
+                  size: item.size,
+                  bottleType: "Kaca",
+                  quantity: currentKacaQty + legacyQty
+                }, { merge: true });
+
+                // Reset legacy quantity to 0 so we don't migrate again
+                transaction.update(legacyRef, { quantity: 0 });
+                console.log(`Migrated legacy bottle stock ${item.docId} (${legacyQty} unit) to ${targetKacaId}`);
+              }
+            });
+          } catch (e) {
+            console.error("Failed migrating legacy bottle stock:", e);
+          }
+        }
+      })();
+    }
+
     callback(list);
   });
 }
@@ -1886,7 +1938,7 @@ export async function transferStockToReseller(
     } else if (type === "alcohol") {
       masterStockId = scentName === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair";
     } else if (type === "bottle") {
-      masterStockId = `bottle_${size}`;
+      masterStockId = `bottle_${size}_kaca`;
     }
 
     const masterStockRef = doc(db, "stocks", masterStockId);
