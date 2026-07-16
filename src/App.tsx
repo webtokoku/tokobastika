@@ -59,6 +59,8 @@ import {
   transferStockToReseller,
   sendBundlingPackageToReseller,
   returBundlingPackageFromReseller,
+  getNormalizedBottleStockId,
+  getNormalizedEssenceStockId,
   addResellerSaleTransaction,
   settleResellerTransaction,
   subscribeToMasterProducts,
@@ -2208,13 +2210,13 @@ export default function App() {
     const bottleIngredient = selectedPkg.ingredients?.find(i => i.type === "bottle") || { type: "bottle", size: selectedPkg.bottleSize, bottleType: "Kaca" as const };
     const bType = bottleIngredient.bottleType || "Kaca";
 
-    const availBottle = stocks.find(
-      s => s.type === "bottle" && 
-      s.size === selectedPkg.bottleSize && 
-      (s.bottleType || "Kaca").toLowerCase() === bType.toLowerCase()
-    )?.quantity || 0;
-    const availEssence = stocks.find(s => s.type === "essence" && s.scentName?.trim().toLowerCase() === selectedPkg.scentName?.trim().toLowerCase())?.quantity || 0;
-    const availAlcohol = stocks.find(s => s.type === "alcohol")?.quantity || 0;
+    const bottleStockId = getNormalizedBottleStockId(bottleIngredient.size || selectedPkg.bottleSize, bType);
+    const essenceStockId = getNormalizedEssenceStockId(selectedPkg.scentName);
+    const alcoholStockId = (selectedPkg.solventType === "Absolut Gel" || selectedPkg.scentName === "Absolut Gel") ? "alcohol_gel" : "alcohol_cair";
+
+    const availBottle = stocks.find(s => s.id === bottleStockId)?.quantity || 0;
+    const availEssence = stocks.find(s => s.id === essenceStockId)?.quantity || 0;
+    const availAlcohol = stocks.find(s => s.id === alcoholStockId)?.quantity || 0;
 
     if (availBottle < reqBottle) {
       showToast(`Stok utama botol ${selectedPkg.bottleSize} (${bType}) tidak mencukupi! Tersedia: ${availBottle} pcs, Butuh: ${reqBottle} pcs`, "error");
@@ -2947,13 +2949,13 @@ export default function App() {
                   const bottleIngredient = selectedPkg.ingredients?.find(i => i.type === "bottle") || { type: "bottle", size: selectedPkg.bottleSize, bottleType: "Kaca" as const };
                   const bType = bottleIngredient.bottleType || "Kaca";
 
-                  const availBottle = stocks.find(
-                    s => s.type === "bottle" && 
-                    s.size === selectedPkg.bottleSize && 
-                    (s.bottleType || "Kaca").toLowerCase() === bType.toLowerCase()
-                  )?.quantity || 0;
-                  const availEssence = stocks.find(s => s.type === "essence" && s.scentName === selectedPkg.scentName)?.quantity || 0;
-                  const availAlcohol = stocks.find(s => s.id === (selectedPkg.solventType === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair"))?.quantity || 0;
+                  const bottleStockId = getNormalizedBottleStockId(bottleIngredient.size || selectedPkg.bottleSize, bType);
+                  const essenceStockId = getNormalizedEssenceStockId(selectedPkg.scentName);
+                  const alcoholStockId = (selectedPkg.solventType === "Absolut Gel" || selectedPkg.scentName === "Absolut Gel") ? "alcohol_gel" : "alcohol_cair";
+
+                  const availBottle = stocks.find(s => s.id === bottleStockId)?.quantity || 0;
+                  const availEssence = stocks.find(s => s.id === essenceStockId)?.quantity || 0;
+                  const availAlcohol = stocks.find(s => s.id === alcoholStockId)?.quantity || 0;
 
                   const hasEnoughBottle = availBottle >= reqBottle;
                   const hasEnoughEssence = availEssence >= reqEssence;

@@ -263,6 +263,16 @@ export async function updateScentPrice(scentName: string, newPrice: number) {
 // ==========================================
 // STOCKS SERVICES
 // ==========================================
+export function getNormalizedBottleStockId(size: string | undefined, bottleType: "Kaca" | "Plastik" | string | undefined): string {
+  const cleanSize = (size || "30ml").trim().toLowerCase().replace(/\s+/g, "");
+  const cleanType = (bottleType || "Kaca").trim().toLowerCase();
+  return `bottle_${cleanSize}_${cleanType}`;
+}
+
+export function getNormalizedEssenceStockId(scentName: string | undefined): string {
+  const cleanScent = (scentName || "").trim().replace(/\s+/g, "_").toLowerCase();
+  return `essence_${cleanScent}`;
+}
 export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
   return onSnapshot(collection(db, "stocks"), (snapshot) => {
     const list: StockItem[] = [];
@@ -288,7 +298,7 @@ export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
       // Run async migration in background
       (async () => {
         for (const item of legacyToMigrate) {
-          const targetKacaId = `bottle_${item.size}_kaca`;
+          const targetKacaId = getNormalizedBottleStockId(item.size, "Kaca");
           const targetRef = doc(db, "stocks", targetKacaId);
           try {
             await runTransaction(db, async (transaction) => {
@@ -417,11 +427,11 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
     const bottleSize = tx.bottleSize || "None";
     const bottleCount = tx.bottleCount || 0;
     if (tx.type === "sale" && bottleSize !== "None" && bottleCount > 0) {
-      const bottleId = `bottle_${bottleSize}_${tx.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+      const bottleId = getNormalizedBottleStockId(bottleSize, tx.bottleType);
       bottleRef = doc(db, "stocks", bottleId);
       bottleSnap = await transaction.get(bottleRef);
     } else if (tx.type === "purchase" && tx.category === "botol" && bottleSize !== "None" && bottleCount > 0) {
-      const bottleId = `bottle_${bottleSize}_${tx.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+      const bottleId = getNormalizedBottleStockId(bottleSize, tx.bottleType);
       bottleRef = doc(db, "stocks", bottleId);
       bottleSnap = await transaction.get(bottleRef);
     }
@@ -449,7 +459,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
     if (tx.type === "sale" && tx.items && tx.items.length > 0) {
       for (const item of tx.items) {
         if (item.scentName && (item.volumeMl || 0) > 0) {
-          const essenceId = `essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+          const essenceId = getNormalizedEssenceStockId(item.scentName);
           if (!essenceRefsMap[essenceId]) {
             const ref = doc(db, "stocks", essenceId);
             essenceRefsMap[essenceId] = ref;
@@ -457,7 +467,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
           }
         }
         if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
-          const bottleId = `bottle_${item.bottleSize}_${item.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+          const bottleId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
           if (!bottleRefsMap[bottleId]) {
             const ref = doc(db, "stocks", bottleId);
             bottleRefsMap[bottleId] = ref;
@@ -498,7 +508,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
         let totalAlcoholDeduct = 0;
 
         for (const item of tx.items) {
-          const essenceId = `essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+          const essenceId = getNormalizedEssenceStockId(item.scentName);
           const volumeToDeduct = item.volumeMl || 0;
           const bottleCountToDeduct = item.bottleCount || 0;
           const bSize = item.bottleSize || "None";
@@ -530,7 +540,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
 
           // C. Bottle Stock Deduction
           if (!item.noBottleStockDeduct && bSize !== "None" && bottleCountToDeduct > 0) {
-            const bottleId = `bottle_${bSize}_${item.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+            const bottleId = getNormalizedBottleStockId(bSize, item.bottleType);
             const currentQty = localBottleStock[bottleId] ?? 0;
             if (currentQty < bottleCountToDeduct) {
               throw new Error(`Stok botol ${item.bottleType || "Kaca"} ukuran ${bSize} tidak mencukupi! Tersisa: ${currentQty} unit.`);
@@ -789,7 +799,7 @@ export async function deleteTransaction(id: string) {
     let essenceRef = null;
     let essenceSnap = null;
     if (tx.scentName && (tx.volumeMl || 0) > 0) {
-      const essenceId = `essence_${tx.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+      const essenceId = getNormalizedEssenceStockId(tx.scentName);
       essenceRef = doc(db, "stocks", essenceId);
       essenceSnap = await transaction.get(essenceRef);
     }
@@ -805,7 +815,7 @@ export async function deleteTransaction(id: string) {
     const bottleSize = tx.bottleSize || "None";
     const bottleCount = tx.bottleCount || 0;
     if (bottleSize !== "None" && bottleCount > 0) {
-      const bottleId = `bottle_${bottleSize}_${tx.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+      const bottleId = getNormalizedBottleStockId(bottleSize, tx.bottleType);
       bottleRef = doc(db, "stocks", bottleId);
       bottleSnap = await transaction.get(bottleRef);
     }
@@ -831,7 +841,7 @@ export async function deleteTransaction(id: string) {
         let totalAlcoholRestore = 0;
         for (const item of tx.items) {
           if (item.scentName && (item.volumeMl || 0) > 0) {
-            const essenceId = `essence_${item.scentName.replace(/\s+/g, "_").toLowerCase()}`;
+            const essenceId = getNormalizedEssenceStockId(item.scentName);
             const essRef = doc(db, "stocks", essenceId);
             const essSnap = await transaction.get(essRef);
             if (essSnap.exists()) {
@@ -841,7 +851,7 @@ export async function deleteTransaction(id: string) {
           if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
             // Restore bottle
             if (!item.noBottleStockDeduct) {
-              const botId = `bottle_${item.bottleSize}_${item.bottleType === "Plastik" ? "plastik" : "kaca"}`;
+              const botId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
               const botRef = doc(db, "stocks", botId);
               const botSnap = await transaction.get(botRef);
               if (botSnap.exists()) {
@@ -1684,12 +1694,11 @@ function getPackageIngredients(pkg: BundlingPackage): FormulaIngredient[] {
 
 function getStockDocId(ing: FormulaIngredient): string {
   if (ing.type === "essence") {
-    return `essence_${ing.scentName!.replace(/\s+/g, "_").toLowerCase()}`;
+    return getNormalizedEssenceStockId(ing.scentName);
   } else if (ing.type === "bottle") {
-    const bType = (ing.bottleType || "Kaca").toLowerCase();
-    return `bottle_${ing.size}_${bType}`;
+    return getNormalizedBottleStockId(ing.size, ing.bottleType);
   } else {
-    return ing.solventType === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair";
+    return (ing.solventType === "Absolut Gel" || ing.scentName === "Absolut Gel") ? "alcohol_gel" : "alcohol_cair";
   }
 }
 
@@ -1934,11 +1943,11 @@ export async function transferStockToReseller(
     // 1. Get Master Stock Ref & Read
     let masterStockId = "";
     if (type === "essence") {
-      masterStockId = `essence_${scentName?.replace(/\s+/g, "_").toLowerCase()}`;
+      masterStockId = getNormalizedEssenceStockId(scentName);
     } else if (type === "alcohol") {
       masterStockId = scentName === "Absolut Gel" ? "alcohol_gel" : "alcohol_cair";
     } else if (type === "bottle") {
-      masterStockId = `bottle_${size}_kaca`;
+      masterStockId = getNormalizedBottleStockId(size, "Kaca");
     }
 
     const masterStockRef = doc(db, "stocks", masterStockId);
