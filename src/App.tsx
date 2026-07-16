@@ -1491,6 +1491,76 @@ export default function App() {
     }
   };
 
+  const handlePreviewCurrentSale = () => {
+    if (saleItems.length === 0 && !saleScent) {
+      showToast("Belum ada item belanja atau aroma yang dipilih untuk dipreview!", "error");
+      return;
+    }
+
+    // Determine the list of items
+    let previewItems: SaleItem[] = [];
+    if (saleItems.length > 0) {
+      previewItems = saleItems;
+    } else if (saleScent) {
+      previewItems = [
+        {
+          id: "preview-single",
+          scentName: saleScent,
+          volumeMl: saleVolume,
+          bottleSize: saleBottleSize,
+          bottleType: saleBottleType,
+          bottleCount: saleBottleCount,
+          noBottleStockDeduct: saleNoBottle
+        }
+      ];
+    }
+
+    const draftTx: Transaction = {
+      id: "INV-PREVIEW-DRAFT",
+      type: "sale",
+      category: "other",
+      date: new Date().toISOString(),
+      timestamp: new Date().toISOString(),
+      scentName: saleScent || undefined,
+      volumeMl: saleVolume || undefined,
+      bottleSize: saleBottleSize || undefined,
+      bottleType: saleBottleType || undefined,
+      bottleCount: saleBottleCount || undefined,
+      noBottleStockDeduct: saleNoBottle,
+      totalPrice: saleTotalPrice,
+      discountType: saleDiscountType,
+      discountNominal: saleDiscountType === "free_bottle" 
+        ? (saleItems.length > 0 
+            ? saleItems.reduce((acc, item) => {
+                let bottleFee = 0;
+                if (item.bottleSize !== "None") {
+                  const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
+                  const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
+                  if (matchedBottleProduct) {
+                    bottleFee = matchedBottleProduct.price;
+                  } else {
+                    const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
+                    if (matchedBottle) {
+                      bottleFee = item.bottleType === "Plastik"
+                        ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
+                        : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+                    }
+                  }
+                }
+                return acc + (bottleFee * item.bottleCount);
+              }, 0)
+            : (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount
+          )
+        : saleDiscountNominal,
+      description: saleDescription || "Pratinjau Nota Penjualan",
+      operatorEmail: currentUser?.email || customEmail || "Kasir",
+      customerName: saleCustomerName.trim() || "Pelanggan Umum",
+      items: previewItems
+    };
+
+    setPrintTx(draftTx);
+  };
+
   const handleClaimPromo = async (customerId: string, customerName: string) => {
     if (confirm(`Klaim promo potongan untuk pelanggan "${customerName}"? Pembelian terakumulasi akan dikurangi sebesar batas nominal promo ${formatRupiah(promoThreshold)}.\n\nPelanggan akan menerima potongan diskon sebesar ${formatRupiah(promoDiscount)} yang tersinkronisasi otomatis dengan transaksi dan invoice!`)) {
       try {
@@ -5368,42 +5438,133 @@ export default function App() {
                     <div className="text-center sm:text-left w-full sm:w-auto">
                       <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block mb-1.5">Rincian Perhitungan Nota</span>
                       <div className="space-y-1.5 text-xs text-slate-600 font-medium max-w-sm">
-                        {saleScent ? (
-                          <div className="flex justify-between gap-6">
-                            <span>Bibit {saleScent} ({saleVolume}ml x {saleBottleCount}):</span>
-                            <span className="font-mono text-slate-800">
-                              {formatRupiah(saleVolume * (prices.find(p => p.scentName === saleScent)?.pricePerMl || 0) * saleBottleCount)}
-                            </span>
+                        {saleItems.length > 0 ? (
+                          <div className="max-h-48 overflow-y-auto pr-1 space-y-3">
+                            {saleItems.map((item, index) => {
+                              const matchedProduct = masterProducts.find(p => p.category === "essence" && p.referenceKey === item.scentName);
+                              const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === item.scentName)?.pricePerMl || 0);
+                              const essenceCost = item.volumeMl * pricePerMl * item.bottleCount;
+
+                              let bottleFee = 0;
+                              if (item.bottleSize !== "None") {
+                                const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
+                                const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
+                                if (matchedBottleProduct) {
+                                  bottleFee = matchedBottleProduct.price;
+                                } else {
+                                  const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
+                                  if (matchedBottle) {
+                                    bottleFee = item.bottleType === "Plastik"
+                                      ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
+                                      : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+                                  }
+                                }
+                              }
+                              if (item.noBottleStockDeduct) {
+                                bottleFee = 0;
+                              }
+                              const bottleCost = bottleFee * item.bottleCount;
+                              const itemTotal = essenceCost + bottleCost;
+
+                              return (
+                                <div key={index} className="border-b border-slate-100 pb-2 last:border-b-0 last:pb-0">
+                                  <div className="font-bold text-slate-700">{index + 1}. {item.scentName}</div>
+                                  <div className="pl-3 space-y-1 mt-0.5 text-[11px] text-slate-500">
+                                    <div className="flex justify-between gap-6">
+                                      <span>Bibit ({item.volumeMl}ml x {item.bottleCount}):</span>
+                                      <span className="font-mono text-slate-700">{formatRupiah(essenceCost)}</span>
+                                    </div>
+                                    {item.bottleSize !== "None" && (
+                                      <div className="flex justify-between gap-6">
+                                        <span>
+                                          {item.noBottleStockDeduct 
+                                            ? `Bawa Botol (${item.bottleSize} x ${item.bottleCount}):` 
+                                            : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}):`
+                                          }
+                                        </span>
+                                        <span className="font-mono text-slate-700">
+                                          {item.noBottleStockDeduct ? "Rp 0" : formatRupiah(bottleCost)}
+                                        </span>
+                                      </div>
+                                    )}
+                                    <div className="flex justify-between gap-6 font-bold text-slate-600 border-t border-dashed border-slate-100 pt-0.5">
+                                      <span>Subtotal Item:</span>
+                                      <span className="font-mono">{formatRupiah(itemTotal)}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
                           </div>
                         ) : (
-                          <div className="text-rose-500 italic">-- Belum pilih aroma --</div>
-                        )}
+                          <>
+                            {saleScent ? (
+                              <div className="flex justify-between gap-6">
+                                <span>Bibit {saleScent} ({saleVolume}ml x {saleBottleCount}):</span>
+                                <span className="font-mono text-slate-800">
+                                  {formatRupiah(saleVolume * (prices.find(p => p.scentName === saleScent)?.pricePerMl || 0) * saleBottleCount)}
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="text-rose-500 italic">-- Belum pilih aroma --</div>
+                            )}
 
-                        {saleBottleSize !== "None" && (
-                          <div className="flex justify-between gap-6">
-                            <span>
-                              {saleNoBottle 
-                                ? `Bawa Botol Sendiri (${saleBottleSize} x ${saleBottleCount} pcs):` 
-                                : `Botol ${saleBottleSize} (${saleBottleCount} pcs):`
-                              }
-                            </span>
-                            <span className="font-mono text-slate-800">
-                              {saleNoBottle ? "Rp 0 (Bawa Sendiri)" : formatRupiah((bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount)}
-                            </span>
-                          </div>
+                            {saleBottleSize !== "None" && (
+                              <div className="flex justify-between gap-6">
+                                <span>
+                                  {saleNoBottle 
+                                    ? `Bawa Botol Sendiri (${saleBottleSize} x ${saleBottleCount} pcs):` 
+                                    : `Botol ${saleBottleSize} (${saleBottleCount} pcs):`
+                                  }
+                                </span>
+                                <span className="font-mono text-slate-800">
+                                  {saleNoBottle ? "Rp 0 (Bawa Sendiri)" : formatRupiah((bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount)}
+                                </span>
+                              </div>
+                            )}
+                          </>
                         )}
 
                         <div className="border-t border-slate-200 pt-1.5 flex justify-between gap-6 font-bold text-slate-700">
                           <span>Subtotal:</span>
                           <span className="font-mono">
                             {formatRupiah(
-                              (saleScent ? saleVolume * (prices.find(p => p.scentName === saleScent)?.pricePerMl || 0) * saleBottleCount : 0) +
-                              (saleBottleSize !== "None" && !saleNoBottle ? (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount : 0)
+                              saleItems.length > 0 
+                                ? saleItems.reduce((acc, item) => {
+                                    const matchedProduct = masterProducts.find(p => p.category === "essence" && p.referenceKey === item.scentName);
+                                    const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === item.scentName)?.pricePerMl || 0);
+                                    const essenceCost = item.volumeMl * pricePerMl * item.bottleCount;
+
+                                    let bottleFee = 0;
+                                    if (item.bottleSize !== "None") {
+                                      const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
+                                      const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
+                                      if (matchedBottleProduct) {
+                                        bottleFee = matchedBottleProduct.price;
+                                      } else {
+                                        const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
+                                        if (matchedBottle) {
+                                          bottleFee = item.bottleType === "Plastik"
+                                            ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
+                                            : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+                                        }
+                                      }
+                                    }
+                                    if (item.noBottleStockDeduct) {
+                                      bottleFee = 0;
+                                    }
+                                    const bottleCost = bottleFee * item.bottleCount;
+                                    return acc + essenceCost + bottleCost;
+                                  }, 0)
+                                : (
+                                    (saleScent ? saleVolume * (prices.find(p => p.scentName === saleScent)?.pricePerMl || 0) * saleBottleCount : 0) +
+                                    (saleBottleSize !== "None" && !saleNoBottle ? (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount : 0)
+                                  )
                             )}
                           </span>
                         </div>
 
-                        {((saleDiscountType === "free_bottle" && (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount > 0) ||
+                        {((saleDiscountType === "free_bottle" && (saleItems.length > 0 ? true : (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount > 0)) ||
                           (saleDiscountType === "nominal" && saleDiscountNominal > 0)) && (
                           <div className="flex justify-between gap-6 text-emerald-600 font-bold bg-emerald-50/50 border border-emerald-100/30 rounded-lg p-1.5">
                             <span className="flex items-center gap-1">
@@ -5418,7 +5579,31 @@ export default function App() {
                               </span>
                             </span>
                             <span className="font-mono">
-                              -{formatRupiah(saleDiscountType === "free_bottle" ? (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount : saleDiscountNominal)}
+                              -{formatRupiah(
+                                saleDiscountType === "free_bottle" 
+                                  ? (saleItems.length > 0 
+                                      ? saleItems.reduce((acc, item) => {
+                                          let bottleFee = 0;
+                                          if (item.bottleSize !== "None") {
+                                            const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
+                                            const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
+                                            if (matchedBottleProduct) {
+                                              bottleFee = matchedBottleProduct.price;
+                                            } else {
+                                              const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
+                                              if (matchedBottle) {
+                                                bottleFee = item.bottleType === "Plastik"
+                                                  ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
+                                                  : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
+                                              }
+                                            }
+                                          }
+                                          return acc + (bottleFee * item.bottleCount);
+                                        }, 0)
+                                      : (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount
+                                    ) 
+                                  : saleDiscountNominal
+                              )}
                             </span>
                           </div>
                         )}
@@ -5441,17 +5626,15 @@ export default function App() {
                       <Check className="h-4.5 w-4.5" />
                       SIMPAN & PROSES TRANSAKSI PENJUALAN
                     </button>
-                    {lastSaleTx && (
-                      <button
-                        type="button"
-                        onClick={() => setPrintTx(lastSaleTx)}
-                        className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold py-3.5 px-5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
-                        title="Cetak ulang invoice transaksi penjualan terakhir"
-                      >
-                        <Printer className="h-4.5 w-4.5 text-emerald-400" />
-                        PRINT INVOICE TERAKHIR
-                      </button>
-                    )}
+                    <button
+                      type="button"
+                      onClick={handlePreviewCurrentSale}
+                      className="bg-slate-800 hover:bg-slate-700 text-white font-extrabold py-3.5 px-5 rounded-xl text-xs transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                      title="Pratinjau & Cetak Nota sebelum disimpan"
+                    >
+                      <Printer className="h-4.5 w-4.5 text-emerald-400" />
+                      PRINT PREVIEW & CETAK
+                    </button>
                   </div>
                 </form>
               </div>
