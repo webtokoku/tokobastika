@@ -8995,23 +8995,47 @@ export default function App() {
                 margin: 0 !important;
                 padding: 0 !important;
                 height: auto !important;
+                min-height: 0 !important;
                 background: white !important;
+                overflow: visible !important;
               }
+              /* Neutralize layout wrappers so they don't force min-height/flex and cause multi-page overflow */
+              #root, 
+              #root > div, 
+              main, 
+              .print-modal-container {
+                display: block !important;
+                position: static !important;
+                height: auto !important;
+                min-height: 0 !important;
+                max-height: none !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                border: none !important;
+                box-shadow: none !important;
+                background: white !important;
+                overflow: visible !important;
+              }
+              /* Double-safety: hide non-printable elements while letting ancestors pass-through */
               body * {
-                visibility: hidden !important;
+                visibility: hidden;
               }
               #print-receipt-area, #print-receipt-area * {
                 visibility: visible !important;
               }
+              /* Ensure the print receipt area is cleanly rendered on a single page without duplicate pages */
               #print-receipt-area {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
+                display: block !important;
+                position: static !important;
                 width: 280px !important;
-                margin: 0 !important;
+                margin: 0 auto !important;
                 padding: 8px !important;
                 background: white !important;
                 color: black !important;
+                box-sizing: border-box !important;
+                page-break-inside: avoid !important;
+                page-break-after: avoid !important;
+                page-break-before: avoid !important;
               }
               * {
                 -webkit-print-color-adjust: exact !important;
