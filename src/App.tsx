@@ -3569,7 +3569,7 @@ export default function App() {
     <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row text-slate-800 selection:bg-emerald-500 selection:text-white font-sans">
       {/* Toast Notification */}
       {toast && (
-        <div id="toast-notif" className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 py-3 px-5 rounded-xl shadow-2xl border transition-all duration-300 transform translate-y-0 ${
+        <div id="toast-notif" className={`print:hidden fixed bottom-5 right-5 z-50 flex items-center gap-3 py-3 px-5 rounded-xl shadow-2xl border transition-all duration-300 transform translate-y-0 ${
           toast.type === "success" ? "bg-emerald-900 text-emerald-100 border-emerald-700" :
           toast.type === "error" ? "bg-rose-950 text-rose-100 border-rose-800" :
           "bg-slate-900 text-slate-100 border-slate-700"
@@ -3582,7 +3582,7 @@ export default function App() {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className="w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 shrink-0">
+      <aside className="print:hidden w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 shrink-0">
         {/* Brand Header */}
         <div className="p-6 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -3780,6 +3780,17 @@ export default function App() {
             <UserCheck className="h-4 w-4" />
             Database Pelanggan
           </button>
+
+          <button
+            id="nav-printer-settings-btn"
+            onClick={() => setActiveTab("printer_settings")}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+              activeTab === "printer_settings" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            }`}
+          >
+            <Printer className="h-4 w-4" />
+            Pengaturan Printer
+          </button>
         </nav>
 
         {/* Footer info & Logout */}
@@ -3798,7 +3809,7 @@ export default function App() {
       {/* Main Content Pane */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
-        <header className="bg-white border-b border-slate-200 py-4 px-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0">
+        <header className="print:hidden bg-white border-b border-slate-200 py-4 px-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0">
           <div>
             <h1 className="text-xl font-bold font-display text-slate-900 tracking-tight flex items-center gap-2">
               <span>{activeTab === 'dashboard' ? 'Ringkasan Laba & Omset' :
@@ -3812,6 +3823,7 @@ export default function App() {
                      activeTab === 'invoice_settings' ? 'Format Kop Invoice' :
                      activeTab === 'customers' ? 'Sistem Database Pelanggan & Promo' :
                      activeTab === 'db_management' ? 'Pengaturan Backup & Database' :
+                     activeTab === 'printer_settings' ? 'Sistem Konektivitas & Pengaturan Printer' :
                      'Riwayat Semua Mutasi'}</span>
               <span className="text-xs font-normal text-slate-500">| Bastika Parfum</span>
             </h1>
@@ -3898,7 +3910,7 @@ export default function App() {
         </header>
 
         {/* Dashboard content workspace container */}
-        <div className="flex-1 p-6 overflow-y-auto">
+        <div className="print:hidden flex-1 p-6 overflow-y-auto">
           
           {/* ==========================================
               1. DASHBOARD VIEW (Admin Only)
@@ -8206,10 +8218,281 @@ export default function App() {
           )}
 
           {/* ==========================================
+              9B. PRINTER SETTINGS VIEW (Accessible to both Admin & Kasir)
+              ========================================== */}
+          {activeTab === "printer_settings" && (
+            <div className="max-w-5xl mx-auto space-y-6 animate-in fade-in duration-200">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-2">
+                <div>
+                  <h3 className="font-bold text-base text-slate-900 font-display">Pengaturan & Konektivitas Printer</h3>
+                  <p className="text-xs text-slate-500">Konfigurasi koneksi printer thermal kasir (Bluetooth / USB) dengan fitur auto-connect untuk pencetakan nota instan.</p>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-100 px-3 py-1.5 rounded-full border border-slate-200 text-xs font-medium text-slate-600">
+                  <span className={`h-2 w-2 rounded-full ${printerStatus.startsWith("Connected") ? "bg-emerald-500" : "bg-rose-500"}`}></span>
+                  <span>{printerStatus}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+                
+                {/* Connection Control Panel */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm lg:col-span-5 space-y-5">
+                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                    <Settings className="h-4.5 w-4.5 text-emerald-600" />
+                    <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Konfigurasi Koneksi</h4>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Metode Koneksi Printer</label>
+                      <select
+                        value={printerConfig.mode}
+                        onChange={(e) => {
+                          const newMode = e.target.value as "system" | "bluetooth" | "usb";
+                          savePrinterConfig({ ...printerConfig, mode: newMode });
+                        }}
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs font-bold text-slate-800 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                      >
+                        <option value="system">Sistem Print Browser / PDF (Default)</option>
+                        <option value="bluetooth">Direct Bluetooth (ESC/POS Raw)</option>
+                        <option value="usb">Direct USB (ESC/POS Raw)</option>
+                      </select>
+                    </div>
+
+                    {printerConfig.mode !== "system" && (
+                      <div className="flex items-center justify-between p-3.5 bg-emerald-50/50 border border-emerald-100 rounded-xl">
+                        <div>
+                          <span className="font-extrabold block text-xs text-emerald-950">Sistem Auto-connect</span>
+                          <span className="text-[10px] text-emerald-600 font-medium">Hubungkan otomatis saat aplikasi dimuat</span>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={printerConfig.autoConnect}
+                          onChange={(e) => savePrinterConfig({ ...printerConfig, autoConnect: e.target.checked })}
+                          className="h-5 w-5 rounded text-emerald-600 focus:ring-emerald-500 cursor-pointer accent-emerald-600"
+                        />
+                      </div>
+                    )}
+
+                    <div className="p-4 border rounded-xl flex items-center justify-between bg-slate-50 border-slate-200">
+                      <div>
+                        <span className="font-semibold block text-[10px] text-slate-400 uppercase tracking-wider">Status Koneksi Fisik</span>
+                        <span className={`font-bold text-xs flex items-center gap-1.5 mt-0.5 ${
+                          printerStatus.startsWith("Connected") ? "text-emerald-600" :
+                          printerStatus.startsWith("Connecting") ? "text-amber-500" : "text-rose-500"
+                        }`}>
+                          <span className={`h-2 w-2 rounded-full ${
+                            printerStatus.startsWith("Connected") ? "bg-emerald-500" :
+                            printerStatus.startsWith("Connecting") ? "bg-amber-400 animate-ping" : "bg-rose-500"
+                          }`} />
+                          {printerStatus}
+                        </span>
+                        {printerConfig.mode === "bluetooth" && printerConfig.deviceName && (
+                          <p className="text-[9px] text-slate-400 mt-1">Gawai Terakhir: <strong className="text-slate-600">{printerConfig.deviceName}</strong></p>
+                        )}
+                        {printerConfig.mode === "usb" && printerConfig.usbVendorId && (
+                          <p className="text-[9px] text-slate-400 mt-1">Vendor ID USB Terakhir: <strong className="text-slate-600">{printerConfig.usbVendorId}</strong></p>
+                        )}
+                      </div>
+
+                      <div className="flex gap-2">
+                        {printerStatus.startsWith("Connected") ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (btDevice) {
+                                try { btDevice.gatt.disconnect(); } catch(e){}
+                              }
+                              setBtDevice(null);
+                              setBtCharacteristic(null);
+                              setUsbDevice(null);
+                              setPrinterStatus("Disconnected");
+                              showToast("Printer diputuskan.", "info");
+                            }}
+                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-4 py-2 rounded-xl text-[10px] cursor-pointer transition-colors"
+                          >
+                            Putuskan
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isPrinterConnecting}
+                            onClick={() => {
+                              if (printerConfig.mode === "bluetooth") connectBluetoothPrinter();
+                              else connectUsbPrinter();
+                            }}
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold px-4 py-2 rounded-xl text-[10px] cursor-pointer transition-colors"
+                          >
+                            {isPrinterConnecting ? "Menghubungkan..." : "Hubungkan"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {printerStatus.startsWith("Connected") && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const encoder = new TextEncoder();
+                            const feedAndCut = new Uint8Array([0x1B, 0x40, 0x1B, 0x61, 0x01, 0x1B, 0x45, 0x01]);
+                            const text = encoder.encode(`\n\nTEST PRINTER BASTIKA PARFUM\n==============================\nKoneksi Berhasil!\nSistem Auto-connect: ${printerConfig.autoConnect ? "AKTIF" : "NONAKTIF"}\nMetode: ${printerConfig.mode.toUpperCase()}\n\n\n\n`);
+                            const cut = new Uint8Array([0x1D, 0x56, 0x41, 0x03]);
+                            const payload = new Uint8Array(feedAndCut.length + text.length + cut.length);
+                            payload.set(feedAndCut, 0);
+                            payload.set(text, feedAndCut.length);
+                            payload.set(cut, feedAndCut.length + text.length);
+
+                            if (printerConfig.mode === "bluetooth" && btCharacteristic) {
+                              await btCharacteristic.writeValue(payload);
+                              showToast("Test print dikirim via Bluetooth!", "success");
+                            } else if (printerConfig.mode === "usb" && usbDevice) {
+                              const endpoint = usbDevice.configuration?.interfaces[0]?.alternates[0]?.endpoints.find(
+                                (e: any) => e.direction === "out"
+                              );
+                              if (endpoint) {
+                                await usbDevice.transferOut(endpoint.endpointNumber, payload);
+                                showToast("Test print dikirim via USB!", "success");
+                              }
+                            }
+                          } catch (err: any) {
+                            showToast(`Gagal test print: ${err.message}`, "error");
+                          }
+                        }}
+                        className="w-full border border-emerald-200 hover:bg-emerald-50 text-emerald-700 font-bold py-2.5 rounded-xl text-xs text-center transition-colors cursor-pointer"
+                      >
+                        Test Print Kertas Kasir
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {/* Printer Settings Table / Connected Devices Log */}
+                <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm lg:col-span-7 space-y-4">
+                  <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+                    <Layers className="h-4.5 w-4.5 text-emerald-600" />
+                    <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Tabel Pengaturan Gawai Terdaftar</h4>
+                  </div>
+
+                  <p className="text-[11px] text-slate-500 leading-normal">
+                    Berikut adalah gawai printer terdaftar yang disimpan di database lokal browser ini untuk auto-connect instan tanpa harus scan ulang perangkat:
+                  </p>
+
+                  <div className="overflow-x-auto border border-slate-100 rounded-xl">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                          <th className="py-3 px-4">Nama Gawai</th>
+                          <th className="py-3 px-4">Metode</th>
+                          <th className="py-3 px-4">Identitas Hardware</th>
+                          <th className="py-3 px-4">Auto-Connect</th>
+                          <th className="py-3 px-4 text-center">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-50 font-medium text-slate-700">
+                        <tr className={`hover:bg-slate-50/50 transition-colors ${printerConfig.mode === "bluetooth" ? "bg-emerald-50/10" : ""}`}>
+                          <td className="py-3 px-4">
+                            <div className="font-bold">{printerConfig.deviceName || "Tidak ada perangkat Bluetooth"}</div>
+                            <span className="text-[9px] text-slate-400 block mt-0.5">Bluetooth Thermal Printer</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-100 uppercase">Bluetooth</span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-slate-500">
+                            {printerConfig.deviceName ? "UUID: Standard SPP (00001101-...)" : "-"}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`text-[10px] font-bold ${printerConfig.autoConnect && printerConfig.mode === "bluetooth" ? "text-emerald-600" : "text-slate-400"}`}>
+                              {printerConfig.autoConnect && printerConfig.mode === "bluetooth" ? "AKTIF" : "NONAKTIF"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {printerConfig.mode === "bluetooth" && printerStatus.startsWith("Connected") ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Aktif
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Siap</span>
+                            )}
+                          </td>
+                        </tr>
+
+                        <tr className={`hover:bg-slate-50/50 transition-colors ${printerConfig.mode === "usb" ? "bg-emerald-50/10" : ""}`}>
+                          <td className="py-3 px-4">
+                            <div className="font-bold">{printerConfig.usbVendorId ? `USB Printer (VID: ${printerConfig.usbVendorId})` : "Tidak ada perangkat USB"}</div>
+                            <span className="text-[9px] text-slate-400 block mt-0.5">USB Thermal Printer</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-100 uppercase">USB Connection</span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-slate-500">
+                            {printerConfig.usbVendorId ? `VendorID: ${printerConfig.usbVendorId}` : "-"}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className={`text-[10px] font-bold ${printerConfig.autoConnect && printerConfig.mode === "usb" ? "text-emerald-600" : "text-slate-400"}`}>
+                              {printerConfig.autoConnect && printerConfig.mode === "usb" ? "AKTIF" : "NONAKTIF"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {printerConfig.mode === "usb" && printerStatus.startsWith("Connected") ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Aktif
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Siap</span>
+                            )}
+                          </td>
+                        </tr>
+
+                        <tr className={`hover:bg-slate-50/50 transition-colors ${printerConfig.mode === "system" ? "bg-emerald-50/10" : ""}`}>
+                          <td className="py-3 px-4">
+                            <div className="font-bold">System Default Printer</div>
+                            <span className="text-[9px] text-slate-400 block mt-0.5">Standard PDF / Browser Print Driver</span>
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200 uppercase">System Print</span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-[10px] text-slate-500">
+                            Shared OS Driver
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="text-[10px] font-bold text-slate-400">NONAKTIF</span>
+                          </td>
+                          <td className="py-3 px-4 text-center">
+                            {printerConfig.mode === "system" ? (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                                <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Aktif
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400">Siap</span>
+                            )}
+                          </td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 text-[10.5px] text-slate-500 leading-relaxed flex gap-2.5">
+                    <Info className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="font-bold text-slate-700 mb-1">Panduan Auto-Connect & Konektivitas:</p>
+                      <ul className="list-disc pl-4 space-y-1">
+                        <li><strong>Koneksi Bluetooth:</strong> Pastikan printer thermal Bluetooth Anda aktif dan sudah di-paired.</li>
+                        <li><strong>Koneksi USB:</strong> Gunakan browser pendukung Web USB (misal: Chrome, Edge, Opera) untuk memberi izin langsung.</li>
+                        <li><strong>Auto-Connect Fleksibel:</strong> Sistem menyimpan preferensi printer lokal masing-masing komputer secara terpisah di browser untuk fleksibilitas kerja Admin & Kasir.</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ==========================================
               10. BLUETOOTH THERMAL PRINT MODAL OVERLAY
               ========================================== */}
           {printTx && (
-            <div className="fixed inset-0 z-50 bg-slate-900/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200">
+            <div className="print-modal-container fixed inset-0 z-50 bg-slate-900/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200 print:bg-transparent print:p-0 print:overflow-visible print:static print:block">
               
               {/* Invisible custom print wrapper used strictly by browser window.print() */}
               <div id="print-receipt-area" className="hidden print:block bg-white text-black font-mono text-[10px] leading-relaxed p-2 w-[280px] mx-auto">
@@ -8423,7 +8706,7 @@ export default function App() {
               </div>
 
               {/* On-screen visual preview box */}
-              <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col h-fit max-h-[90vh]">
+              <div className="print:hidden bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col h-fit max-h-[90vh]">
                 <div className="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-950/50">
                   <div className="flex items-center gap-3">
                     <div className="h-8 w-8 rounded-xl bg-emerald-600/25 border border-emerald-500/30 flex items-center justify-center">
@@ -8702,6 +8985,16 @@ export default function App() {
               ========================================== */}
           <style>{`
             @media print {
+              @page {
+                size: portrait;
+                margin: 0 !important;
+              }
+              html, body {
+                margin: 0 !important;
+                padding: 0 !important;
+                height: auto !important;
+                background: white !important;
+              }
               body * {
                 visibility: hidden !important;
               }
@@ -8712,10 +9005,9 @@ export default function App() {
                 position: absolute !important;
                 left: 0 !important;
                 top: 0 !important;
-                width: 100% !important;
-                max-width: 280px !important; /* Forces narrow thermal printer dimension on paper */
+                width: 280px !important;
                 margin: 0 !important;
-                padding: 10px !important;
+                padding: 8px !important;
                 background: white !important;
                 color: black !important;
               }
