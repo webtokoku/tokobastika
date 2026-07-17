@@ -8488,10 +8488,12 @@ export default function App() {
             </div>
           )}
 
-          {/* ==========================================
-              10. BLUETOOTH THERMAL PRINT MODAL OVERLAY
-              ========================================== */}
-          {printTx && (
+        </div>
+
+        {/* ==========================================
+            10. BLUETOOTH THERMAL PRINT MODAL OVERLAY
+            ========================================== */}
+        {printTx && (
             <div className="print-modal-container fixed inset-0 z-50 bg-slate-900/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200 print:bg-transparent print:p-0 print:overflow-visible print:static print:block">
               
               {/* Invisible custom print wrapper used strictly by browser window.print() */}
@@ -9018,7 +9020,6 @@ export default function App() {
             }
           `}</style>
 
-        </div>
       </main>
     </div>
   );
