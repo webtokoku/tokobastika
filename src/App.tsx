@@ -8983,9 +8983,22 @@ export default function App() {
           )}
 
           {/* ==========================================
-              11. STYLE BLOCK FOR PORTRAIT PRINT LAYOUT
+              11. STYLE BLOCK FOR PORTRAIT PRINT LAYOUT & ZOOM PREVENTION
               ========================================== */}
           <style>{`
+            /* Prevent auto-zoom on input focus on all devices (especially mobile, tablets, and touch laptops/desktops) */
+            input, select, textarea {
+              font-size: 16px !important;
+              touch-action: manipulation !important;
+            }
+            
+            /* Disable double-tap zoom for all interactive elements to keep screen static */
+            body, html, button, [role="button"] {
+              touch-action: manipulation !important;
+              -webkit-text-size-adjust: 100% !important;
+              text-size-adjust: 100% !important;
+            }
+
             @media print {
               @page {
                 size: portrait;
