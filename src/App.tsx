@@ -217,6 +217,72 @@ export default function App() {
     }));
   }, [lastFormula]);
 
+  // Prevent browser auto-zoom and layout shifts on input focus in desktop view (especially for tablets, touch laptops, and mobile desktop mode)
+  useEffect(() => {
+    let scrollTimeout: number;
+    
+    const lockScroll = () => {
+      // Apply strictly to desktop layouts (screen width >= 768px, which matches actual screens and mobile desktop view simulation)
+      if (window.innerWidth >= 768) {
+        const activeEl = document.activeElement;
+        if (activeEl) {
+          const tagName = activeEl.tagName;
+          if (tagName === "INPUT" || tagName === "SELECT" || tagName === "TEXTAREA") {
+            if (window.scrollY !== 0 || window.scrollX !== 0) {
+              window.scrollTo(0, 0);
+            }
+          }
+        }
+      }
+    };
+
+    const handleScroll = () => {
+      lockScroll();
+    };
+
+    const handleFocusIn = () => {
+      // Force locking scroll to 0,0 immediately, after paint, and after microtasks
+      lockScroll();
+      scrollTimeout = window.setTimeout(lockScroll, 10);
+      requestAnimationFrame(lockScroll);
+
+      // Lock viewport scale dynamically on touch screens on input focus to prevent any browser zoom-in
+      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        const viewport = document.querySelector('meta[name="viewport"]');
+        if (viewport) {
+          viewport.setAttribute(
+            "content",
+            "width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, shrink-to-fit=no, viewport-fit=cover"
+          );
+        }
+      }
+    };
+
+    const handleFocusOut = () => {
+      // Restore viewport scalability when user finishes typing to maintain accessibility features
+      if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+        const viewport = document.querySelector('meta[name="viewport"]');
+        if (viewport) {
+          viewport.setAttribute(
+            "content",
+            "width=device-width, initial-scale=1.0, maximum-scale=5.0, user-scalable=yes, shrink-to-fit=no, viewport-fit=cover"
+          );
+        }
+      }
+    };
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    document.addEventListener("focusin", handleFocusIn, { passive: true });
+    document.addEventListener("focusout", handleFocusOut, { passive: true });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      document.removeEventListener("focusin", handleFocusIn);
+      document.removeEventListener("focusout", handleFocusOut);
+      clearTimeout(scrollTimeout);
+    };
+  }, []);
+
   // Printer Configuration & Auto-connect State
   const [printerConfig, setPrinterConfig] = useState<{
     mode: "system" | "bluetooth" | "usb";
