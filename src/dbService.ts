@@ -406,12 +406,18 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
       }
     }
 
-    // C. Scent Price Ref & Read (for purchase of a new bibit)
+    // C. Scent Price & Master Product Ref & Read (for purchase of a new bibit)
     let priceRef = null;
     let priceSnap = null;
+    let masterProdRef = null;
+    let masterProdSnap = null;
     if (tx.type === "purchase" && tx.category === "bibit" && tx.scentName) {
       priceRef = doc(db, "prices", tx.scentName);
       priceSnap = await transaction.get(priceRef);
+
+      const cleanMasterId = "prod_essence_" + tx.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      masterProdRef = doc(db, "master_products", cleanMasterId);
+      masterProdSnap = await transaction.get(masterProdRef);
     }
 
     // D. Alcohol Stock Refs & Reads
@@ -701,11 +707,21 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
           });
         }
 
-        // Check and create in price list if not exists
+        // Check and create in price list and master products if not exists
         if (priceRef && (!priceSnap || !priceSnap.exists())) {
           transaction.set(priceRef, {
             scentName: tx.scentName,
-            pricePerMl: 3500, // starting default price if new
+            pricePerMl: 2000, // starting default price if new
+            updatedAt: new Date().toISOString()
+          });
+        }
+        if (masterProdRef && (!masterProdSnap || !masterProdSnap.exists())) {
+          transaction.set(masterProdRef, {
+            id: "prod_essence_" + tx.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_"),
+            name: tx.scentName,
+            price: 2000,
+            category: "essence",
+            referenceKey: tx.scentName,
             updatedAt: new Date().toISOString()
           });
         }
@@ -2143,21 +2159,91 @@ export function subscribeToMasterProducts(
 
 export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">) {
   const id = product.id.trim();
+  const now = new Date().toISOString();
   await setDoc(doc(db, "master_products", id), {
     ...product,
     id,
-    updatedAt: new Date().toISOString()
+    updatedAt: now
   });
+
+  // Automatically sync to prices & stocks if category is essence (bibit)
+  if (product.category === "essence") {
+    let scent = product.referenceKey && product.referenceKey.trim() && product.referenceKey.trim().toLowerCase() !== "scentname"
+      ? product.referenceKey.trim()
+      : product.name.replace(/^bibit\s+/i, "").trim();
+    if (scent) {
+      await setDoc(doc(db, "prices", scent), {
+        scentName: scent,
+        pricePerMl: product.price || 2000,
+        updatedAt: now
+      }, { merge: true });
+
+      const stockId = `essence_${scent.replace(/\s+/g, "_").toLowerCase()}`;
+      const stockRef = doc(db, "stocks", stockId);
+      const stockSnap = await getDoc(stockRef);
+      if (!stockSnap.exists()) {
+        await setDoc(stockRef, {
+          id: stockId,
+          type: "essence",
+          scentName: scent,
+          quantity: 0
+        });
+      }
+    }
+  }
 }
 
 export async function updateMasterProduct(id: string, updates: Partial<Omit<MasterProduct, "id">>) {
+  const now = new Date().toISOString();
   await updateDoc(doc(db, "master_products", id), {
     ...updates,
-    updatedAt: new Date().toISOString()
+    updatedAt: now
   });
+
+  // If updating an essence master product, sync price and scentName to prices & stocks collection
+  const masterDoc = await getDoc(doc(db, "master_products", id));
+  if (masterDoc.exists()) {
+    const data = masterDoc.data() as MasterProduct;
+    if (data.category === "essence") {
+      let scent = data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "scentname"
+        ? data.referenceKey.trim()
+        : data.name.replace(/^bibit\s+/i, "").trim();
+      if (scent && data.price !== undefined) {
+        await setDoc(doc(db, "prices", scent), {
+          scentName: scent,
+          pricePerMl: data.price,
+          updatedAt: now
+        }, { merge: true });
+
+        const stockId = `essence_${scent.replace(/\s+/g, "_").toLowerCase()}`;
+        const stockRef = doc(db, "stocks", stockId);
+        const stockSnap = await getDoc(stockRef);
+        if (!stockSnap.exists()) {
+          await setDoc(stockRef, {
+            id: stockId,
+            type: "essence",
+            scentName: scent,
+            quantity: 0
+          });
+        }
+      }
+    }
+  }
 }
 
 export async function deleteMasterProduct(id: string) {
+  const masterDoc = await getDoc(doc(db, "master_products", id));
+  if (masterDoc.exists()) {
+    const data = masterDoc.data() as MasterProduct;
+    if (data.category === "essence") {
+      let scent = data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "scentname"
+        ? data.referenceKey.trim()
+        : data.name.replace(/^bibit\s+/i, "").trim();
+      if (scent) {
+        await deleteDoc(doc(db, "prices", scent)).catch(() => {});
+      }
+    }
+  }
   await deleteDoc(doc(db, "master_products", id));
 }
 
@@ -2229,6 +2315,35 @@ export async function seedMasterProductsIfEmpty() {
         referenceKey: packageName,
         updatedAt: new Date().toISOString()
       });
+    }
+  } else {
+    // Bidirectional sync: sync existing master_products to prices & stocks
+    for (const docSnap of masterSnap.docs) {
+      const data = docSnap.data() as MasterProduct;
+      if (data.category === "essence") {
+        let scent = data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "scentname"
+          ? data.referenceKey.trim()
+          : data.name.replace(/^bibit\s+/i, "").trim();
+        if (scent) {
+          await setDoc(doc(db, "prices", scent), {
+            scentName: scent,
+            pricePerMl: data.price || 2000,
+            updatedAt: new Date().toISOString()
+          }, { merge: true });
+
+          const stockId = `essence_${scent.replace(/\s+/g, "_").toLowerCase()}`;
+          const stockRef = doc(db, "stocks", stockId);
+          const stockSnap = await getDoc(stockRef);
+          if (!stockSnap.exists()) {
+            await setDoc(stockRef, {
+              id: stockId,
+              type: "essence",
+              scentName: scent,
+              quantity: 0
+            });
+          }
+        }
+      }
     }
   }
 }

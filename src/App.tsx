@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { 
   auth, 
   db,
@@ -1430,7 +1430,7 @@ export default function App() {
 
     let finalScent = purchaseScent.trim();
     if (purchaseCategory === "bibit" && finalScent) {
-      const existingMatch = prices.find(
+      const existingMatch = masterBibitList.find(
         p => p.scentName.toLowerCase() === finalScent.toLowerCase()
       );
       if (existingMatch) {
@@ -1878,6 +1878,56 @@ export default function App() {
     }
     return true;
   });
+
+  // Single Source of Truth for Bibit Scent List (Master Products synchronized in real-time)
+  const masterBibitList = useMemo(() => {
+    const map = new Map<string, { scentName: string; pricePerMl: number; id: string }>();
+
+    // 1. Primary Source of Truth: masterProducts (category === "essence")
+    masterProducts.filter(p => p.category === "essence").forEach(p => {
+      let scent = p.name.trim();
+      if (p.referenceKey && p.referenceKey.trim() && p.referenceKey.trim().toLowerCase() !== "scentname") {
+        scent = p.referenceKey.trim();
+      } else if (scent.toLowerCase().startsWith("bibit ")) {
+        scent = scent.replace(/^bibit\s+/i, "").trim();
+      } else if (scent.toLowerCase().startsWith("bibit")) {
+        scent = scent.substring(5).trim();
+      }
+      if (scent) {
+        map.set(scent.toLowerCase(), {
+          scentName: scent,
+          pricePerMl: p.price || 2000,
+          id: p.id
+        });
+      }
+    });
+
+    // 2. Secondary / Sync fallback: prices
+    prices.forEach(p => {
+      const scent = p.scentName.trim();
+      if (scent && !map.has(scent.toLowerCase())) {
+        map.set(scent.toLowerCase(), {
+          scentName: scent,
+          pricePerMl: p.pricePerMl || 2000,
+          id: `price_${scent}`
+        });
+      }
+    });
+
+    // 3. Secondary / Sync fallback: stocks (type === "essence")
+    stocks.filter(s => s.type === "essence" && s.scentName).forEach(s => {
+      const scent = s.scentName!.trim();
+      if (scent && !map.has(scent.toLowerCase())) {
+        map.set(scent.toLowerCase(), {
+          scentName: scent,
+          pricePerMl: 2000,
+          id: s.id
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.scentName.localeCompare(b.scentName));
+  }, [masterProducts, prices, stocks]);
 
   const filteredPrices = prices.filter(p => {
     if (!searchTerm) return true;
@@ -5188,7 +5238,7 @@ export default function App() {
                       >
                         <option value="">-- Pilih Aroma --</option>
                         <option value="Hanya Botol" className="font-bold text-emerald-700 bg-emerald-50">🛍️ -- Hanya Beli Botol Saja --</option>
-                        {prices.map(p => (
+                        {masterBibitList.map(p => (
                           <option key={p.scentName} value={p.scentName}>
                             {p.scentName} ({formatRupiah(p.pricePerMl)} / ml)
                           </option>
@@ -6112,7 +6162,7 @@ export default function App() {
                             Aroma Terdaftar di Sistem (Klik untuk Pilih):
                           </span>
                           <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
-                            {prices
+                            {masterBibitList
                               .filter(p => !purchaseScent || p.scentName.toLowerCase().includes(purchaseScent.toLowerCase()))
                               .map(p => (
                                 <button
@@ -6128,7 +6178,7 @@ export default function App() {
                                   {p.scentName}
                                 </button>
                               ))}
-                            {prices.filter(p => !purchaseScent || p.scentName.toLowerCase().includes(purchaseScent.toLowerCase())).length === 0 && (
+                            {masterBibitList.filter(p => !purchaseScent || p.scentName.toLowerCase().includes(purchaseScent.toLowerCase())).length === 0 && (
                               <div className="text-[10px] text-amber-600 font-bold flex items-center gap-1.5 py-0.5">
                                 <Info className="h-3.5 w-3.5 text-amber-500" />
                                 <span>Aroma baru: "{purchaseScent}" (Akan otomatis didaftarkan ke sistem)</span>
