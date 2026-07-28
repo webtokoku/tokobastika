@@ -1172,11 +1172,12 @@ export default function App() {
       await addShelf(newShelf);
       
       // Upsert into master products
-      const scentId = "prod_essence_" + newShelf.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const matchedMaster = findMasterEssence(newShelf.scentName);
+      const scentId = matchedMaster ? matchedMaster.id : ("prod_essence_" + newShelf.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_"));
       await addMasterProduct({
         id: scentId,
-        name: `Bibit ${newShelf.scentName}`,
-        price: newShelf.pricePerMl || 3500,
+        name: matchedMaster ? matchedMaster.name : `Bibit ${newShelf.scentName}`,
+        price: newShelf.pricePerMl || (matchedMaster ? matchedMaster.price : 3500),
         category: "essence",
         referenceKey: newShelf.scentName
       });
@@ -1245,10 +1246,11 @@ export default function App() {
       await updateScentPrice(editingPrice.scentName, editingPrice.pricePerMl);
 
       // 2. Update or create the Master Product for this essence
-      const id = "prod_essence_" + editingPrice.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const matchedMaster = findMasterEssence(editingPrice.scentName);
+      const id = matchedMaster ? matchedMaster.id : ("prod_essence_" + editingPrice.scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_"));
       await addMasterProduct({
         id,
-        name: `Bibit ${editingPrice.scentName}`,
+        name: matchedMaster ? matchedMaster.name : `Bibit ${editingPrice.scentName}`,
         price: editingPrice.pricePerMl,
         category: "essence",
         referenceKey: editingPrice.scentName
@@ -1879,6 +1881,28 @@ export default function App() {
     return true;
   });
 
+  // Helper to find corresponding Master Product for a given scent name
+  const findMasterEssence = (scentName: string) => {
+    if (!scentName) return undefined;
+    const clean = scentName.trim().toLowerCase();
+    return masterProducts.find(p => {
+      if (p.category !== "essence") return false;
+      const ref = (p.referenceKey && p.referenceKey.trim().toLowerCase() !== "scentname") ? p.referenceKey.trim().toLowerCase() : "";
+      const name = p.name.trim().toLowerCase();
+      const nameWithoutBibit = p.name.replace(/^bibit\s+/i, "").trim().toLowerCase();
+      const idScent = p.id.replace(/^prod_essence_/, "").replace(/_/g, " ");
+
+      return (
+        (ref && ref === clean) ||
+        name === clean ||
+        nameWithoutBibit === clean ||
+        idScent === clean ||
+        clean.includes(nameWithoutBibit) ||
+        nameWithoutBibit.includes(clean)
+      );
+    });
+  };
+
   // Single Source of Truth for Bibit Scent List (Master Products synchronized in real-time)
   const masterBibitList = useMemo(() => {
     const map = new Map<string, { scentName: string; pricePerMl: number; id: string }>();
@@ -1928,6 +1952,74 @@ export default function App() {
 
     return Array.from(map.values()).sort((a, b) => a.scentName.localeCompare(b.scentName));
   }, [masterProducts, prices, stocks]);
+
+  // Unified essence inventory stocks list (Master Products synchronized in real-time)
+  const unifiedEssenceStocks = useMemo(() => {
+    const map = new Map<string, {
+      id: string;
+      scentName: string;
+      quantity: number;
+      pricePerMl: number;
+      masterId?: string;
+    }>();
+
+    // 1. Primary Source of Truth: masterProducts (category === "essence")
+    masterProducts.filter(p => p.category === "essence").forEach(p => {
+      let scent = p.name.trim();
+      if (p.referenceKey && p.referenceKey.trim() && p.referenceKey.trim().toLowerCase() !== "scentname") {
+        scent = p.referenceKey.trim();
+      } else if (scent.toLowerCase().startsWith("bibit ")) {
+        scent = scent.replace(/^bibit\s+/i, "").trim();
+      } else if (scent.toLowerCase().startsWith("bibit")) {
+        scent = scent.substring(5).trim();
+      }
+      if (!scent) scent = p.name.trim();
+
+      const normalizedKey = scent.toLowerCase();
+      const stockId = getNormalizedEssenceStockId(scent);
+
+      const matchedStock = stocks.find(s => 
+        s.type === "essence" && (
+          s.id === stockId ||
+          (s.scentName && s.scentName.trim().toLowerCase() === normalizedKey) ||
+          (s.scentName && (scent.toLowerCase().includes(s.scentName.trim().toLowerCase()) || s.scentName.trim().toLowerCase().includes(scent.toLowerCase())))
+        )
+      );
+
+      map.set(normalizedKey, {
+        id: matchedStock ? matchedStock.id : stockId,
+        scentName: scent,
+        quantity: matchedStock ? matchedStock.quantity : 0,
+        pricePerMl: p.price || 2000,
+        masterId: p.id
+      });
+    });
+
+    // 2. Secondary fallback: stocks (type === "essence") that are not in masterProducts yet
+    stocks.filter(s => s.type === "essence" && s.scentName).forEach(s => {
+      const scent = s.scentName!.trim();
+      const normalizedKey = scent.toLowerCase();
+      if (!map.has(normalizedKey)) {
+        map.set(normalizedKey, {
+          id: s.id,
+          scentName: scent,
+          quantity: s.quantity,
+          pricePerMl: 2000
+        });
+      }
+    });
+
+    return Array.from(map.values()).sort((a, b) => a.scentName.localeCompare(b.scentName));
+  }, [masterProducts, stocks]);
+
+  const filteredEssenceStocks = useMemo(() => {
+    if (!searchTerm) return unifiedEssenceStocks;
+    const term = searchCaseSensitive ? searchTerm : searchTerm.toLowerCase();
+    return unifiedEssenceStocks.filter(item => {
+      const scent = searchCaseSensitive ? item.scentName : item.scentName.toLowerCase();
+      return scent.includes(term);
+    });
+  }, [unifiedEssenceStocks, searchTerm, searchCaseSensitive]);
 
   const filteredPrices = prices.filter(p => {
     if (!searchTerm) return true;
@@ -4557,7 +4649,7 @@ export default function App() {
                               {userRole === "admin" && (
                                 <button 
                                   onClick={() => {
-                                    const matchedMaster = masterProducts.find(p => p.category === "essence" && p.referenceKey === s.scentName);
+                                    const matchedMaster = findMasterEssence(s.scentName);
                                     setEditingPrice({ scentName: s.scentName, pricePerMl: matchedMaster ? matchedMaster.price : s.pricePerMl });
                                   }}
                                   className="text-slate-400 hover:text-emerald-600 p-0.5 rounded transition-colors"
@@ -4569,7 +4661,7 @@ export default function App() {
                             </td>
                             <td className="py-3 px-4 font-mono font-bold text-emerald-700">
                               {(() => {
-                                const matchedMaster = masterProducts.find(p => p.category === "essence" && p.referenceKey === s.scentName);
+                                const matchedMaster = findMasterEssence(s.scentName);
                                 return formatRupiah(matchedMaster ? matchedMaster.price : s.pricePerMl);
                               })()}
                             </td>
@@ -4965,9 +5057,9 @@ export default function App() {
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Total Aroma Bibit Parfum</span>
                     <h4 className="text-2xl font-extrabold text-slate-900 font-mono mt-1">
-                      {stocks.filter(s => s.type === "essence").reduce((sum, s) => sum + s.quantity, 0).toLocaleString("id-ID")} ml
+                      {unifiedEssenceStocks.reduce((sum, s) => sum + s.quantity, 0).toLocaleString("id-ID")} ml
                     </h4>
-                    <p className="text-[10px] text-slate-500 mt-2">Terbagi dalam {stocks.filter(s => s.type === "essence").length} jenis bibit terdaftar.</p>
+                    <p className="text-[10px] text-slate-500 mt-2">Terbagi dalam {unifiedEssenceStocks.length} jenis bibit terdaftar.</p>
                   </div>
                   <div className="h-12 w-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
                     <Sparkles className="h-6 w-6" />
@@ -5036,22 +5128,28 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredStocks.filter(s => s.type === "essence").map((s) => (
-                          <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="py-3 px-4 font-bold text-slate-800">{s.scentName}</td>
+                        {filteredEssenceStocks.map((item) => (
+                          <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="py-3 px-4 font-bold text-slate-800">{item.scentName}</td>
                             <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
                               <span className={`px-2 py-1 rounded-md ${
-                                s.quantity < 100 ? "bg-rose-50 text-rose-700 border border-rose-100 animate-pulse" : ""
+                                item.quantity < 100 ? "bg-rose-50 text-rose-700 border border-rose-100 animate-pulse" : ""
                               }`}>
-                                {s.quantity} ml
+                                {item.quantity} ml
                               </span>
                             </td>
                             {userRole === "admin" && (
                               <td className="py-3 px-4 text-right">
                                 <input
                                   type="number"
-                                  defaultValue={s.quantity}
-                                  onBlur={(e) => updateStockManual(s.id, Number(e.target.value))}
+                                  defaultValue={item.quantity}
+                                  onBlur={async (e) => {
+                                    const val = Number(e.target.value);
+                                    if (val !== item.quantity) {
+                                      await updateStockManual(item.id, val, item.scentName, "essence");
+                                      showToast(`Stok ${item.scentName} berhasil disesuaikan menjadi ${val} ml`, "success");
+                                    }
+                                  }}
                                   className="w-20 bg-slate-100 border border-transparent rounded px-2 py-1 font-mono text-center focus:outline-none focus:ring-1 focus:ring-emerald-500 text-xs"
                                   title="Masukkan angka lalu klik luar kotak untuk menyimpan"
                                 />
@@ -5059,6 +5157,13 @@ export default function App() {
                             )}
                           </tr>
                         ))}
+                        {filteredEssenceStocks.length === 0 && (
+                          <tr>
+                            <td colSpan={userRole === 'admin' ? 3 : 2} className="py-8 text-center text-slate-400 italic">
+                              Tidak ada data stok bibit parfum.
+                            </td>
+                          </tr>
+                        )}
                       </tbody>
                     </table>
                   </div>

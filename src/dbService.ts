@@ -336,8 +336,28 @@ export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
 }
 
 // Set manual adjustments (Admin only)
-export async function updateStockManual(id: string, newQuantity: number) {
-  await updateDoc(doc(db, "stocks", id), { quantity: newQuantity });
+export async function updateStockManual(
+  id: string, 
+  newQuantity: number, 
+  scentName?: string, 
+  type: "essence" | "bottle" | "alcohol" = "essence",
+  bottleType?: "Kaca" | "Plastik",
+  size?: string
+) {
+  const stockRef = doc(db, "stocks", id);
+  const snap = await getDoc(stockRef);
+  if (snap.exists()) {
+    await updateDoc(stockRef, { quantity: newQuantity });
+  } else {
+    await setDoc(stockRef, {
+      id,
+      quantity: newQuantity,
+      type,
+      ...(scentName ? { scentName } : {}),
+      ...(bottleType ? { bottleType } : {}),
+      ...(size ? { size } : {})
+    });
+  }
 }
 
 // ==========================================
