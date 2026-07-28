@@ -112,6 +112,9 @@ import {
   PlusCircle, 
   ArrowUpRight, 
   ArrowDownRight, 
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
   Filter, 
   UserPlus, 
   Edit3,
@@ -693,6 +696,52 @@ export default function App() {
   const [editingMasterProduct, setEditingMasterProduct] = useState<MasterProduct | null>(null);
   const [masterSearch, setMasterSearch] = useState("");
   const [masterCategoryFilter, setMasterCategoryFilter] = useState<string>("all");
+  const [masterSortField, setMasterSortField] = useState<"id" | "name" | "category" | "referenceKey" | "price">("name");
+  const [masterSortDirection, setMasterSortDirection] = useState<"asc" | "desc">("asc");
+
+  const handleMasterSort = (field: "id" | "name" | "category" | "referenceKey" | "price") => {
+    if (masterSortField === field) {
+      setMasterSortDirection(prev => prev === "asc" ? "desc" : "asc");
+    } else {
+      setMasterSortField(field);
+      setMasterSortDirection("asc");
+    }
+  };
+
+  const sortedAndFilteredMasterProducts = useMemo(() => {
+    return masterProducts
+      .filter(p => {
+        const query = masterSearch.toLowerCase().trim();
+        const matchSearch = !query || 
+          p.name.toLowerCase().includes(query) || 
+          p.id.toLowerCase().includes(query) || 
+          (p.referenceKey && p.referenceKey.toLowerCase().includes(query));
+        const matchCat = masterCategoryFilter === "all" || p.category === masterCategoryFilter;
+        return matchSearch && matchCat;
+      })
+      .sort((a, b) => {
+        let comparison = 0;
+        if (masterSortField === "id") {
+          comparison = a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
+        } else if (masterSortField === "name") {
+          comparison = a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+        } else if (masterSortField === "category") {
+          const getCatLabel = (cat: string) => {
+            if (cat === "essence") return "Bibit";
+            if (cat === "bottle_kaca") return "Botol Kaca";
+            if (cat === "bottle_plastik") return "Botol Plastik";
+            if (cat === "bundling") return "Bundling";
+            return "Lain-lain";
+          };
+          comparison = getCatLabel(a.category).localeCompare(getCatLabel(b.category));
+        } else if (masterSortField === "referenceKey") {
+          comparison = (a.referenceKey || "").localeCompare(b.referenceKey || "", undefined, { numeric: true, sensitivity: 'base' });
+        } else if (masterSortField === "price") {
+          comparison = (a.price || 0) - (b.price || 0);
+        }
+        return masterSortDirection === "asc" ? comparison : -comparison;
+      });
+  }, [masterProducts, masterSearch, masterCategoryFilter, masterSortField, masterSortDirection]);
 
   // Purchase stock state
   const [purchaseCategory, setPurchaseCategory] = useState<"bibit" | "alkohol" | "botol" | "other">("bibit");
@@ -5096,14 +5145,14 @@ export default function App() {
                           placeholder="Cari produk..."
                           value={masterSearch}
                           onChange={(e) => setMasterSearch(e.target.value)}
-                          className="bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs w-40 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-medium"
+                          className="bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs w-36 sm:w-40 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-medium"
                         />
                       </div>
                       {/* Category Filter */}
                       <select
                         value={masterCategoryFilter}
                         onChange={(e) => setMasterCategoryFilter(e.target.value)}
-                        className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-semibold cursor-pointer"
+                        className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-semibold cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500"
                       >
                         <option value="all">Semua Kategori</option>
                         <option value="essence">Bibit Scent Essence</option>
@@ -5112,96 +5161,187 @@ export default function App() {
                         <option value="bundling">Paket Bundling</option>
                         <option value="other">Lain-lain</option>
                       </select>
+                      {/* Sort Selector */}
+                      <select
+                        value={`${masterSortField}_${masterSortDirection}`}
+                        onChange={(e) => {
+                          const parts = e.target.value.split("_");
+                          const dir = parts.pop() as "asc" | "desc";
+                          const field = parts.join("_") as any;
+                          setMasterSortField(field);
+                          setMasterSortDirection(dir);
+                        }}
+                        className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs text-slate-700 font-semibold cursor-pointer focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                      >
+                        <option value="name_asc">Urutkan: Nama (A - Z)</option>
+                        <option value="name_desc">Urutkan: Nama (Z - A)</option>
+                        <option value="id_asc">Urutkan: ID Produk (A - Z)</option>
+                        <option value="id_desc">Urutkan: ID Produk (Z - A)</option>
+                        <option value="category_asc">Urutkan: Kategori (A - Z)</option>
+                        <option value="category_desc">Urutkan: Kategori (Z - A)</option>
+                        <option value="referenceKey_asc">Urutkan: Relasi Key (A - Z)</option>
+                        <option value="referenceKey_desc">Urutkan: Relasi Key (Z - A)</option>
+                        <option value="price_asc">Urutkan: Harga (Termurah)</option>
+                        <option value="price_desc">Urutkan: Harga (Termahal)</option>
+                      </select>
                     </div>
                   </div>
 
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left text-xs">
+                  {/* Scrollable Container for table */}
+                  <div className="max-h-[520px] overflow-y-auto overflow-x-auto rounded-xl border border-slate-200/80 shadow-2xs relative scrollbar-thin scrollbar-thumb-slate-300">
+                    <table className="w-full text-left text-xs border-collapse">
                       <thead>
-                        <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wider text-[10px] font-bold">
-                          <th className="py-3 px-4">ID Produk</th>
-                          <th className="py-3 px-4">Nama Produk</th>
-                          <th className="py-3 px-4">Kategori</th>
-                          <th className="py-3 px-4">Relasi Key</th>
-                          <th className="py-3 px-4">Harga Jual</th>
+                        <tr className="bg-slate-100/90 backdrop-blur-xs border-b border-slate-200 text-slate-600 uppercase tracking-wider text-[10px] font-bold sticky top-0 z-10 shadow-2xs">
+                          <th 
+                            onClick={() => handleMasterSort("id")}
+                            className="py-3 px-4 cursor-pointer hover:bg-slate-200/80 transition-colors select-none"
+                            title="Klik untuk mengurutkan berdasarkan ID Produk"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>ID Produk</span>
+                              {masterSortField === "id" ? (
+                                masterSortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-emerald-600 shrink-0" /> : <ArrowDown className="h-3 w-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 text-slate-400 shrink-0 opacity-40" />
+                              )}
+                            </div>
+                          </th>
+                          <th 
+                            onClick={() => handleMasterSort("name")}
+                            className="py-3 px-4 cursor-pointer hover:bg-slate-200/80 transition-colors select-none"
+                            title="Klik untuk mengurutkan berdasarkan Nama Produk"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>Nama Produk</span>
+                              {masterSortField === "name" ? (
+                                masterSortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-emerald-600 shrink-0" /> : <ArrowDown className="h-3 w-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 text-slate-400 shrink-0 opacity-40" />
+                              )}
+                            </div>
+                          </th>
+                          <th 
+                            onClick={() => handleMasterSort("category")}
+                            className="py-3 px-4 cursor-pointer hover:bg-slate-200/80 transition-colors select-none"
+                            title="Klik untuk mengurutkan berdasarkan Kategori"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>Kategori</span>
+                              {masterSortField === "category" ? (
+                                masterSortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-emerald-600 shrink-0" /> : <ArrowDown className="h-3 w-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 text-slate-400 shrink-0 opacity-40" />
+                              )}
+                            </div>
+                          </th>
+                          <th 
+                            onClick={() => handleMasterSort("referenceKey")}
+                            className="py-3 px-4 cursor-pointer hover:bg-slate-200/80 transition-colors select-none"
+                            title="Klik untuk mengurutkan berdasarkan Relasi Key"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>Relasi Key</span>
+                              {masterSortField === "referenceKey" ? (
+                                masterSortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-emerald-600 shrink-0" /> : <ArrowDown className="h-3 w-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 text-slate-400 shrink-0 opacity-40" />
+                              )}
+                            </div>
+                          </th>
+                          <th 
+                            onClick={() => handleMasterSort("price")}
+                            className="py-3 px-4 cursor-pointer hover:bg-slate-200/80 transition-colors select-none"
+                            title="Klik untuk mengurutkan berdasarkan Harga Jual"
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span>Harga Jual</span>
+                              {masterSortField === "price" ? (
+                                masterSortDirection === "asc" ? <ArrowUp className="h-3 w-3 text-emerald-600 shrink-0" /> : <ArrowDown className="h-3 w-3 text-emerald-600 shrink-0" />
+                              ) : (
+                                <ArrowUpDown className="h-3 w-3 text-slate-400 shrink-0 opacity-40" />
+                              )}
+                            </div>
+                          </th>
                           <th className="py-3 px-4 text-right">Aksi</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {masterProducts
-                          .filter(p => {
-                            const matchSearch = p.name.toLowerCase().includes(masterSearch.toLowerCase()) || p.id.toLowerCase().includes(masterSearch.toLowerCase());
-                            const matchCat = masterCategoryFilter === "all" || p.category === masterCategoryFilter;
-                            return matchSearch && matchCat;
-                          })
-                          .map((p) => (
-                            <tr key={p.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="py-3 px-4 font-mono font-semibold text-slate-500 text-[10px]">
-                                {p.id}
-                              </td>
-                              <td className="py-3 px-4 font-bold text-slate-800">
-                                {p.name}
-                              </td>
-                              <td className="py-3 px-4">
-                                <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
-                                  p.category === "essence" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
-                                  p.category === "bottle_kaca" ? "bg-blue-50 text-blue-700 border-blue-200" :
-                                  p.category === "bottle_plastik" ? "bg-purple-50 text-purple-700 border-purple-200" :
-                                  p.category === "bundling" ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
-                                  "bg-slate-50 text-slate-700 border-slate-200"
-                                }`}>
-                                  {p.category === "essence" ? "Bibit" :
-                                   p.category === "bottle_kaca" ? "Botol Kaca" :
-                                   p.category === "bottle_plastik" ? "Botol Plastik" :
-                                   p.category === "bundling" ? "Bundling" :
-                                   "Lain-lain"}
-                                </span>
-                              </td>
-                              <td className="py-3 px-4 text-slate-600 font-medium">
-                                {p.referenceKey}
-                              </td>
-                              <td className="py-3 px-4 font-mono font-extrabold text-emerald-700">
-                                {formatRupiah(p.price)}
-                              </td>
-                              <td className="py-3 px-4 text-right">
-                                <div className="flex justify-end gap-1.5">
-                                  <button
-                                    onClick={() => setEditingMasterProduct(p)}
-                                    className="text-slate-400 hover:text-emerald-600 p-1 rounded-lg transition-colors cursor-pointer"
-                                    title="Edit Produk"
-                                  >
-                                    <Edit3 className="h-4 w-4" />
-                                  </button>
-                                  <button
-                                    onClick={async () => {
-                                      if (confirm(`Apakah Anda yakin ingin menghapus produk master "${p.name}"? Ini akan mempengaruhi modul relational lainnya.`)) {
-                                        try {
-                                          await deleteMasterProduct(p.id);
-                                          showToast(`Produk master "${p.name}" berhasil dihapus.`);
-                                        } catch (err: any) {
-                                          showToast(err.message, "error");
-                                        }
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {sortedAndFilteredMasterProducts.map((p) => (
+                          <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                            <td className="py-3 px-4 font-mono font-semibold text-slate-500 text-[10px]">
+                              {p.id}
+                            </td>
+                            <td className="py-3 px-4 font-bold text-slate-800">
+                              {p.name}
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className={`inline-block px-2 py-0.5 rounded text-[9px] font-extrabold uppercase border ${
+                                p.category === "essence" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+                                p.category === "bottle_kaca" ? "bg-blue-50 text-blue-700 border-blue-200" :
+                                p.category === "bottle_plastik" ? "bg-purple-50 text-purple-700 border-purple-200" :
+                                p.category === "bundling" ? "bg-indigo-50 text-indigo-700 border-indigo-200" :
+                                "bg-slate-50 text-slate-700 border-slate-200"
+                              }`}>
+                                {p.category === "essence" ? "Bibit" :
+                                 p.category === "bottle_kaca" ? "Botol Kaca" :
+                                 p.category === "bottle_plastik" ? "Botol Plastik" :
+                                 p.category === "bundling" ? "Bundling" :
+                                 "Lain-lain"}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-600 font-medium">
+                              {p.referenceKey || "-"}
+                            </td>
+                            <td className="py-3 px-4 font-mono font-extrabold text-emerald-700">
+                              {formatRupiah(p.price)}
+                            </td>
+                            <td className="py-3 px-4 text-right">
+                              <div className="flex justify-end gap-1.5">
+                                <button
+                                  onClick={() => setEditingMasterProduct(p)}
+                                  className="text-slate-400 hover:text-emerald-600 p-1 rounded-lg transition-colors cursor-pointer"
+                                  title="Edit Produk"
+                                >
+                                  <Edit3 className="h-4 w-4" />
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (confirm(`Apakah Anda yakin ingin menghapus produk master "${p.name}"? Ini akan mempengaruhi modul relational lainnya.`)) {
+                                      try {
+                                        await deleteMasterProduct(p.id);
+                                        showToast(`Produk master "${p.name}" berhasil dihapus.`);
+                                      } catch (err: any) {
+                                        showToast(err.message, "error");
                                       }
-                                    }}
-                                    className="text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-colors cursor-pointer"
-                                    title="Hapus Produk"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ))}
-                        {masterProducts.length === 0 && (
+                                    }
+                                  }}
+                                  className="text-slate-400 hover:text-rose-600 p-1 rounded-lg transition-colors cursor-pointer"
+                                  title="Hapus Produk"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                        {sortedAndFilteredMasterProducts.length === 0 && (
                           <tr>
                             <td colSpan={6} className="py-8 text-center text-slate-400 italic">
-                              Tidak ada master produk terdaftar. Klik tombol "Seed Ulang / Sinkronisasi Data" untuk mengimpor otomatis.
+                              {masterProducts.length === 0 
+                                ? "Tidak ada master produk terdaftar. Klik tombol \"Seed Ulang / Sinkronisasi Data\" untuk mengimpor otomatis." 
+                                : "Tidak ada produk yang cocok dengan pencarian / filter terpilih."}
                             </td>
                           </tr>
                         )}
                       </tbody>
                     </table>
                   </div>
+                  {sortedAndFilteredMasterProducts.length > 0 && (
+                    <div className="mt-3 flex justify-between items-center text-[11px] text-slate-500 px-1">
+                      <span>Menampilkan <strong>{sortedAndFilteredMasterProducts.length}</strong> dari <strong>{masterProducts.length}</strong> produk</span>
+                      <span className="text-[10px] italic">Gunakan scroll mouse atau sentuh untuk menggeser ke atas/bawah</span>
+                    </div>
+                  )}
                 </div>
 
               </div>
