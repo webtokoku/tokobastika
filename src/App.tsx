@@ -4482,15 +4482,69 @@ export default function App() {
                       </div>
 
                       <div>
-                        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Aroma / Scent</label>
+                        <div className="flex items-center justify-between mb-1">
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">Nama Aroma / Scent (Master Produk)</label>
+                          <span className="text-[10px] text-emerald-600 font-bold">{masterBibitList.length} Aroma di Master</span>
+                        </div>
                         <input
                           id="shelf-scent-input"
                           type="text"
-                          placeholder="Contoh: Bacarat Rouge, Black Opium"
+                          list="master-scents-rack-list"
+                          placeholder="Pilih atau ketik aroma dari Master Produk..."
                           value={newShelf.scentName}
-                          onChange={(e) => setNewShelf({ ...newShelf, scentName: e.target.value })}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            const matched = masterBibitList.find(m => m.scentName.toLowerCase() === val.trim().toLowerCase());
+                            setNewShelf({ 
+                              ...newShelf, 
+                              scentName: val,
+                              pricePerMl: matched ? matched.pricePerMl : (newShelf.pricePerMl || 3500)
+                            });
+                          }}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white"
                         />
+                        <datalist id="master-scents-rack-list">
+                          {masterBibitList.map(item => (
+                            <option key={item.id} value={item.scentName}>
+                              {item.scentName} ({formatRupiah(item.pricePerMl)} / ml)
+                            </option>
+                          ))}
+                        </datalist>
+
+                        {/* Quick Selection Pills from Master Products */}
+                        {masterBibitList.length > 0 && (
+                          <div className="mt-2.5 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                            <span className="text-[10px] text-slate-500 font-bold block mb-1.5 flex items-center justify-between">
+                              <span>Pilih Aroma Master Produk Terdaftar:</span>
+                              <span className="text-emerald-600">Klik untuk pilih</span>
+                            </span>
+                            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                              {masterBibitList.map(item => {
+                                const isSelected = newShelf.scentName.trim().toLowerCase() === item.scentName.toLowerCase();
+                                return (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => {
+                                      setNewShelf({
+                                        ...newShelf,
+                                        scentName: item.scentName,
+                                        pricePerMl: item.pricePerMl
+                                      });
+                                    }}
+                                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all border cursor-pointer ${
+                                      isSelected
+                                        ? "bg-emerald-600 text-white border-emerald-600 shadow-sm scale-95"
+                                        : "bg-white hover:bg-emerald-50 text-slate-700 border-slate-200 hover:border-emerald-300"
+                                    }`}
+                                  >
+                                    {item.scentName}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       <div>
