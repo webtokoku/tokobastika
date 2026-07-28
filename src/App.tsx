@@ -2014,6 +2014,89 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => a.scentName.localeCompare(b.scentName));
   }, [masterProducts, stocks]);
 
+  const unifiedOtherStocks = useMemo(() => {
+    const map = new Map<string, {
+      id: string;
+      label: string;
+      quantity: number;
+      type: "bottle" | "alcohol";
+      bottleType?: "Kaca" | "Plastik";
+      size?: string;
+      scentName?: string;
+    }>();
+
+    masterProducts.forEach(p => {
+      if (p.category === "bottle_kaca" || p.category === "bottle_plastik") {
+        const bottleType: "Kaca" | "Plastik" = p.category === "bottle_kaca" ? "Kaca" : "Plastik";
+        const size = (p.referenceKey && p.referenceKey.trim() && p.referenceKey.trim().toLowerCase() !== "size")
+          ? p.referenceKey.trim()
+          : p.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+        const label = `Botol Parfum ${bottleType} Ukuran ${size}`;
+        
+        const matchedStock = stocks.find(s => 
+          s.type === "bottle" && 
+          s.bottleType?.toLowerCase() === bottleType.toLowerCase() && 
+          s.size?.toLowerCase() === size.toLowerCase()
+        );
+
+        const stockId = matchedStock ? matchedStock.id : `bottle_${size.toLowerCase().replace(/[^a-z0-9]+/g, "_")}_${bottleType.toLowerCase()}`;
+        const key = `${bottleType.toLowerCase()}_${size.toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            id: stockId,
+            label,
+            quantity: matchedStock ? matchedStock.quantity : 0,
+            type: "bottle",
+            bottleType,
+            size
+          });
+        }
+      } else if (p.category === "other") {
+        const label = p.name;
+        const matchedStock = stocks.find(s => 
+          s.type === "alcohol" && 
+          (s.scentName?.toLowerCase() === p.name.toLowerCase() || s.id === `alcohol_${p.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`)
+        );
+
+        let defaultStockId = `alcohol_${p.name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+        if (p.name.toLowerCase() === "absolut cair") defaultStockId = "alcohol_cair";
+        if (p.name.toLowerCase() === "absolut gel") defaultStockId = "alcohol_gel";
+
+        const stockId = matchedStock ? matchedStock.id : defaultStockId;
+        const key = `other_${p.name.toLowerCase()}`;
+        if (!map.has(key)) {
+          map.set(key, {
+            id: stockId,
+            label,
+            quantity: matchedStock ? matchedStock.quantity : 0,
+            type: "alcohol",
+            scentName: p.name
+          });
+        }
+      }
+    });
+
+    // Fallback ONLY if masterProducts has no bottle or other items at all
+    if (map.size === 0) {
+      stocks.filter(s => s.type === "alcohol" || (s.type === "bottle" && s.bottleType)).forEach(s => {
+        const label = s.type === "alcohol" 
+          ? (s.scentName || (s.id === "alcohol_gel" ? "Absolut Gel" : "Absolut Cair")) 
+          : `Botol Parfum ${s.bottleType || "Kaca"} Ukuran ${s.size}`;
+        map.set(s.id, {
+          id: s.id,
+          label,
+          quantity: s.quantity,
+          type: s.type as "bottle" | "alcohol",
+          bottleType: s.bottleType as any,
+          size: s.size,
+          scentName: s.scentName
+        });
+      });
+    }
+
+    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label));
+  }, [masterProducts, stocks]);
+
   const filteredEssenceStocks = useMemo(() => {
     if (!searchTerm) return unifiedEssenceStocks;
     const term = searchCaseSensitive ? searchTerm : searchTerm.toLowerCase();
@@ -2022,6 +2105,15 @@ export default function App() {
       return scent.includes(term);
     });
   }, [unifiedEssenceStocks, searchTerm, searchCaseSensitive]);
+
+  const filteredOtherStocks = useMemo(() => {
+    if (!searchTerm) return unifiedOtherStocks;
+    const term = searchCaseSensitive ? searchTerm : searchTerm.toLowerCase();
+    return unifiedOtherStocks.filter(item => {
+      const label = searchCaseSensitive ? item.label : item.label.toLowerCase();
+      return label.includes(term);
+    });
+  }, [unifiedOtherStocks, searchTerm, searchCaseSensitive]);
 
   const filteredPrices = prices.filter(p => {
     if (!searchTerm) return true;
@@ -5150,13 +5242,13 @@ export default function App() {
                     <div>
                       <span className="text-[10px] text-slate-500 font-medium">Absolut Cair</span>
                       <h4 className="text-lg font-extrabold text-slate-900 font-mono">
-                        {(stocks.find(s => s.id === "alcohol_cair")?.quantity || 0).toLocaleString("id-ID")} ml
+                        {(unifiedOtherStocks.find(s => s.scentName?.toLowerCase() === "absolut cair" || s.id === "alcohol_cair")?.quantity || 0).toLocaleString("id-ID")} ml
                       </h4>
                     </div>
                     <div>
                       <span className="text-[10px] text-slate-500 font-medium">Absolut Gel</span>
                       <h4 className="text-lg font-extrabold text-slate-900 font-mono">
-                        {(stocks.find(s => s.id === "alcohol_gel")?.quantity || 0).toLocaleString("id-ID")} ml
+                        {(unifiedOtherStocks.find(s => s.scentName?.toLowerCase() === "absolut gel" || s.id === "alcohol_gel")?.quantity || 0).toLocaleString("id-ID")} ml
                       </h4>
                     </div>
                   </div>
@@ -5167,9 +5259,9 @@ export default function App() {
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Stok Botol Kosong</span>
                     <h4 className="text-2xl font-extrabold text-slate-900 font-mono mt-1">
-                      {stocks.filter(s => s.type === "bottle" && s.bottleType).reduce((sum, s) => sum + s.quantity, 0)} unit
+                      {unifiedOtherStocks.filter(s => s.type === "bottle").reduce((sum, s) => sum + s.quantity, 0)} unit
                     </h4>
-                    <p className="text-[10px] text-slate-500 mt-2">Mencakup botol ukuran 30ml, 50ml, dan 100ml.</p>
+                    <p className="text-[10px] text-slate-500 mt-2">Mencakup {unifiedOtherStocks.filter(s => s.type === "bottle").length} varian botol terdaftar.</p>
                   </div>
                   <div className="h-12 w-12 bg-amber-50 rounded-xl flex items-center justify-center text-amber-600">
                     <Package className="h-6 w-6" />
@@ -5262,26 +5354,28 @@ export default function App() {
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {stocks.filter(s => s.type === "alcohol" || (s.type === "bottle" && s.bottleType)).map((s) => (
-                            <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="py-3 px-4 font-bold text-slate-800">
-                                {s.type === "alcohol" 
-                                  ? (s.scentName || (s.id === "alcohol_gel" ? "Absolut Gel" : "Absolut Cair")) 
-                                  : `Botol Parfum ${s.bottleType || "Kaca"} Ukuran ${s.size}`}
-                              </td>
+                          {filteredOtherStocks.map((item) => (
+                            <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="py-3 px-4 font-bold text-slate-800">{item.label}</td>
                               <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
                                 <span className={`px-2 py-1 rounded-md ${
-                                  s.quantity < (s.type === "alcohol" ? 1000 : 15) ? "bg-rose-50 text-rose-700 border border-rose-100" : ""
+                                  item.quantity < (item.type === "alcohol" ? 1000 : 15) ? "bg-rose-50 text-rose-700 border border-rose-100" : ""
                                 }`}>
-                                  {s.quantity} {s.type === "alcohol" ? "ml" : "unit"}
+                                  {item.quantity} {item.type === "alcohol" ? "ml" : "unit"}
                                 </span>
                               </td>
                               {userRole === "admin" && (
                                 <td className="py-3 px-4 text-right">
                                   <input
                                     type="number"
-                                    defaultValue={s.quantity}
-                                    onBlur={(e) => updateStockManual(s.id, Number(e.target.value))}
+                                    defaultValue={item.quantity}
+                                    onBlur={async (e) => {
+                                      const val = Number(e.target.value);
+                                      if (val !== item.quantity) {
+                                        await updateStockManual(item.id, val, item.scentName, item.type, item.bottleType, item.size);
+                                        showToast(`Stok ${item.label} berhasil disesuaikan menjadi ${val} ${item.type === "alcohol" ? "ml" : "unit"}`, "success");
+                                      }
+                                    }}
                                     className="w-20 bg-slate-100 border border-transparent rounded px-2 py-1 font-mono text-center focus:outline-none focus:ring-1 focus:ring-emerald-500 text-xs"
                                     title="Masukkan angka lalu klik luar kotak untuk menyimpan"
                                   />
@@ -5289,6 +5383,13 @@ export default function App() {
                               )}
                             </tr>
                           ))}
+                          {filteredOtherStocks.length === 0 && (
+                            <tr>
+                              <td colSpan={userRole === 'admin' ? 3 : 2} className="py-8 text-center text-slate-400 italic">
+                                Tidak ada data stok botol atau absolut.
+                              </td>
+                            </tr>
+                          )}
                         </tbody>
                       </table>
                     </div>

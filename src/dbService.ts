@@ -2186,7 +2186,7 @@ export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">
     updatedAt: now
   });
 
-  // Automatically sync to prices & stocks if category is essence (bibit)
+  // Automatically sync to prices & stocks based on category
   if (product.category === "essence") {
     let scent = product.referenceKey && product.referenceKey.trim() && product.referenceKey.trim().toLowerCase() !== "scentname"
       ? product.referenceKey.trim()
@@ -2198,7 +2198,7 @@ export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">
         updatedAt: now
       }, { merge: true });
 
-      const stockId = `essence_${scent.replace(/\s+/g, "_").toLowerCase()}`;
+      const stockId = getNormalizedEssenceStockId(scent);
       const stockRef = doc(db, "stocks", stockId);
       const stockSnap = await getDoc(stockRef);
       if (!stockSnap.exists()) {
@@ -2206,6 +2206,43 @@ export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">
           id: stockId,
           type: "essence",
           scentName: scent,
+          quantity: 0
+        });
+      }
+    }
+  } else if (product.category === "bottle_kaca" || product.category === "bottle_plastik") {
+    const bottleType: "Kaca" | "Plastik" = product.category === "bottle_kaca" ? "Kaca" : "Plastik";
+    const size = (product.referenceKey && product.referenceKey.trim() && product.referenceKey.trim().toLowerCase() !== "size")
+      ? product.referenceKey.trim()
+      : product.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+    if (size) {
+      const stockId = getNormalizedBottleStockId(size, bottleType);
+      const stockRef = doc(db, "stocks", stockId);
+      const stockSnap = await getDoc(stockRef);
+      if (!stockSnap.exists()) {
+        await setDoc(stockRef, {
+          id: stockId,
+          type: "bottle",
+          size,
+          bottleType,
+          quantity: 0
+        });
+      }
+    }
+  } else if (product.category === "other") {
+    const name = product.name.trim();
+    if (name) {
+      let stockId = `alcohol_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      if (name.toLowerCase() === "absolut cair") stockId = "alcohol_cair";
+      if (name.toLowerCase() === "absolut gel") stockId = "alcohol_gel";
+
+      const stockRef = doc(db, "stocks", stockId);
+      const stockSnap = await getDoc(stockRef);
+      if (!stockSnap.exists()) {
+        await setDoc(stockRef, {
+          id: stockId,
+          type: "alcohol",
+          scentName: name,
           quantity: 0
         });
       }
@@ -2220,7 +2257,6 @@ export async function updateMasterProduct(id: string, updates: Partial<Omit<Mast
     updatedAt: now
   });
 
-  // If updating an essence master product, sync price and scentName to prices & stocks collection
   const masterDoc = await getDoc(doc(db, "master_products", id));
   if (masterDoc.exists()) {
     const data = masterDoc.data() as MasterProduct;
@@ -2235,7 +2271,7 @@ export async function updateMasterProduct(id: string, updates: Partial<Omit<Mast
           updatedAt: now
         }, { merge: true });
 
-        const stockId = `essence_${scent.replace(/\s+/g, "_").toLowerCase()}`;
+        const stockId = getNormalizedEssenceStockId(scent);
         const stockRef = doc(db, "stocks", stockId);
         const stockSnap = await getDoc(stockRef);
         if (!stockSnap.exists()) {
@@ -2243,6 +2279,43 @@ export async function updateMasterProduct(id: string, updates: Partial<Omit<Mast
             id: stockId,
             type: "essence",
             scentName: scent,
+            quantity: 0
+          });
+        }
+      }
+    } else if (data.category === "bottle_kaca" || data.category === "bottle_plastik") {
+      const bottleType: "Kaca" | "Plastik" = data.category === "bottle_kaca" ? "Kaca" : "Plastik";
+      const size = (data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "size")
+        ? data.referenceKey.trim()
+        : data.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+      if (size) {
+        const stockId = getNormalizedBottleStockId(size, bottleType);
+        const stockRef = doc(db, "stocks", stockId);
+        const stockSnap = await getDoc(stockRef);
+        if (!stockSnap.exists()) {
+          await setDoc(stockRef, {
+            id: stockId,
+            type: "bottle",
+            size,
+            bottleType,
+            quantity: 0
+          });
+        }
+      }
+    } else if (data.category === "other") {
+      const name = data.name.trim();
+      if (name) {
+        let stockId = `alcohol_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+        if (name.toLowerCase() === "absolut cair") stockId = "alcohol_cair";
+        if (name.toLowerCase() === "absolut gel") stockId = "alcohol_gel";
+
+        const stockRef = doc(db, "stocks", stockId);
+        const stockSnap = await getDoc(stockRef);
+        if (!stockSnap.exists()) {
+          await setDoc(stockRef, {
+            id: stockId,
+            type: "alcohol",
+            scentName: name,
             quantity: 0
           });
         }
@@ -2261,6 +2334,25 @@ export async function deleteMasterProduct(id: string) {
         : data.name.replace(/^bibit\s+/i, "").trim();
       if (scent) {
         await deleteDoc(doc(db, "prices", scent)).catch(() => {});
+        const stockId = getNormalizedEssenceStockId(scent);
+        await deleteDoc(doc(db, "stocks", stockId)).catch(() => {});
+      }
+    } else if (data.category === "bottle_kaca" || data.category === "bottle_plastik") {
+      const bottleType = data.category === "bottle_kaca" ? "Kaca" : "Plastik";
+      const size = (data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "size")
+        ? data.referenceKey.trim()
+        : data.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+      if (size) {
+        const stockId = getNormalizedBottleStockId(size, bottleType);
+        await deleteDoc(doc(db, "stocks", stockId)).catch(() => {});
+      }
+    } else if (data.category === "other") {
+      const name = data.name.trim();
+      if (name) {
+        let stockId = `alcohol_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+        if (name.toLowerCase() === "absolut cair") stockId = "alcohol_cair";
+        if (name.toLowerCase() === "absolut gel") stockId = "alcohol_gel";
+        await deleteDoc(doc(db, "stocks", stockId)).catch(() => {});
       }
     }
   }
@@ -2336,58 +2428,168 @@ export async function seedMasterProductsIfEmpty() {
         updatedAt: new Date().toISOString()
       });
     }
-  } else {
-    // Bidirectional sync: sync existing master_products to prices & stocks and clean up orphans
-    const validEssenceScents = new Set<string>();
-    for (const docSnap of masterSnap.docs) {
-      const data = docSnap.data() as MasterProduct;
-      if (data.category === "essence") {
-        let scent = data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "scentname"
-          ? data.referenceKey.trim()
-          : data.name.replace(/^bibit\s+/i, "").trim();
-        if (scent) {
-          validEssenceScents.add(scent.toLowerCase());
 
-          await setDoc(doc(db, "prices", scent), {
+    // 4. Seed Default Absolut (Other)
+    await setDoc(doc(db, "master_products", "prod_other_absolut_cair"), {
+      id: "prod_other_absolut_cair",
+      name: "Absolut Cair",
+      price: 50,
+      category: "other",
+      referenceKey: "Absolut Cair",
+      updatedAt: new Date().toISOString()
+    });
+    await setDoc(doc(db, "master_products", "prod_other_absolut_gel"), {
+      id: "prod_other_absolut_gel",
+      name: "Absolut Gel",
+      price: 60,
+      category: "other",
+      referenceKey: "Absolut Gel",
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  // Ensure default bottles and alcohol exist in master_products if missing
+  const updatedMasterSnap = await getDocs(masterRef);
+  const existingCategories = new Set(updatedMasterSnap.docs.map(d => (d.data() as MasterProduct).category));
+  
+  if (!existingCategories.has("bottle_kaca") && !existingCategories.has("bottle_plastik")) {
+    const defaultSizes = ["30ml", "50ml", "100ml"];
+    for (const size of defaultSizes) {
+      const idKaca = "prod_bottle_kaca_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await setDoc(doc(db, "master_products", idKaca), {
+        id: idKaca,
+        name: `Botol Kaca ${size}`,
+        price: size === "30ml" ? 10000 : size === "50ml" ? 12000 : 15000,
+        category: "bottle_kaca",
+        referenceKey: size,
+        updatedAt: new Date().toISOString()
+      });
+      const idPlastik = "prod_bottle_plastik_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      await setDoc(doc(db, "master_products", idPlastik), {
+        id: idPlastik,
+        name: `Botol Plastik ${size}`,
+        price: size === "30ml" ? 5000 : size === "50ml" ? 6000 : 7500,
+        category: "bottle_plastik",
+        referenceKey: size,
+        updatedAt: new Date().toISOString()
+      });
+    }
+  }
+
+  if (!existingCategories.has("other")) {
+    await setDoc(doc(db, "master_products", "prod_other_absolut_cair"), {
+      id: "prod_other_absolut_cair",
+      name: "Absolut Cair",
+      price: 50,
+      category: "other",
+      referenceKey: "Absolut Cair",
+      updatedAt: new Date().toISOString()
+    });
+    await setDoc(doc(db, "master_products", "prod_other_absolut_gel"), {
+      id: "prod_other_absolut_gel",
+      name: "Absolut Gel",
+      price: 60,
+      category: "other",
+      referenceKey: "Absolut Gel",
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  // Bidirectional sync: sync existing master_products to prices & stocks and clean up orphans
+  const latestMasterSnap = await getDocs(masterRef);
+  const validEssenceScents = new Set<string>();
+  const validStockIds = new Set<string>();
+
+  for (const docSnap of latestMasterSnap.docs) {
+    const data = docSnap.data() as MasterProduct;
+    if (data.category === "essence") {
+      let scent = data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "scentname"
+        ? data.referenceKey.trim()
+        : data.name.replace(/^bibit\s+/i, "").trim();
+      if (scent) {
+        validEssenceScents.add(scent.toLowerCase());
+
+        await setDoc(doc(db, "prices", scent), {
+          scentName: scent,
+          pricePerMl: data.price || 2000,
+          updatedAt: new Date().toISOString()
+        }, { merge: true });
+
+        const stockId = getNormalizedEssenceStockId(scent);
+        validStockIds.add(stockId);
+        const stockRef = doc(db, "stocks", stockId);
+        const stockSnap = await getDoc(stockRef);
+        if (!stockSnap.exists()) {
+          await setDoc(stockRef, {
+            id: stockId,
+            type: "essence",
             scentName: scent,
-            pricePerMl: data.price || 2000,
-            updatedAt: new Date().toISOString()
-          }, { merge: true });
+            quantity: 0
+          });
+        }
+      }
+    } else if (data.category === "bottle_kaca" || data.category === "bottle_plastik") {
+      const bottleType: "Kaca" | "Plastik" = data.category === "bottle_kaca" ? "Kaca" : "Plastik";
+      const size = (data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "size")
+        ? data.referenceKey.trim()
+        : data.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+      if (size) {
+        const stockId = getNormalizedBottleStockId(size, bottleType);
+        validStockIds.add(stockId);
+        const stockRef = doc(db, "stocks", stockId);
+        const stockSnap = await getDoc(stockRef);
+        if (!stockSnap.exists()) {
+          await setDoc(stockRef, {
+            id: stockId,
+            type: "bottle",
+            size,
+            bottleType,
+            quantity: size === "100ml" || size === "30ml" || size === "50ml" ? 50 : 0
+          });
+        }
+      }
+    } else if (data.category === "other") {
+      const name = data.name.trim();
+      if (name) {
+        let stockId = `alcohol_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+        if (name.toLowerCase() === "absolut cair") stockId = "alcohol_cair";
+        if (name.toLowerCase() === "absolut gel") stockId = "alcohol_gel";
 
-          const stockId = `essence_${scent.replace(/\s+/g, "_").toLowerCase()}`;
-          const stockRef = doc(db, "stocks", stockId);
-          const stockSnap = await getDoc(stockRef);
-          if (!stockSnap.exists()) {
-            await setDoc(stockRef, {
-              id: stockId,
-              type: "essence",
-              scentName: scent,
-              quantity: 0
-            });
-          }
+        validStockIds.add(stockId);
+        const stockRef = doc(db, "stocks", stockId);
+        const stockSnap = await getDoc(stockRef);
+        if (!stockSnap.exists()) {
+          await setDoc(stockRef, {
+            id: stockId,
+            type: "alcohol",
+            scentName: name,
+            quantity: name.toLowerCase() === "absolut cair" ? 300 : name.toLowerCase() === "absolut gel" ? 5000 : 0
+          });
         }
       }
     }
+  }
 
-    // Clean up orphaned essence items in prices and stocks that are not in master_products
-    if (validEssenceScents.size > 0) {
-      const pricesSnap = await getDocs(collection(db, "prices"));
-      for (const docSnap of pricesSnap.docs) {
-        const pData = docSnap.data();
-        const scentName = pData.scentName || docSnap.id;
-        if (scentName && !validEssenceScents.has(scentName.toLowerCase())) {
-          await deleteDoc(doc(db, "prices", docSnap.id)).catch(() => {});
-        }
+  // Clean up orphaned essence items in prices
+  if (validEssenceScents.size > 0) {
+    const pricesSnap = await getDocs(collection(db, "prices"));
+    for (const docSnap of pricesSnap.docs) {
+      const pData = docSnap.data();
+      const scentName = pData.scentName || docSnap.id;
+      if (scentName && !validEssenceScents.has(scentName.toLowerCase())) {
+        await deleteDoc(doc(db, "prices", docSnap.id)).catch(() => {});
       }
+    }
+  }
 
-      const stocksSnap = await getDocs(collection(db, "stocks"));
-      for (const docSnap of stocksSnap.docs) {
-        const sData = docSnap.data();
-        if (sData.type === "essence" && sData.scentName) {
-          if (!validEssenceScents.has(sData.scentName.toLowerCase())) {
-            await deleteDoc(doc(db, "stocks", docSnap.id)).catch(() => {});
-          }
-        }
+  // Clean up orphaned stocks items that are no longer in master_products
+  if (validStockIds.size > 0) {
+    const stocksSnap = await getDocs(collection(db, "stocks"));
+    for (const docSnap of stocksSnap.docs) {
+      const sData = docSnap.data();
+      // Only delete if it's not in validStockIds and is one of the synchronized stock types
+      if (!validStockIds.has(docSnap.id)) {
+        await deleteDoc(doc(db, "stocks", docSnap.id)).catch(() => {});
       }
     }
   }
