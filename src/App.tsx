@@ -1926,29 +1926,29 @@ export default function App() {
       }
     });
 
-    // 2. Secondary / Sync fallback: prices
-    prices.forEach(p => {
-      const scent = p.scentName.trim();
-      if (scent && !map.has(scent.toLowerCase())) {
-        map.set(scent.toLowerCase(), {
-          scentName: scent,
-          pricePerMl: p.pricePerMl || 2000,
-          id: `price_${scent}`
-        });
-      }
-    });
-
-    // 3. Secondary / Sync fallback: stocks (type === "essence")
-    stocks.filter(s => s.type === "essence" && s.scentName).forEach(s => {
-      const scent = s.scentName!.trim();
-      if (scent && !map.has(scent.toLowerCase())) {
-        map.set(scent.toLowerCase(), {
-          scentName: scent,
-          pricePerMl: 2000,
-          id: s.id
-        });
-      }
-    });
+    // Fallback ONLY if masterProducts has no essence items at all (e.g. initial boot before seed)
+    if (map.size === 0) {
+      prices.forEach(p => {
+        const scent = p.scentName.trim();
+        if (scent && !map.has(scent.toLowerCase())) {
+          map.set(scent.toLowerCase(), {
+            scentName: scent,
+            pricePerMl: p.pricePerMl || 2000,
+            id: `price_${scent}`
+          });
+        }
+      });
+      stocks.filter(s => s.type === "essence" && s.scentName).forEach(s => {
+        const scent = s.scentName!.trim();
+        if (scent && !map.has(scent.toLowerCase())) {
+          map.set(scent.toLowerCase(), {
+            scentName: scent,
+            pricePerMl: 2000,
+            id: s.id
+          });
+        }
+      });
+    }
 
     return Array.from(map.values()).sort((a, b) => a.scentName.localeCompare(b.scentName));
   }, [masterProducts, prices, stocks]);
@@ -1995,19 +1995,21 @@ export default function App() {
       });
     });
 
-    // 2. Secondary fallback: stocks (type === "essence") that are not in masterProducts yet
-    stocks.filter(s => s.type === "essence" && s.scentName).forEach(s => {
-      const scent = s.scentName!.trim();
-      const normalizedKey = scent.toLowerCase();
-      if (!map.has(normalizedKey)) {
-        map.set(normalizedKey, {
-          id: s.id,
-          scentName: scent,
-          quantity: s.quantity,
-          pricePerMl: 2000
-        });
-      }
-    });
+    // Fallback ONLY if masterProducts has no essence items at all
+    if (map.size === 0) {
+      stocks.filter(s => s.type === "essence" && s.scentName).forEach(s => {
+        const scent = s.scentName!.trim();
+        const normalizedKey = scent.toLowerCase();
+        if (!map.has(normalizedKey)) {
+          map.set(normalizedKey, {
+            id: s.id,
+            scentName: scent,
+            quantity: s.quantity,
+            pricePerMl: 2000
+          });
+        }
+      });
+    }
 
     return Array.from(map.values()).sort((a, b) => a.scentName.localeCompare(b.scentName));
   }, [masterProducts, stocks]);
@@ -3373,7 +3375,7 @@ export default function App() {
                   <div>
                     <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Aroma (Bibit)</label>
                     {(() => {
-                      const availableScents = Array.from(new Set(stocks.filter(s => s.type === "essence" && s.scentName).map(s => s.scentName)));
+                      const availableScents = masterBibitList.map(item => item.scentName);
                       return (
                         <>
                           <input
@@ -4327,25 +4329,41 @@ export default function App() {
                       Peringatan Stok Rendah
                     </h3>
                     <div className="space-y-3 overflow-y-auto max-h-48">
-                      {stocks.filter(s => s.quantity < (s.type === "essence" ? 100 : s.type === "bottle" ? 15 : 1000)).map(s => (
-                        <div key={s.id} className="flex justify-between items-center bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs">
-                          <div>
-                            <span className="font-bold text-amber-900">
-                              {s.type === "essence" ? `Bibit ${s.scentName}` : s.type === "bottle" ? `Botol ${s.bottleType || "Kaca"} ${s.size}` : "Absolut"}
+                      {(() => {
+                        const lowStockItems = [
+                          ...unifiedEssenceStocks.filter(s => s.quantity < 100).map(s => ({
+                            id: s.id,
+                            label: `Bibit ${s.scentName}`,
+                            quantity: s.quantity,
+                            unit: "ml"
+                          })),
+                          ...stocks.filter(s => s.type !== "essence" && s.quantity < (s.type === "bottle" ? 15 : 1000)).map(s => ({
+                            id: s.id,
+                            label: s.type === "bottle" ? `Botol ${s.bottleType || "Kaca"} ${s.size}` : "Absolut",
+                            quantity: s.quantity,
+                            unit: s.type === "alcohol" ? "ml" : "unit"
+                          }))
+                        ];
+                        if (lowStockItems.length === 0) {
+                          return (
+                            <div className="text-center py-6 text-slate-400">
+                              <Check className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
+                              <p className="text-xs font-semibold">Semua stok aman & memadai.</p>
+                            </div>
+                          );
+                        }
+                        return lowStockItems.map(item => (
+                          <div key={item.id} className="flex justify-between items-center bg-amber-50 border border-amber-100 rounded-xl p-3 text-xs">
+                            <div>
+                              <span className="font-bold text-amber-900">{item.label}</span>
+                              <p className="text-[10px] text-amber-700">Perlu re-stock segera!</p>
+                            </div>
+                            <span className="font-mono font-bold bg-amber-200 text-amber-900 px-2.5 py-1 rounded-lg">
+                              {item.quantity} {item.unit}
                             </span>
-                            <p className="text-[10px] text-amber-700">Perlu re-stock segera!</p>
                           </div>
-                          <span className="font-mono font-bold bg-amber-200 text-amber-900 px-2.5 py-1 rounded-lg">
-                            {s.quantity} {s.type === "essence" || s.type === "alcohol" ? "ml" : "unit"}
-                          </span>
-                        </div>
-                      ))}
-                      {stocks.filter(s => s.quantity < (s.type === "essence" ? 100 : s.type === "bottle" ? 15 : 1000)).length === 0 && (
-                        <div className="text-center py-6 text-slate-400">
-                          <Check className="h-8 w-8 text-emerald-500 mx-auto mb-2" />
-                          <p className="text-xs font-semibold">Semua stok aman & memadai.</p>
-                        </div>
-                      )}
+                        ));
+                      })()}
                     </div>
                   </div>
 

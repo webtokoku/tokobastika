@@ -2337,7 +2337,8 @@ export async function seedMasterProductsIfEmpty() {
       });
     }
   } else {
-    // Bidirectional sync: sync existing master_products to prices & stocks
+    // Bidirectional sync: sync existing master_products to prices & stocks and clean up orphans
+    const validEssenceScents = new Set<string>();
     for (const docSnap of masterSnap.docs) {
       const data = docSnap.data() as MasterProduct;
       if (data.category === "essence") {
@@ -2345,6 +2346,8 @@ export async function seedMasterProductsIfEmpty() {
           ? data.referenceKey.trim()
           : data.name.replace(/^bibit\s+/i, "").trim();
         if (scent) {
+          validEssenceScents.add(scent.toLowerCase());
+
           await setDoc(doc(db, "prices", scent), {
             scentName: scent,
             pricePerMl: data.price || 2000,
@@ -2361,6 +2364,28 @@ export async function seedMasterProductsIfEmpty() {
               scentName: scent,
               quantity: 0
             });
+          }
+        }
+      }
+    }
+
+    // Clean up orphaned essence items in prices and stocks that are not in master_products
+    if (validEssenceScents.size > 0) {
+      const pricesSnap = await getDocs(collection(db, "prices"));
+      for (const docSnap of pricesSnap.docs) {
+        const pData = docSnap.data();
+        const scentName = pData.scentName || docSnap.id;
+        if (scentName && !validEssenceScents.has(scentName.toLowerCase())) {
+          await deleteDoc(doc(db, "prices", docSnap.id)).catch(() => {});
+        }
+      }
+
+      const stocksSnap = await getDocs(collection(db, "stocks"));
+      for (const docSnap of stocksSnap.docs) {
+        const sData = docSnap.data();
+        if (sData.type === "essence" && sData.scentName) {
+          if (!validEssenceScents.has(sData.scentName.toLowerCase())) {
+            await deleteDoc(doc(db, "stocks", docSnap.id)).catch(() => {});
           }
         }
       }
