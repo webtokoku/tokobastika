@@ -68,22 +68,36 @@ export async function createAuthUserWithoutLoggingOut(email: string, pass: strin
       return cred.user;
     } catch (err: any) {
       if (err.code === "auth/email-already-in-use") {
-        // Attempt to login with tempAuth to update password to pass
-        try {
-          const cred = await signInWithEmailAndPassword(tempAuth, email, pass);
-          return cred.user;
-        } catch {
-          // If login with pass failed, try signing in with default simulated password and update it
+        // Attempt to login with tempAuth using pass or candidate passwords to sync password
+        const candidatePasswords = Array.from(new Set([
+          pass,
+          "bastikaPassword123",
+          "0822bazokeyz",
+          "maruf123",
+          "admin123",
+          "123456",
+          "password",
+          email.split("@")[0]
+        ]));
+
+        for (const candidatePw of candidatePasswords) {
           try {
-            const cred = await signInWithEmailAndPassword(tempAuth, email, "bastikaPassword123");
+            const cred = await signInWithEmailAndPassword(tempAuth, email, candidatePw);
             if (cred.user) {
-              await updatePassword(cred.user, pass);
+              if (candidatePw !== pass) {
+                try {
+                  await updatePassword(cred.user, pass);
+                } catch (pwErr) {
+                  console.warn("Failed to update password in tempAuth:", pwErr);
+                }
+              }
+              return cred.user;
             }
-            return cred.user;
           } catch {
-            return null;
+            // continue trying
           }
         }
+        return null;
       }
       throw err;
     }

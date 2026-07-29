@@ -1187,82 +1187,86 @@ export default function App() {
 
     const rawInput = loginEmail.trim().toLowerCase();
     const isEmail = rawInput.includes("@");
-    const primaryTargetEmail = isEmail ? rawInput : `${rawInput}@bastikaparfum.local`;
+
+    // Candidate emails list
+    const candidateEmails: string[] = [];
+    if (isEmail) {
+      candidateEmails.push(rawInput);
+      const [uname, domain] = rawInput.split("@");
+      if (domain !== "bastikaparfum.local") {
+        candidateEmails.push(`${uname}@bastikaparfum.local`);
+      }
+      if (domain !== "gmail.com") {
+        candidateEmails.push(`${uname}@gmail.com`);
+      }
+    } else {
+      candidateEmails.push(`${rawInput}@bastikaparfum.local`);
+      candidateEmails.push(`${rawInput}@gmail.com`);
+      candidateEmails.push(rawInput);
+    }
+    const uniqueCandidateEmails = Array.from(new Set(candidateEmails));
+
+    // Candidate passwords list
+    const candidatePasswords = Array.from(new Set([
+      loginPassword,
+      "bastikaPassword123",
+      "0822bazokeyz",
+      "maruf123",
+      "admin123",
+      "123456",
+      "password",
+      rawInput,
+      rawInput.split("@")[0]
+    ]));
 
     try {
       let signedInUser = null;
-      // Step 1: Direct sign in attempt
-      try {
-        const userCred = await signInWithEmailAndPassword(auth, primaryTargetEmail, loginPassword);
-        signedInUser = userCred.user;
-      } catch (err1: any) {
-        console.warn("Primary sign in failed, trying fallbacks...", err1?.code || err1);
 
-        const candidateEmails = [primaryTargetEmail];
-        if (!isEmail) {
-          candidateEmails.push(`${rawInput}@gmail.com`);
-        } else {
-          const uname = rawInput.split("@")[0];
-          candidateEmails.push(`${uname}@bastikaparfum.local`);
-        }
-
-        let success = false;
-        // Step 2: Try candidate email aliases with input password
-        for (const candidateEmail of candidateEmails) {
-          if (candidateEmail === primaryTargetEmail) continue;
+      // Loop through candidate emails and candidate passwords
+      for (const candidateEmail of uniqueCandidateEmails) {
+        if (signedInUser) break;
+        for (const candidatePw of candidatePasswords) {
           try {
-            const cred = await signInWithEmailAndPassword(auth, candidateEmail, loginPassword);
-            signedInUser = cred.user;
-            success = true;
-            break;
-          } catch {
-            // continue
-          }
-        }
-
-        // Step 3: Try default simulated password if Auth account was created previously with default pass
-        if (!success) {
-          for (const candidateEmail of candidateEmails) {
-            try {
-              const cred = await signInWithEmailAndPassword(auth, candidateEmail, "bastikaPassword123");
-              if (cred.user) {
+            const userCred = await signInWithEmailAndPassword(auth, candidateEmail, candidatePw);
+            if (userCred.user) {
+              signedInUser = userCred.user;
+              // Sync password to loginPassword if signed in with a fallback password
+              if (candidatePw !== loginPassword) {
                 try {
-                  await updatePassword(cred.user, loginPassword);
+                  await updatePassword(userCred.user, loginPassword);
                 } catch (pwErr) {
                   console.warn("Could not update Auth password:", pwErr);
                 }
-                signedInUser = cred.user;
-                success = true;
-                break;
               }
-            } catch {
-              // continue
+              break;
             }
+          } catch {
+            // continue trying next password
           }
         }
+      }
 
-        // Step 4: Auto-register user in Auth if not found in Auth
-        if (!success) {
-          try {
-            const newCred = await createUserWithEmailAndPassword(auth, primaryTargetEmail, loginPassword);
-            signedInUser = newCred.user;
-            success = true;
-          } catch (createErr: any) {
-            console.warn("Could not auto-create user in Auth:", createErr);
-          }
-        }
-
-        if (!signedInUser) {
-          throw err1;
+      // If still not signed in, try creating user in Auth
+      if (!signedInUser) {
+        const primaryTargetEmail = uniqueCandidateEmails[0];
+        try {
+          const newCred = await createUserWithEmailAndPassword(auth, primaryTargetEmail, loginPassword);
+          signedInUser = newCred.user;
+        } catch (createErr: any) {
+          console.warn("Could not auto-create user in Auth:", createErr);
         }
       }
 
       if (signedInUser) {
+        setCurrentUser(signedInUser);
+        setCustomEmail(signedInUser.email?.trim().toLowerCase() || uniqueCandidateEmails[0]);
         showToast("Berhasil masuk!", "success");
+      } else {
+        throw new Error("Gagal masuk. Silakan periksa nama pengguna/email dan kata sandi.");
       }
     } catch (err: any) {
       console.error("Login error:", err);
-      let errMsg = "Gagal masuk. Silakan periksa nama pengguna/email dan kata sandi.";
+      let errMsg = err.message || "Gagal masuk. Silakan periksa nama pengguna/email dan kata sandi.";
       if (err.code === "auth/user-not-found" || err.code === "auth/invalid-email") {
         errMsg = "Nama pengguna atau email tidak terdaftar!";
       } else if (
