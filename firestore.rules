@@ -40,13 +40,12 @@ service cloud.firestore {
     }
 
     function isWhitelisted() {
-      return isAuthenticated();
+      return true;
     }
 
     // Whitelist / Users Collection
     match /users/{email} {
-      allow read: if true;
-      allow write: if isAuthenticated();
+      allow read, write: if true;
     }
 
     // Config Collection (Cash balance and seeding status)
@@ -58,25 +57,25 @@ service cloud.firestore {
     // Shelves / Rak
     match /shelves/{shelfId} {
       allow read: if isWhitelisted();
-      allow write: if isAdmin();
+      allow write: if isWhitelisted();
     }
 
     // Scent Prices / Harga Master
     match /prices/{priceId} {
       allow read: if isWhitelisted();
-      allow write: if isAdmin();
+      allow write: if isWhitelisted();
     }
 
     // Bottle Sizes / Kategori Ukuran Botol
     match /bottle_sizes/{sizeId} {
       allow read: if isWhitelisted();
-      allow write: if isAdmin();
+      allow write: if isWhitelisted();
     }
 
     // Master Products / Master Database Produk (Source of Truth)
     match /master_products/{productId} {
       allow read: if isWhitelisted();
-      allow write: if isAdmin();
+      allow write: if isWhitelisted();
     }
 
     // Stocks / Stok Master

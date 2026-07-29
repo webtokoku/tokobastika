@@ -335,7 +335,7 @@ export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
   });
 }
 
-// Set manual adjustments (Admin only)
+// Set manual adjustments
 export async function updateStockManual(
   id: string, 
   newQuantity: number, 
@@ -344,19 +344,20 @@ export async function updateStockManual(
   bottleType?: "Kaca" | "Plastik",
   size?: string
 ) {
-  const stockRef = doc(db, "stocks", id);
-  const snap = await getDoc(stockRef);
-  if (snap.exists()) {
-    await updateDoc(stockRef, { quantity: newQuantity });
-  } else {
+  try {
+    const stockRef = doc(db, "stocks", id);
     await setDoc(stockRef, {
       id,
       quantity: newQuantity,
       type,
       ...(scentName ? { scentName } : {}),
       ...(bottleType ? { bottleType } : {}),
-      ...(size ? { size } : {})
-    });
+      ...(size ? { size } : {}),
+      updatedAt: new Date().toISOString()
+    }, { merge: true });
+  } catch (err) {
+    console.error("Gagal updateStockManual:", err);
+    throw err;
   }
 }
 

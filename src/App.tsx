@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import { toJpeg } from "html-to-image";
 import { 
   auth, 
   db,
@@ -134,7 +135,10 @@ import {
   Printer,
   Upload,
   Database,
-  UserCheck
+  UserCheck,
+  Share2,
+  Download,
+  Image
 } from "lucide-react";
 
 export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
@@ -604,6 +608,64 @@ export default function App() {
       setIsPrinterConnecting(false);
     }
   };
+
+  const invoiceRef = useRef<HTMLDivElement>(null);
+  const [isExportingJpg, setIsExportingJpg] = useState(false);
+
+  const handleExportInvoiceJpg = async (tx: any, shareDirect: boolean = true) => {
+    if (!invoiceRef.current) {
+      showToast("Tampilan invoice belum siap", "error");
+      return;
+    }
+    setIsExportingJpg(true);
+    try {
+      const dataUrl = await toJpeg(invoiceRef.current, {
+        quality: 0.95,
+        backgroundColor: "#ffffff",
+        pixelRatio: 2
+      });
+
+      const fileName = `Invoice_Bastika_${tx?.id || Date.now()}.jpg`;
+
+      if (shareDirect && typeof navigator !== "undefined" && navigator.share) {
+        try {
+          const res = await fetch(dataUrl);
+          const blob = await res.blob();
+          const file = new File([blob], fileName, { type: "image/jpeg" });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({
+              files: [file],
+              title: `Invoice ${tx?.id || ""}`,
+              text: `Invoice Pembelian Bastika Parfum - No. ${tx?.id || ""}`
+            });
+            showToast("Invoice JPG berhasil dibagikan!", "success");
+            setIsExportingJpg(false);
+            return;
+          }
+        } catch (shareErr: any) {
+          if (shareErr.name === "AbortError") {
+            setIsExportingJpg(false);
+            return;
+          }
+          console.warn("Direct share API failed, downloading file instead:", shareErr);
+        }
+      }
+
+      // Fallback: Download JPG directly
+      const link = document.createElement("a");
+      link.download = fileName;
+      link.href = dataUrl;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast("Invoice berhasil diunduh sebagai gambar JPG!", "success");
+    } catch (err: any) {
+      console.error("Gagal export invoice ke JPG:", err);
+      showToast("Gagal memproses gambar invoice JPG", "error");
+    } finally {
+      setIsExportingJpg(false);
+    }
+  };
   const [showTransferStock, setShowTransferStock] = useState(false);
   const [transferForm, setTransferForm] = useState({
     resellerEmail: "",
@@ -884,12 +946,47 @@ export default function App() {
         }
 
         const cachedRole = (typeof window !== "undefined" ? localStorage.getItem("bastika_user_role") : null) as UserRole | null;
-        setUserRole(cachedRole || defaultRole);
+        const finalRole = cachedRole || defaultRole;
+        setUserRole(finalRole);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("bastika_user_role", finalRole);
+          localStorage.setItem("bastika_active_session", JSON.stringify({
+            email: emailClean,
+            role: finalRole,
+            displayName: user.displayName || uname
+          }));
+        }
       } else {
+        // Fallback: Check if we have an active saved session in localStorage
+        const savedSessionStr = typeof window !== "undefined" ? localStorage.getItem("bastika_active_session") : null;
+        if (savedSessionStr) {
+          try {
+            const savedSession = JSON.parse(savedSessionStr);
+            if (savedSession && savedSession.email) {
+              const emailClean = String(savedSession.email).trim().toLowerCase();
+              const uname = emailClean.split("@")[0] || "";
+              const restoredUser = ({
+                email: emailClean,
+                uid: emailClean,
+                displayName: savedSession.displayName || uname
+              }) as User;
+
+              setCurrentUser(restoredUser);
+              setUserRole(savedSession.role || "admin");
+              setCustomEmail(emailClean);
+              setAuthLoading(false);
+              return;
+            }
+          } catch (e) {
+            console.warn("Gagal membaca saved session:", e);
+          }
+        }
+
         setCurrentUser(null);
         setUserRole(null);
         if (typeof window !== "undefined") {
           localStorage.removeItem("bastika_user_role");
+          localStorage.removeItem("bastika_active_session");
         }
       }
       setAuthLoading(false);
@@ -1347,15 +1444,17 @@ export default function App() {
   const handleSignOut = async () => {
     try {
       await signOut(auth);
+    } catch (err: any) {
+      console.warn("Sign out warning:", err);
+    } finally {
       setCurrentUser(null);
       setCustomEmail("");
       setUserRole(null);
       if (typeof window !== "undefined") {
         localStorage.removeItem("bastika_user_role");
+        localStorage.removeItem("bastika_active_session");
       }
       showToast("Berhasil keluar sistem.", "info");
-    } catch (err: any) {
-      showToast("Gagal keluar", "error");
     }
   };
 
@@ -9453,7 +9552,7 @@ export default function App() {
                   </div>
 
                   {/* Aesthetic On-Screen Thermal Paper */}
-                  <div className="bg-white text-black p-5 shadow-2xl font-mono text-[9px] leading-relaxed relative border border-slate-200 select-none rounded-sm w-[250px] md:w-[280px]">
+                  <div ref={invoiceRef} className="bg-white text-black p-5 shadow-2xl font-mono text-[9px] leading-relaxed relative border border-slate-200 select-none rounded-sm w-[250px] md:w-[280px]">
                     {/* Top edge jagged lines */}
                     <div className="absolute top-0 left-0 right-0 h-1 bg-repeat-x bg-[linear-gradient(45deg,transparent_33.3%,#ddd_33.3%,#ddd_66.6%,transparent_66.6%)] bg-[length:6px_4px]"></div>
 
@@ -9677,19 +9776,37 @@ export default function App() {
 
                 </div>
 
-                <div className="p-5 border-t border-slate-800 bg-slate-950/50 flex gap-3">
+                <div className="p-4 border-t border-slate-800 bg-slate-950/80 flex flex-wrap gap-2">
                   <button
                     onClick={() => setPrintTx(null)}
-                    className="flex-1 border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 hover:border-slate-600 font-extrabold text-xs py-3 rounded-xl transition-all cursor-pointer text-center"
+                    className="flex-1 min-w-[70px] border border-slate-700 text-slate-300 hover:text-white hover:bg-slate-800 font-bold text-xs py-2.5 rounded-xl transition-all cursor-pointer text-center"
                   >
                     Tutup
                   </button>
                   <button
-                    onClick={() => handlePrintTicket(printTx)}
-                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-3 rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    onClick={() => handleExportInvoiceJpg(printTx, true)}
+                    disabled={isExportingJpg}
+                    className="flex-1 min-w-[110px] bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-extrabold text-xs py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title="Bagikan gambar invoice JPG langsung ke WhatsApp atau aplikasi lain"
                   >
-                    <Printer className="h-4.5 w-4.5" />
-                    Cetak Sekarang
+                    <Share2 className="h-4 w-4" />
+                    <span>{isExportingJpg ? "Memproses..." : "Bagikan JPG"}</span>
+                  </button>
+                  <button
+                    onClick={() => handleExportInvoiceJpg(printTx, false)}
+                    disabled={isExportingJpg}
+                    className="flex-1 min-w-[110px] bg-slate-800 hover:bg-slate-700 border border-slate-700 disabled:opacity-50 text-slate-200 font-extrabold text-xs py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    title="Unduh gambar invoice JPG ke galeri HP / file HP"
+                  >
+                    <Download className="h-4 w-4 text-slate-400" />
+                    <span>Unduh JPG</span>
+                  </button>
+                  <button
+                    onClick={() => handlePrintTicket(printTx)}
+                    className="flex-1 min-w-[120px] bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                  >
+                    <Printer className="h-4 w-4" />
+                    <span>Cetak</span>
                   </button>
                 </div>
               </div>
