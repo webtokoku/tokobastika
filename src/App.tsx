@@ -162,6 +162,7 @@ export default function App() {
   });
   const [userWhitelist, setUserWhitelist] = useState<UserProfile[]>([]);
   const [authLoading, setAuthLoading] = useState(true);
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showLoadingFallback, setShowLoadingFallback] = useState(false);
 
   // Real Email/Password Auth State
@@ -863,11 +864,10 @@ export default function App() {
 
   // 1. Authenticated User Listeners
   useEffect(() => {
-    setAuthLoading(true);
     const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (user) {
         setCurrentUser(user);
-        const emailClean = user.email?.trim().toLowerCase();
+        const emailClean = user.email?.trim().toLowerCase() || "";
         if (emailClean === "bastikacorp@gmail.com") {
           // Seed database once user is authenticated
           seedInitialDataIfEmpty().then(() => {
@@ -875,22 +875,24 @@ export default function App() {
           });
         }
         
-        // Optimistic bypass of loading screen if user role is cached locally
-        if (typeof window !== "undefined") {
-          const cachedRole = localStorage.getItem("bastika_user_role");
-          if (cachedRole) {
-            setUserRole(cachedRole as UserRole);
-            setAuthLoading(false);
-          }
+        let defaultRole: UserRole = "client";
+        const uname = emailClean.split("@")[0] || "";
+        if (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin")) {
+          defaultRole = "admin";
+        } else if (emailClean.includes("reseller") || uname.includes("reseller")) {
+          defaultRole = "reseller";
         }
+
+        const cachedRole = (typeof window !== "undefined" ? localStorage.getItem("bastika_user_role") : null) as UserRole | null;
+        setUserRole(cachedRole || defaultRole);
       } else {
         setCurrentUser(null);
         setUserRole(null);
         if (typeof window !== "undefined") {
           localStorage.removeItem("bastika_user_role");
         }
-        setAuthLoading(false);
       }
+      setAuthLoading(false);
     });
     return () => unsubscribeAuth();
   }, []);
@@ -1147,7 +1149,7 @@ export default function App() {
 
   // Login handler with bypass for sandbox environment
   const handleBypassLogin = async (email: string) => {
-    setAuthLoading(true);
+    setIsLoggingIn(true);
     try {
       const cleanEmail = email.trim().toLowerCase();
       // Use a standard secure default password for automatic simulated registration
@@ -1177,15 +1179,18 @@ export default function App() {
     } catch (err: any) {
       console.error("Bypass login error:", err);
       showToast("Gagal masuk lewat simulasi email", "error");
+    } finally {
       setAuthLoading(false);
+      setIsLoggingIn(false);
     }
   };
 
   const handleGoogleSignIn = async () => {
-    setAuthLoading(true);
+    setIsLoggingIn(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
       showToast(`Selamat datang, ${result.user.displayName || result.user.email}!`, "success");
+      setAuthLoading(false);
     } catch (err: any) {
       console.error(err);
       if (err.code === "auth/unauthorized-domain") {
@@ -1193,7 +1198,8 @@ export default function App() {
       } else {
         showToast(err.message || "Gagal masuk lewat Google", "error");
       }
-      setAuthLoading(false);
+    } finally {
+      setIsLoggingIn(false);
     }
   };
 
@@ -1207,13 +1213,13 @@ export default function App() {
       showToast("Kata sandi minimal 6 karakter!", "error");
       return;
     }
-    setAuthLoading(true);
+    setIsLoggingIn(true);
 
     const rawInput = loginEmail.trim().toLowerCase();
     const unameInput = rawInput.includes("@") ? rawInput.split("@")[0] : rawInput;
 
     try {
-      // 1. Pre-fetch user document from Firestore realtime DB
+      // 1. Pre-fetch user document from Firestore
       let dbUserData: any = null;
       let targetDocEmail = rawInput.includes("@") ? rawInput : `${rawInput}@bastikaparfum.local`;
 
@@ -1230,12 +1236,6 @@ export default function App() {
             const q1Snap = await getDocs(q1);
             if (!q1Snap.empty) {
               dbUserData = q1Snap.docs[0].data();
-            } else {
-              const q2 = query(collection(db, "users"), where("email", "==", targetDocEmail));
-              const q2Snap = await getDocs(q2);
-              if (!q2Snap.empty) {
-                dbUserData = q2Snap.docs[0].data();
-              }
             }
           }
         }
@@ -1250,29 +1250,21 @@ export default function App() {
         }
         if (dbUserData.password && dbUserData.password !== loginPassword) {
           showToast("Kata sandi yang Anda masukkan salah!", "error");
-          setAuthLoading(false);
+          setIsLoggingIn(false);
           return;
         }
       }
 
-      // 2. Candidate credentials for Firebase Auth sign-in
+      // 2. Optimized candidate credentials for Firebase Auth sign-in
       const candidateEmails = Array.from(new Set([
         targetDocEmail,
-        `${unameInput}@bastikaparfum.local`,
-        `${unameInput}@gmail.com`,
-        rawInput
-      ]));
+        rawInput,
+        `${unameInput}@bastikaparfum.local`
+      ].filter(Boolean)));
 
       const candidatePasswords = Array.from(new Set([
         loginPassword,
-        dbUserData?.password,
-        "bastikaPassword123",
-        "0822bazokeyz",
-        "maruf123",
-        "admin123",
-        "123456",
-        "password",
-        unameInput
+        dbUserData?.password
       ].filter(Boolean)));
 
       let signedInUser = null;
@@ -1284,17 +1276,10 @@ export default function App() {
             const userCred = await signInWithEmailAndPassword(auth, emailCand, pwCand);
             if (userCred.user) {
               signedInUser = userCred.user;
-              if (pwCand !== loginPassword) {
-                try {
-                  await updatePassword(userCred.user, loginPassword);
-                } catch (pwErr) {
-                  console.warn("Could not update Auth password:", pwErr);
-                }
-              }
               break;
             }
           } catch {
-            // continue trying next credential
+            // continue
           }
         }
       }
@@ -1331,6 +1316,7 @@ export default function App() {
         }
         setCustomEmail(signedInUser.email?.trim().toLowerCase() || targetDocEmail);
         setAuthLoading(false);
+        setIsLoggingIn(false);
         showToast(`Berhasil masuk sebagai ${finalRole.toUpperCase()}!`, "success");
       } else {
         throw new Error("Gagal masuk. Silakan periksa nama pengguna / email dan kata sandi.");
@@ -1349,6 +1335,7 @@ export default function App() {
       }
       showToast(errMsg, "error");
       setAuthLoading(false);
+      setIsLoggingIn(false);
     }
   };
 
@@ -2572,12 +2559,13 @@ export default function App() {
             <button 
               id="google-signin-btn"
               onClick={handleGoogleSignIn}
-              className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-50 text-slate-800 font-semibold py-2.5 px-4 rounded-xl transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 shadow-md cursor-pointer text-xs"
+              disabled={isLoggingIn}
+              className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-50 disabled:opacity-50 text-slate-800 font-semibold py-2.5 px-4 rounded-xl transition-all duration-150 transform hover:-translate-y-0.5 active:translate-y-0 shadow-md cursor-pointer text-xs"
             >
               <svg className="h-4 w-4" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.6c-.28 1.5-.1.1.2 1.1-1.12 1.34-3 2.2-6.8 2.2-4.14 0-7.5-3.36-7.5-7.5s3.36-7.5 7.5-7.5c1.86 0 3.55.67 4.88 1.95l2.85-2.85C17.02 1.44 14.65.6 12 .6 5.7.6.6 5.7.6 12s5.1 11.4 11.4 11.4c6.3 0 11.74-5.1 11.74-11.43z"/>
               </svg>
-              Masuk dengan Akun Google
+              {isLoggingIn ? "Memproses..." : "Masuk dengan Akun Google"}
             </button>
 
             <div className="relative flex py-1 items-center">
@@ -2599,6 +2587,7 @@ export default function App() {
                     onChange={(e) => setLoginEmail(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     required
+                    disabled={isLoggingIn}
                   />
                 </div>
                 <div>
@@ -2611,6 +2600,7 @@ export default function App() {
                     onChange={(e) => setLoginPassword(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     required
+                    disabled={isLoggingIn}
                   />
                 </div>
               </div>
@@ -2619,9 +2609,17 @@ export default function App() {
                 <button
                   id="login-submit-btn"
                   type="submit"
-                  className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors cursor-pointer"
+                  disabled={isLoggingIn}
+                  className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-semibold py-2 px-3 rounded-lg text-xs transition-colors cursor-pointer flex items-center justify-center gap-2"
                 >
-                  Masuk ke Sistem
+                  {isLoggingIn ? (
+                    <>
+                      <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/30 border-t-white"></div>
+                      <span>Memproses Login...</span>
+                    </>
+                  ) : (
+                    <span>Masuk ke Sistem</span>
+                  )}
                 </button>
               </div>
             </form>
