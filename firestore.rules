@@ -40,13 +40,13 @@ service cloud.firestore {
     }
 
     function isWhitelisted() {
-      return isAdmin() || isClient() || isReseller();
+      return isAuthenticated();
     }
 
     // Whitelist / Users Collection
     match /users/{email} {
-      allow read: if isAuthenticated();
-      allow write: if isAdmin();
+      allow read: if true;
+      allow write: if isAuthenticated();
     }
 
     // Config Collection (Cash balance and seeding status)

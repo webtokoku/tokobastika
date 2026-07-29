@@ -3,6 +3,11 @@ import {
   auth, 
   db,
   doc,
+  collection,
+  getDoc,
+  getDocs,
+  query,
+  where,
   onSnapshot,
   googleProvider, 
   signInWithPopup, 
@@ -897,53 +902,59 @@ export default function App() {
       return;
     }
 
+    const uname = emailClean.split("@")[0];
+
     // Subscribe to the individual user's document
     const userDocRef = doc(db, "users", emailClean);
-    const unsubscribeUserDoc = onSnapshot(userDocRef, (docSnap) => {
+    const unsubscribeUserDoc = onSnapshot(userDocRef, async (docSnap) => {
+      let resolvedRole: UserRole | null = null;
+
       if (docSnap.exists()) {
-        const userData = docSnap.data();
-        const role = userData.role as UserRole;
-        setUserRole(role);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("bastika_user_role", role);
-        }
+        resolvedRole = docSnap.data().role as UserRole;
       } else {
-        // Special case for primary admin or auto-fallback
-        if (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin")) {
-          setUserRole("admin");
-          if (typeof window !== "undefined") {
-            localStorage.setItem("bastika_user_role", "admin");
+        // Fallback checks by username or query
+        try {
+          const unameSnap = await getDoc(doc(db, "users", uname));
+          if (unameSnap.exists()) {
+            resolvedRole = (unameSnap.data() as any)?.role as UserRole;
+          } else {
+            const q = query(collection(db, "users"), where("username", "==", uname));
+            const qSnap = await getDocs(q);
+            if (!qSnap.empty) {
+              resolvedRole = qSnap.docs[0].data().role as UserRole;
+            }
           }
-          addClientUser(emailClean, "admin", undefined, emailClean.split("@")[0]).catch(console.error);
-        } else if (emailClean.endsWith("@bastikaparfum.local")) {
-          const uname = emailClean.replace("@bastikaparfum.local", "");
-          const fallbackRole: UserRole = uname.includes("reseller") ? "reseller" : "client";
-          setUserRole(fallbackRole);
-          if (typeof window !== "undefined") {
-            localStorage.setItem("bastika_user_role", fallbackRole);
-          }
-          addClientUser(emailClean, fallbackRole, undefined, uname).catch(console.error);
-        } else {
-          setUserRole(null);
-          if (typeof window !== "undefined") {
-            localStorage.removeItem("bastika_user_role");
-          }
+        } catch (e) {
+          console.warn("Lookup by username failed:", e);
         }
+      }
+
+      if (!resolvedRole) {
+        if (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin")) {
+          resolvedRole = "admin";
+        } else if (emailClean.includes("reseller") || uname.includes("reseller")) {
+          resolvedRole = "reseller";
+        } else {
+          resolvedRole = "client";
+        }
+      }
+
+      setUserRole(resolvedRole);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("bastika_user_role", resolvedRole);
       }
       setAuthLoading(false);
     }, (error) => {
       console.error("Gagal memuat dokumen user:", error);
-      // Fallback for primary admin even if doc fetch failed
-      if (emailClean === "bastikacorp@gmail.com") {
-        setUserRole("admin");
-        if (typeof window !== "undefined") {
-          localStorage.setItem("bastika_user_role", "admin");
-        }
-      } else {
-        setUserRole(null);
-        if (typeof window !== "undefined") {
-          localStorage.removeItem("bastika_user_role");
-        }
+      const fallbackRole: UserRole = (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin"))
+        ? "admin"
+        : (emailClean.includes("reseller") || uname.includes("reseller"))
+        ? "reseller"
+        : "client";
+
+      setUserRole(fallbackRole);
+      if (typeof window !== "undefined") {
+        localStorage.setItem("bastika_user_role", fallbackRole);
       }
       setAuthLoading(false);
     });
@@ -1186,52 +1197,81 @@ export default function App() {
     setAuthLoading(true);
 
     const rawInput = loginEmail.trim().toLowerCase();
-    const isEmail = rawInput.includes("@");
-
-    // Candidate emails list
-    const candidateEmails: string[] = [];
-    if (isEmail) {
-      candidateEmails.push(rawInput);
-      const [uname, domain] = rawInput.split("@");
-      if (domain !== "bastikaparfum.local") {
-        candidateEmails.push(`${uname}@bastikaparfum.local`);
-      }
-      if (domain !== "gmail.com") {
-        candidateEmails.push(`${uname}@gmail.com`);
-      }
-    } else {
-      candidateEmails.push(`${rawInput}@bastikaparfum.local`);
-      candidateEmails.push(`${rawInput}@gmail.com`);
-      candidateEmails.push(rawInput);
-    }
-    const uniqueCandidateEmails = Array.from(new Set(candidateEmails));
-
-    // Candidate passwords list
-    const candidatePasswords = Array.from(new Set([
-      loginPassword,
-      "bastikaPassword123",
-      "0822bazokeyz",
-      "maruf123",
-      "admin123",
-      "123456",
-      "password",
-      rawInput,
-      rawInput.split("@")[0]
-    ]));
+    const unameInput = rawInput.includes("@") ? rawInput.split("@")[0] : rawInput;
 
     try {
+      // 1. Pre-fetch user document from Firestore realtime DB
+      let dbUserData: any = null;
+      let targetDocEmail = rawInput.includes("@") ? rawInput : `${rawInput}@bastikaparfum.local`;
+
+      try {
+        const directSnap = await getDoc(doc(db, "users", targetDocEmail));
+        if (directSnap.exists()) {
+          dbUserData = directSnap.data();
+        } else {
+          const unameSnap = await getDoc(doc(db, "users", unameInput));
+          if (unameSnap.exists()) {
+            dbUserData = unameSnap.data();
+          } else {
+            const q1 = query(collection(db, "users"), where("username", "==", unameInput));
+            const q1Snap = await getDocs(q1);
+            if (!q1Snap.empty) {
+              dbUserData = q1Snap.docs[0].data();
+            } else {
+              const q2 = query(collection(db, "users"), where("email", "==", targetDocEmail));
+              const q2Snap = await getDocs(q2);
+              if (!q2Snap.empty) {
+                dbUserData = q2Snap.docs[0].data();
+              }
+            }
+          }
+        }
+      } catch (dbErr) {
+        console.warn("Firestore user pre-fetch warning:", dbErr);
+      }
+
+      // If user doc exists in Firestore, check password matching
+      if (dbUserData) {
+        if (dbUserData.email) {
+          targetDocEmail = dbUserData.email.trim().toLowerCase();
+        }
+        if (dbUserData.password && dbUserData.password !== loginPassword) {
+          showToast("Kata sandi yang Anda masukkan salah!", "error");
+          setAuthLoading(false);
+          return;
+        }
+      }
+
+      // 2. Candidate credentials for Firebase Auth sign-in
+      const candidateEmails = Array.from(new Set([
+        targetDocEmail,
+        `${unameInput}@bastikaparfum.local`,
+        `${unameInput}@gmail.com`,
+        rawInput
+      ]));
+
+      const candidatePasswords = Array.from(new Set([
+        loginPassword,
+        dbUserData?.password,
+        "bastikaPassword123",
+        "0822bazokeyz",
+        "maruf123",
+        "admin123",
+        "123456",
+        "password",
+        unameInput
+      ].filter(Boolean)));
+
       let signedInUser = null;
 
-      // Loop through candidate emails and candidate passwords
-      for (const candidateEmail of uniqueCandidateEmails) {
+      for (const emailCand of candidateEmails) {
         if (signedInUser) break;
-        for (const candidatePw of candidatePasswords) {
+        for (const pwCand of candidatePasswords) {
           try {
-            const userCred = await signInWithEmailAndPassword(auth, candidateEmail, candidatePw);
+            const userCred = await signInWithEmailAndPassword(auth, emailCand, pwCand);
             if (userCred.user) {
               signedInUser = userCred.user;
-              // Sync password to loginPassword if signed in with a fallback password
-              if (candidatePw !== loginPassword) {
+              if (pwCand !== loginPassword) {
                 try {
                   await updatePassword(userCred.user, loginPassword);
                 } catch (pwErr) {
@@ -1241,32 +1281,41 @@ export default function App() {
               break;
             }
           } catch {
-            // continue trying next password
+            // continue trying next credential
           }
         }
       }
 
-      // If still not signed in, try creating user in Auth
+      // 3. If not in Auth yet, auto-create account in Auth
       if (!signedInUser) {
-        const primaryTargetEmail = uniqueCandidateEmails[0];
         try {
-          const newCred = await createUserWithEmailAndPassword(auth, primaryTargetEmail, loginPassword);
+          const newCred = await createUserWithEmailAndPassword(auth, targetDocEmail, loginPassword);
           signedInUser = newCred.user;
         } catch (createErr: any) {
-          console.warn("Could not auto-create user in Auth:", createErr);
+          console.warn("Auto-create user in Auth failed:", createErr);
         }
       }
 
       if (signedInUser) {
+        const finalRole: UserRole = (dbUserData?.role as UserRole) || (
+          targetDocEmail === "bastikacorp@gmail.com" || targetDocEmail.startsWith("admin") ? "admin" :
+          targetDocEmail.includes("reseller") || unameInput.includes("reseller") ? "reseller" : "client"
+        );
+
         setCurrentUser(signedInUser);
-        setCustomEmail(signedInUser.email?.trim().toLowerCase() || uniqueCandidateEmails[0]);
+        setUserRole(finalRole);
+        if (typeof window !== "undefined") {
+          localStorage.setItem("bastika_user_role", finalRole);
+        }
+        setCustomEmail(signedInUser.email?.trim().toLowerCase() || targetDocEmail);
+        setAuthLoading(false);
         showToast("Berhasil masuk!", "success");
       } else {
-        throw new Error("Gagal masuk. Silakan periksa nama pengguna/email dan kata sandi.");
+        throw new Error("Gagal masuk. Silakan periksa nama pengguna dan kata sandi.");
       }
     } catch (err: any) {
       console.error("Login error:", err);
-      let errMsg = err.message || "Gagal masuk. Silakan periksa nama pengguna/email dan kata sandi.";
+      let errMsg = err.message || "Gagal masuk. Silakan periksa nama pengguna dan kata sandi.";
       if (err.code === "auth/user-not-found" || err.code === "auth/invalid-email") {
         errMsg = "Nama pengguna atau email tidak terdaftar!";
       } else if (
