@@ -1206,7 +1206,7 @@ export function subscribeToClients(
   );
 }
 
-export async function addClientUser(email: string, role: "admin" | "client" = "client", password?: string, username?: string) {
+export async function addClientUser(email: string, role: "admin" | "client" | "reseller" = "client", password?: string, username?: string) {
   const emailClean = email.trim().toLowerCase();
   const data: any = {
     email: emailClean,

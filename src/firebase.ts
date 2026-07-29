@@ -8,7 +8,8 @@ import {
   onAuthStateChanged,
   User,
   signInWithEmailAndPassword,
-  createUserWithEmailAndPassword
+  createUserWithEmailAndPassword,
+  updatePassword
 } from "firebase/auth";
 import { 
   getFirestore, 
@@ -62,8 +63,30 @@ export async function createAuthUserWithoutLoggingOut(email: string, pass: strin
   const tempApp = initializeApp(firebaseConfig, tempAppName);
   const tempAuth = getAuth(tempApp);
   try {
-    const cred = await createUserWithEmailAndPassword(tempAuth, email, pass);
-    return cred.user;
+    try {
+      const cred = await createUserWithEmailAndPassword(tempAuth, email, pass);
+      return cred.user;
+    } catch (err: any) {
+      if (err.code === "auth/email-already-in-use") {
+        // Attempt to login with tempAuth to update password to pass
+        try {
+          const cred = await signInWithEmailAndPassword(tempAuth, email, pass);
+          return cred.user;
+        } catch {
+          // If login with pass failed, try signing in with default simulated password and update it
+          try {
+            const cred = await signInWithEmailAndPassword(tempAuth, email, "bastikaPassword123");
+            if (cred.user) {
+              await updatePassword(cred.user, pass);
+            }
+            return cred.user;
+          } catch {
+            return null;
+          }
+        }
+      }
+      throw err;
+    }
   } finally {
     await deleteApp(tempApp);
   }
@@ -76,6 +99,7 @@ export {
   onAuthStateChanged,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  updatePassword,
   collection,
   doc,
   getDoc,
