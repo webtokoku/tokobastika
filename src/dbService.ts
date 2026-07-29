@@ -1189,11 +1189,18 @@ export function subscribeToClients(
   return onSnapshot(
     collection(db, "users"),
     (snapshot) => {
-      const list: UserProfile[] = [];
+      const userMap = new Map<string, UserProfile>();
       snapshot.forEach((docSnap) => {
-        list.push(docSnap.data() as UserProfile);
+        const data = docSnap.data() as UserProfile;
+        if (data.email) {
+          const key = data.email.trim().toLowerCase();
+          if (!userMap.has(key) || data.password) {
+            userMap.set(key, data);
+          }
+        }
       });
-      list.sort((a, b) => a.email.localeCompare(b.email));
+      const list = Array.from(userMap.values());
+      list.sort((a, b) => (a.email || "").localeCompare(b.email || ""));
       callback(list);
     },
     (error) => {
@@ -1220,13 +1227,25 @@ export async function addClientUser(email: string, role: "admin" | "client" | "r
     data.username = username.trim().toLowerCase();
   }
   await setDoc(doc(db, "users", emailClean), data);
+
+  if (username) {
+    const unameClean = username.trim().toLowerCase();
+    if (unameClean && unameClean !== emailClean) {
+      await setDoc(doc(db, "users", unameClean), data);
+    }
+  }
 }
 
-export async function deleteClientUser(email: string) {
-  if (email.trim().toLowerCase() === "bastikacorp@gmail.com") {
+export async function deleteClientUser(email: string, username?: string) {
+  const emailClean = email.trim().toLowerCase();
+  if (emailClean === "bastikacorp@gmail.com") {
     throw new Error("Admin utama 'bastikacorp@gmail.com' tidak bisa dihapus!");
   }
-  await deleteDoc(doc(db, "users", email.trim().toLowerCase()));
+  await deleteDoc(doc(db, "users", emailClean));
+  const uname = username || emailClean.split("@")[0];
+  if (uname && uname !== emailClean) {
+    await deleteDoc(doc(db, "users", uname));
+  }
 }
 
 // ==========================================

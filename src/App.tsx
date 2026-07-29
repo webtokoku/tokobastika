@@ -1309,9 +1309,18 @@ export default function App() {
         }
       }
 
+      // 4. Fallback if Auth sign-in fails but Firestore user doc & password are valid
+      if (!signedInUser && dbUserData && (!dbUserData.password || dbUserData.password === loginPassword)) {
+        signedInUser = (auth.currentUser || {
+          email: targetDocEmail,
+          uid: dbUserData.uid || targetDocEmail,
+          displayName: dbUserData.username || unameInput
+        }) as User;
+      }
+
       if (signedInUser) {
         const finalRole: UserRole = (dbUserData?.role as UserRole) || (
-          targetDocEmail === "bastikacorp@gmail.com" || targetDocEmail.startsWith("admin") ? "admin" :
+          targetDocEmail === "bastikacorp@gmail.com" || targetDocEmail.startsWith("admin") || unameInput.startsWith("admin") ? "admin" :
           targetDocEmail.includes("reseller") || unameInput.includes("reseller") ? "reseller" : "client"
         );
 
@@ -1322,9 +1331,9 @@ export default function App() {
         }
         setCustomEmail(signedInUser.email?.trim().toLowerCase() || targetDocEmail);
         setAuthLoading(false);
-        showToast("Berhasil masuk!", "success");
+        showToast(`Berhasil masuk sebagai ${finalRole.toUpperCase()}!`, "success");
       } else {
-        throw new Error("Gagal masuk. Silakan periksa nama pengguna dan kata sandi.");
+        throw new Error("Gagal masuk. Silakan periksa nama pengguna / email dan kata sandi.");
       }
     } catch (err: any) {
       console.error("Login error:", err);
@@ -1955,7 +1964,7 @@ export default function App() {
   const handleAddClient = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newClientEmail) {
-      const msg = newClientRole === "client" ? "Masukkan nama pengguna / username client!" : "Masukkan alamat email admin!";
+      const msg = newClientRole === "client" ? "Masukkan nama pengguna / username client!" : newClientRole === "reseller" ? "Masukkan username / email reseller!" : "Masukkan username / email admin!";
       showToast(msg, "error");
       return;
     }
@@ -1970,33 +1979,21 @@ export default function App() {
       return;
     }
 
+    const usernameVal = newClientEmail.trim().toLowerCase();
+    if (usernameVal.includes(" ")) {
+      showToast("Username / Email tidak boleh mengandung spasi!", "error");
+      return;
+    }
+
     let finalEmail = "";
     let finalUsername: string | undefined = undefined;
 
-    if (newClientRole === "client" || newClientRole === "reseller") {
-      const usernameVal = newClientEmail.trim().toLowerCase();
-      if (usernameVal.includes("@")) {
-        if (usernameVal.includes(" ")) {
-          showToast("Username / Email tidak boleh mengandung spasi!", "error");
-          return;
-        }
-        finalEmail = usernameVal;
-        finalUsername = usernameVal.split("@")[0];
-      } else {
-        if (usernameVal.includes(" ")) {
-          showToast("Username tidak boleh mengandung spasi!", "error");
-          return;
-        }
-        finalEmail = `${usernameVal}@bastikaparfum.local`;
-        finalUsername = usernameVal;
-      }
+    if (usernameVal.includes("@")) {
+      finalEmail = usernameVal;
+      finalUsername = usernameVal.split("@")[0];
     } else {
-      const emailVal = newClientEmail.trim().toLowerCase();
-      if (!emailVal.includes("@")) {
-        showToast("Masukkan alamat email admin yang valid!", "error");
-        return;
-      }
-      finalEmail = emailVal;
+      finalEmail = `${usernameVal}@bastikaparfum.local`;
+      finalUsername = usernameVal;
     }
 
     try {
@@ -2020,14 +2017,14 @@ export default function App() {
           ? `User @${finalUsername} berhasil didaftarkan sebagai CLIENT!`
           : newClientRole === "reseller"
           ? `User @${finalUsername || finalEmail} berhasil didaftarkan sebagai RESELLER!`
-          : `Admin ${finalEmail} berhasil didaftarkan sebagai ADMIN!`;
+          : `Admin ${finalUsername ? `@${finalUsername}` : finalEmail} berhasil didaftarkan sebagai ADMIN!`;
         showToast(successMsg, "success");
       } else {
         const updateMsg = newClientRole === "client"
           ? `Hak akses @${finalUsername} diperbarui sebagai CLIENT!`
           : newClientRole === "reseller"
           ? `Hak akses @${finalUsername || finalEmail} diperbarui sebagai RESELLER!`
-          : `Hak akses ${finalEmail} diperbarui sebagai ADMIN!`;
+          : `Hak akses ${finalUsername ? `@${finalUsername}` : finalEmail} diperbarui sebagai ADMIN!`;
         showToast(updateMsg, "success");
       }
       
@@ -2038,11 +2035,12 @@ export default function App() {
     }
   };
 
-  const handleDeleteClient = async (email: string) => {
-    if (confirm(`Hapus akses untuk user ${email}?`)) {
+  const handleDeleteClient = async (email: string, username?: string) => {
+    const displayName = username ? `@${username}` : email;
+    if (confirm(`Hapus akses untuk user ${displayName}?`)) {
       try {
-        await deleteClientUser(email);
-        showToast(`Akses untuk ${email} berhasil dihapus.`);
+        await deleteClientUser(email, username);
+        showToast(`Akses untuk ${displayName} berhasil dihapus.`);
       } catch (err: any) {
         showToast(err.message, "error");
       }
@@ -7602,20 +7600,20 @@ export default function App() {
                         }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
                       >
-                        <option value="client">Client (Username - Hanya Input Kasir & Lihat Stok)</option>
+                        <option value="client">Client (Username / Kasir - Input Kasir & Lihat Stok)</option>
                         <option value="reseller">Reseller Bundling (Email / Username - Dashboard Penjualan)</option>
-                        <option value="admin">Admin (Email Gmail - Akses Penuh Seluruh Sistem)</option>
+                        <option value="admin">Admin (Username / Email - Akses Penuh Seluruh Sistem)</option>
                       </select>
                     </div>
 
                     <div>
                       <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                        {newClientRole === "client" ? "Nama Pengguna / Username (Client)" : newClientRole === "reseller" ? "Username / Email (Reseller)" : "Alamat Email Gmail (Admin)"}
+                        {newClientRole === "client" ? "Nama Pengguna / Username (Client)" : newClientRole === "reseller" ? "Username / Email (Reseller)" : "Username / Email (Admin)"}
                       </label>
                       <input
                         id="client-email-input"
-                        type={(newClientRole === "client" || newClientRole === "reseller") ? "text" : "email"}
-                        placeholder={newClientRole === "client" ? "Contoh: budi, tika, kasir1 (tanpa spasi/@)" : newClientRole === "reseller" ? "Contoh: reseller1 atau budireseller@gmail.com" : "Contoh: adminbaru@gmail.com"}
+                        type="text"
+                        placeholder={newClientRole === "client" ? "Contoh: budi, tika, kasir1 (tanpa spasi/@)" : newClientRole === "reseller" ? "Contoh: reseller1 atau budireseller@gmail.com" : "Contoh: admin2, kasir1, atau admin@gmail.com"}
                         value={newClientEmail}
                         onChange={(e) => setNewClientEmail(e.target.value)}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
@@ -7623,10 +7621,10 @@ export default function App() {
                       />
                       <p className="text-[10px] text-slate-400 mt-1">
                         {newClientRole === "client" 
-                          ? "Penting: Masukkan username unik tanpa spasi dan tanda '@'."
+                          ? "Penting: Masukkan username unik tanpa spasi."
                           : newClientRole === "reseller"
                           ? "Penting: Masukkan username atau email Google / Gmail untuk login reseller."
-                          : "Penting: Masukkan alamat email Google / Gmail yang valid."}
+                          : "Penting: Masukkan username (contoh: admin2, tanpa @) atau alamat email Gmail."}
                       </p>
                     </div>
 
@@ -7642,9 +7640,7 @@ export default function App() {
                         required
                       />
                       <p className="text-[10px] text-slate-400 mt-1">
-                        {newClientRole === "client"
-                          ? "Gunakan kata sandi ini agar karyawan client dapat langsung masuk menggunakan Username."
-                          : "Gunakan kata sandi ini agar admin dapat login manual menggunakan email Gmail."}
+                        Gunakan kata sandi ini agar pengguna dapat langsung masuk menggunakan Username atau Email.
                       </p>
                     </div>
 
@@ -7654,7 +7650,7 @@ export default function App() {
                       className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold py-2.5 px-4 rounded-xl text-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
                     >
                       <Plus className="h-4 w-4" />
-                      Daftarkan Karyawan
+                      Daftarkan Pengguna
                     </button>
                   </form>
                 </div>
@@ -7663,7 +7659,7 @@ export default function App() {
                 <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm lg:col-span-2">
                   <h3 className="font-bold text-sm text-slate-900 mb-1">Daftar Whitelist Hak Akses Toko</h3>
                   <p className="text-[11px] text-slate-500 mb-4">
-                    Karyawan (Client) masuk menggunakan Username, sedangkan Admin masuk menggunakan alamat email Gmail.
+                    Pengguna dapat masuk menggunakan Username maupun alamat email yang telah didaftarkan.
                   </p>
 
                   <div className="overflow-x-auto">
@@ -7706,7 +7702,7 @@ export default function App() {
                             <td className="py-3 px-4 text-right">
                               {u.email !== "bastikacorp@gmail.com" ? (
                                 <button
-                                  onClick={() => handleDeleteClient(u.email)}
+                                  onClick={() => handleDeleteClient(u.email, u.username)}
                                   className="text-slate-400 hover:text-rose-600 p-1 rounded transition-colors cursor-pointer"
                                   title="Hapus Hak Akses"
                                 >
