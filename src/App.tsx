@@ -59,6 +59,7 @@ import {
   transferStockToReseller,
   sendBundlingPackageToReseller,
   returBundlingPackageFromReseller,
+  deleteResellerPackageStock,
   getNormalizedBottleStockId,
   getNormalizedEssenceStockId,
   addResellerSaleTransaction,
@@ -597,6 +598,7 @@ export default function App() {
     quantity: 1
   });
   const [returnPackageForm, setReturnPackageForm] = useState({
+    stockDocId: "",
     resellerEmail: "",
     packageId: "",
     packageName: "",
@@ -2664,6 +2666,7 @@ export default function App() {
 
   const handleOpenReturnModal = (ps: ResellerPackageStock) => {
     setReturnPackageForm({
+      stockDocId: ps.id,
       resellerEmail: ps.resellerEmail,
       packageId: ps.packageId,
       packageName: ps.packageName,
@@ -2677,7 +2680,7 @@ export default function App() {
 
   const handleReturnPackageSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const { resellerEmail, packageId, quantityToReturn, availableQty } = returnPackageForm;
+    const { stockDocId, resellerEmail, packageId, quantityToReturn, availableQty } = returnPackageForm;
     if (quantityToReturn <= 0) {
       showToast("Jumlah retur harus lebih besar dari 0!", "error");
       return;
@@ -2689,11 +2692,24 @@ export default function App() {
 
     try {
       const operator = currentUser?.email || customEmail || "admin";
-      await returBundlingPackageFromReseller(resellerEmail, packageId, quantityToReturn, operator);
+      await returBundlingPackageFromReseller(resellerEmail, packageId, quantityToReturn, operator, stockDocId);
       showToast(`Berhasil memproses retur/pembatalan ${quantityToReturn} unit paket bundling dari reseller!`, "success");
       setShowReturnPackageModal(false);
     } catch (err: any) {
       showToast(err.message || "Gagal memproses retur paket bundling", "error");
+    }
+  };
+
+  const handleDeleteResellerPackageDirect = async (stockDocId: string, resellerEmail: string, packageName: string) => {
+    if (confirm(`Apakah Anda yakin ingin MENGHAPUS LANGSUNG paket titipan "${packageName}" dari reseller ${resellerEmail}? Hapus ini tidak akan mengembalikan bahan ke persediaan master.`)) {
+      try {
+        const operator = currentUser?.email || customEmail || "admin";
+        await deleteResellerPackageStock(stockDocId, resellerEmail, packageName, operator);
+        showToast(`Berhasil menghapus paket titipan "${packageName}" dari reseller!`, "success");
+        if (showReturnPackageModal) setShowReturnPackageModal(false);
+      } catch (err: any) {
+        showToast(err.message || "Gagal menghapus paket titipan reseller", "error");
+      }
     }
   };
 
@@ -3287,14 +3303,24 @@ export default function App() {
                                       {ps.quantity} pcs
                                     </span>
                                     {userRole === "admin" && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleOpenReturnModal(ps)}
-                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                        title="Retur / Batal Kirim"
-                                      >
-                                        <RotateCcw className="h-3.5 w-3.5" />
-                                      </button>
+                                      <div className="flex items-center gap-1">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenReturnModal(ps)}
+                                          className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors cursor-pointer"
+                                          title="Retur Paket (Kembalikan ke Stok Master)"
+                                        >
+                                          <RotateCcw className="h-3.5 w-3.5" />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleDeleteResellerPackageDirect(ps.id, ps.resellerEmail, ps.packageName)}
+                                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                          title="Hapus Langsung Paket Titipan Reseller"
+                                        >
+                                          <Trash2 className="h-3.5 w-3.5" />
+                                        </button>
+                                      </div>
                                     )}
                                   </div>
                                 </div>
@@ -8631,20 +8657,31 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="bg-slate-50 px-6 py-4 flex justify-end gap-3 border-t border-slate-100">
+                  <div className="bg-slate-50 px-6 py-4 flex items-center justify-between gap-3 border-t border-slate-100">
                     <button
                       type="button"
-                      onClick={() => setShowReturnPackageModal(false)}
-                      className="border border-slate-200 text-slate-600 font-bold text-xs px-4 py-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                      onClick={() => handleDeleteResellerPackageDirect(returnPackageForm.stockDocId, returnPackageForm.resellerEmail, returnPackageForm.packageName)}
+                      className="border border-rose-200 text-rose-600 hover:bg-rose-50 font-bold text-xs px-3 py-2 rounded-xl transition-colors cursor-pointer flex items-center gap-1 shrink-0"
+                      title="Hapus tanpa mengembalikan komponen ke stok master"
                     >
-                      Batal
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span>Hapus Langsung</span>
                     </button>
-                    <button
-                      type="submit"
-                      className="bg-rose-600 hover:bg-rose-500 text-white font-extrabold text-xs px-5 py-2 rounded-xl transition-all shadow-sm cursor-pointer"
-                    >
-                      Proses Retur / Batal
-                    </button>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowReturnPackageModal(false)}
+                        className="border border-slate-200 text-slate-600 font-bold text-xs px-4 py-2 rounded-xl hover:bg-slate-100 transition-colors cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-4 py-2 rounded-xl transition-all shadow-sm cursor-pointer"
+                      >
+                        Proses Retur (Kembalikan Stok)
+                      </button>
+                    </div>
                   </div>
                 </form>
               </div>

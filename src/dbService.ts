@@ -1845,27 +1845,98 @@ export async function sendBundlingPackageToReseller(
   });
 }
 
+export async function deleteResellerPackageStock(
+  stockId: string,
+  resellerEmail?: string,
+  packageName?: string,
+  operatorEmail?: string
+) {
+  const stockRef = doc(db, "reseller_package_stocks", stockId);
+  await deleteDoc(stockRef);
+
+  if (resellerEmail && packageName) {
+    const txId = "tx_transfer_" + generateId();
+    await setDoc(doc(db, "transactions", txId), {
+      id: txId,
+      type: "transfer",
+      date: new Date().toISOString(),
+      category: "bundling",
+      scentName: "Custom",
+      bottleSize: "Custom",
+      bottleCount: 0,
+      volumeMl: 0,
+      totalPrice: 0,
+      description: `Hapus Langsung Paket Titipan ${packageName} dari reseller ${resellerEmail}`,
+      operatorEmail: operatorEmail || "admin",
+      resellerEmail: resellerEmail.trim().toLowerCase(),
+      isConsignment: true,
+      packageName
+    });
+  }
+}
+
 export async function returBundlingPackageFromReseller(
   resellerEmail: string,
   packageId: string,
   quantityToReturn: number,
-  operatorEmail: string
+  operatorEmail: string,
+  stockDocId?: string
 ) {
   const safeEmail = resellerEmail.trim().toLowerCase().replace(/[^a-z0-9@.]+/g, "_");
-  const resellerPkgStockId = `${safeEmail}_${packageId}`;
+  const defaultStockId = `${safeEmail}_${packageId}`;
+  const targetDocId = stockDocId || defaultStockId;
 
   await runTransaction(db, async (transaction) => {
-    // 1. Get bundling package details (Read 1)
+    // 1. Get reseller package stock doc first!
+    const resellerPkgStockRef = doc(db, "reseller_package_stocks", targetDocId);
+    let resellerPkgStockSnap = await transaction.get(resellerPkgStockRef);
+
+    // Fallback: if not found by targetDocId, try defaultStockId
+    if (!resellerPkgStockSnap.exists() && targetDocId !== defaultStockId) {
+      const fallbackRef = doc(db, "reseller_package_stocks", defaultStockId);
+      const fallbackSnap = await transaction.get(fallbackRef);
+      if (fallbackSnap.exists()) {
+        resellerPkgStockSnap = fallbackSnap;
+      }
+    }
+
+    if (!resellerPkgStockSnap.exists()) {
+      throw new Error("Stok paket reseller tidak ditemukan!");
+    }
+
+    const resellerStockData = resellerPkgStockSnap.data() as ResellerPackageStock;
+    const currentResellerQty = resellerStockData.quantity || 0;
+    if (currentResellerQty < quantityToReturn) {
+      throw new Error(`Stok paket reseller tidak mencukupi untuk di-retur! Tersedia: ${currentResellerQty} pcs, Ingin di-retur: ${quantityToReturn} pcs`);
+    }
+
+    // 2. Try to get bundling package details (or fallback if deleted)
     const pkgRef = doc(db, "bundling_packages", packageId);
     const pkgSnap = await transaction.get(pkgRef);
-    if (!pkgSnap.exists()) {
-      throw new Error("Formula paket bundling tidak ditemukan!");
-    }
-    const pkg = pkgSnap.data() as BundlingPackage;
 
-    const ingredients = getPackageIngredients(pkg);
-    
-    // Create stock refs
+    let ingredients: FormulaIngredient[] = [];
+    let pkgName = resellerStockData.packageName || "Paket Bundling";
+    let scentName = resellerStockData.scentName || "Multi Scent";
+    let bottleSize = resellerStockData.bottleSize || "30ml";
+
+    if (pkgSnap.exists()) {
+      const pkg = pkgSnap.data() as BundlingPackage;
+      pkgName = pkg.packageName || pkgName;
+      scentName = pkg.scentName || scentName;
+      bottleSize = pkg.bottleSize || bottleSize;
+      ingredients = getPackageIngredients(pkg);
+    } else {
+      // Fallback: construct standard ingredients from resellerStockData if pkg formula was deleted
+      const essenceMl = 10;
+      const alcoholMl = 20;
+      ingredients = [
+        { type: "essence", scentName, quantity: essenceMl },
+        { type: "bottle", size: bottleSize, bottleType: "Kaca", quantity: 1 },
+        { type: "alcohol", solventType: "Absolut Cair", quantity: alcoholMl }
+      ];
+    }
+
+    // Create stock refs for ingredients to return to master stock
     const ingredientRefs = ingredients.map(ing => {
       const stockId = getStockDocId(ing);
       return {
@@ -1883,37 +1954,54 @@ export async function returBundlingPackageFromReseller(
       }
     }
 
-    const resellerPkgStockRef = doc(db, "reseller_package_stocks", resellerPkgStockId);
-    const resellerPkgStockSnap = await transaction.get(resellerPkgStockRef);
-
-    if (!resellerPkgStockSnap.exists()) {
-      throw new Error("Stok paket reseller tidak ditemukan!");
-    }
-
-    const currentResellerQty = resellerPkgStockSnap.data().quantity || 0;
-    if (currentResellerQty < quantityToReturn) {
-      throw new Error(`Stok paket reseller tidak mencukupi untuk di-retur! Tersedia: ${currentResellerQty} pcs, Ingin di-retur: ${quantityToReturn} pcs`);
-    }
-
-    // === ALL READS COMPLETED. NOW DO ALL WRITES ===
+    // === ALL READS COMPLETED. NOW DO WRITES ===
 
     // Update Master Stocks (add back the ingredients)
     for (const item of ingredientRefs) {
       const snap = snaps[item.stockId];
       const returnedQty = item.ing.quantity * quantityToReturn;
-      const current = snap.exists() ? (snap.data().quantity || 0) : 0;
-      transaction.update(item.ref, { quantity: current + returnedQty });
+      const current = (snap && snap.exists()) ? (snap.data().quantity || 0) : 0;
+
+      if (snap && snap.exists()) {
+        transaction.update(item.ref, { quantity: current + returnedQty });
+      } else {
+        // Create stock doc if it didn't exist
+        if (item.ing.type === "essence") {
+          transaction.set(item.ref, {
+            id: item.stockId,
+            type: "essence",
+            scentName: item.ing.scentName,
+            quantity: returnedQty
+          });
+        } else if (item.ing.type === "bottle") {
+          transaction.set(item.ref, {
+            id: item.stockId,
+            type: "bottle",
+            size: item.ing.size,
+            bottleType: item.ing.bottleType || "Kaca",
+            quantity: returnedQty
+          });
+        } else {
+          transaction.set(item.ref, {
+            id: item.stockId,
+            type: "alcohol",
+            scentName: item.ing.solventType || "Absolut Cair",
+            quantity: returnedQty
+          });
+        }
+      }
     }
 
-    // Decrement Reseller Package Stock
+    // Decrement or Delete Reseller Package Stock
+    const actualResellerStockRef = doc(db, "reseller_package_stocks", resellerPkgStockSnap.id);
     const newResellerQty = currentResellerQty - quantityToReturn;
     if (newResellerQty <= 0) {
-      transaction.delete(resellerPkgStockRef);
+      transaction.delete(actualResellerStockRef);
     } else {
-      transaction.update(resellerPkgStockRef, { quantity: newResellerQty });
+      transaction.update(actualResellerStockRef, { quantity: newResellerQty });
     }
 
-    // Log the return/cancellation transaction
+    // Log the transaction
     const txId = "tx_transfer_" + generateId();
     const txRef = doc(db, "transactions", txId);
     transaction.set(txRef, {
@@ -1921,16 +2009,16 @@ export async function returBundlingPackageFromReseller(
       type: "transfer",
       date: new Date().toISOString(),
       category: "bundling",
-      scentName: pkg.scentName || (ingredients.find(i => i.type === "essence")?.scentName || "Multi Scent"),
-      bottleSize: pkg.bottleSize || (ingredients.find(i => i.type === "bottle")?.size || "Custom"),
+      scentName,
+      bottleSize,
       bottleCount: -quantityToReturn,
-      volumeMl: -((pkg.essenceMl || (ingredients.find(i => i.type === "essence")?.quantity || 0)) * quantityToReturn),
+      volumeMl: -(10 * quantityToReturn),
       totalPrice: 0,
-      description: `Retur/Batal Kirim Paket Bundling ${pkg.packageName} sebanyak ${quantityToReturn} unit dari ${resellerEmail}`,
+      description: `Retur/Batal Kirim Paket Bundling ${pkgName} sebanyak ${quantityToReturn} unit dari ${resellerEmail}`,
       operatorEmail,
       resellerEmail: resellerEmail.trim().toLowerCase(),
       isConsignment: true,
-      packageName: pkg.packageName
+      packageName: pkgName
     });
   });
 }
