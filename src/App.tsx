@@ -137,6 +137,19 @@ import {
   UserCheck
 } from "lucide-react";
 
+export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
+  if (!email1 || !email2) return false;
+  const e1 = email1.trim().toLowerCase();
+  const e2 = email2.trim().toLowerCase();
+  if (e1 === e2) return true;
+  
+  const u1 = e1.split("@")[0].trim();
+  const u2 = e2.split("@")[0].trim();
+  if (u1 && u2 && u1 === u2) return true;
+
+  return false;
+};
+
 export default function App() {
   // Auth state
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -2640,9 +2653,8 @@ export default function App() {
   // CONSIGNMENT & BUNDLING HELPER LOGIC
   // ==========================================
   const getResellerStockQty = (resellerEmail: string, type: "essence" | "alcohol" | "bottle", nameOrSize?: string) => {
-    const safeEmail = resellerEmail.trim().toLowerCase();
     const stock = resellerStocks.find(s => 
-      s.resellerEmail === safeEmail &&
+      isSameResellerEmail(s.resellerEmail, resellerEmail) &&
       s.type === type &&
       (type === "essence" ? s.scentName === nameOrSize : type === "bottle" ? s.size === nameOrSize : true)
     );
@@ -2672,7 +2684,7 @@ export default function App() {
     }
 
     const emailKey = (currentUser?.email || customEmail || "").trim().toLowerCase();
-    const pkgStock = resellerPackageStocks.find(s => s.resellerEmail === emailKey && s.packageId === packageId);
+    const pkgStock = resellerPackageStocks.find(s => isSameResellerEmail(s.resellerEmail, emailKey) && s.packageId === packageId);
     const availableQty = pkgStock ? pkgStock.quantity : 0;
 
     if (availableQty < quantity) {
@@ -3058,7 +3070,7 @@ export default function App() {
   const renderResellerPenjualan = () => {
     const emailKey = (currentUser?.email || customEmail || "").trim().toLowerCase();
     const myPackageStocks = resellerPackageStocks.filter(s => 
-      s.resellerEmail === emailKey && 
+      isSameResellerEmail(s.resellerEmail, emailKey) && 
       s.quantity > 0
     );
 
@@ -3261,7 +3273,7 @@ export default function App() {
   const renderResellerSetoran = () => {
     const emailKey = (currentUser?.email || customEmail || "").trim().toLowerCase();
     const resellerTxs = transactions.filter(t => 
-      t.resellerEmail?.trim().toLowerCase() === emailKey &&
+      isSameResellerEmail(t.resellerEmail, emailKey) &&
       t.isConsignment === true &&
       t.type === "sale"
     );
@@ -3405,8 +3417,8 @@ export default function App() {
               ) : (
                 <div className="space-y-4">
                   {resellers.map(res => {
-                    const myPackageStocks = resellerPackageStocks.filter(s => s.resellerEmail === res.email.trim().toLowerCase());
-                    const unpaidForThisReseller = consignmentSales.filter(t => t.resellerEmail?.trim().toLowerCase() === res.email.trim().toLowerCase() && t.paymentStatus === "Belum Dibayar");
+                    const myPackageStocks = resellerPackageStocks.filter(s => isSameResellerEmail(s.resellerEmail, res.email));
+                    const unpaidForThisReseller = consignmentSales.filter(t => isSameResellerEmail(t.resellerEmail, res.email) && t.paymentStatus === "Belum Dibayar");
                     const unpaidAmount = unpaidForThisReseller.reduce((sum, t) => sum + t.totalPrice, 0);
 
                     return (

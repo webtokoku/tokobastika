@@ -2152,26 +2152,28 @@ export async function addResellerSaleTransaction(
   const totalPrice = pricePerUnit * quantity;
 
   await runTransaction(db, async (transaction) => {
-    const safeEmail = resellerEmail.trim().toLowerCase().replace(/[^a-z0-9@.]+/g, "_");
-    const resellerPkgStockId = `${safeEmail}_${packageId}`;
-    const resellerPkgStockRef = doc(db, "reseller_package_stocks", resellerPkgStockId);
-    let resellerPkgStockSnap = await transaction.get(resellerPkgStockRef);
+    const uname = resellerEmail.split("@")[0].trim().toLowerCase();
+    const candidateEmails = Array.from(new Set([
+      resellerEmail.trim().toLowerCase(),
+      `${uname}@bastikaparfum.local`,
+      `${uname}@gmail.com`,
+      uname
+    ]));
 
-    // Fallback: search by username prefix if full email stock doc not found
-    if (!resellerPkgStockSnap.exists()) {
-      const uname = resellerEmail.split("@")[0].trim().toLowerCase();
-      const altStockId = `${uname}_${packageId}`;
-      if (altStockId !== resellerPkgStockId) {
-        const altRef = doc(db, "reseller_package_stocks", altStockId);
-        const altSnap = await transaction.get(altRef);
-        if (altSnap.exists()) {
-          resellerPkgStockSnap = altSnap;
-        }
+    let resellerPkgStockSnap: DocumentSnapshot | null = null;
+    for (const candEmail of candidateEmails) {
+      const candSafe = candEmail.replace(/[^a-z0-9@.]+/g, "_");
+      const candId = `${candSafe}_${packageId}`;
+      const ref = doc(db, "reseller_package_stocks", candId);
+      const snap = await transaction.get(ref);
+      if (snap.exists()) {
+        resellerPkgStockSnap = snap;
+        break;
       }
     }
 
-    if (!resellerPkgStockSnap.exists() || (resellerPkgStockSnap.data().quantity || 0) < quantity) {
-      const currentQty = resellerPkgStockSnap.exists() ? resellerPkgStockSnap.data().quantity : 0;
+    if (!resellerPkgStockSnap || !resellerPkgStockSnap.exists() || (resellerPkgStockSnap.data()?.quantity || 0) < quantity) {
+      const currentQty = (resellerPkgStockSnap && resellerPkgStockSnap.exists()) ? resellerPkgStockSnap.data()?.quantity : 0;
       throw new Error(`Stok fisik paket bundling ${packageName} (${scentName}) di Reseller tidak mencukupi! Tersedia: ${currentQty} unit, Butuh: ${quantity} unit`);
     }
 
