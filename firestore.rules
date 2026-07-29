@@ -87,18 +87,14 @@ service cloud.firestore {
 
     // Transactions / Transaksi
     match /transactions/{txId} {
-      allow read: if isWhitelisted() || (isAuthenticated() && resource.data.resellerEmail == getUserEmail());
-      // Client or reseller can only record SALES, not purchases or modifications
-      allow create: if isAdmin() || (
-        (isClient() || isReseller() || (isAuthenticated() && request.resource.data.resellerEmail == getUserEmail())) && 
-        request.resource.data.type == 'sale'
-      );
-      allow update, delete: if isAdmin();
+      allow read: if isWhitelisted();
+      allow create: if isWhitelisted();
+      allow update, delete: if isWhitelisted();
     }
 
     // Salaries / Gaji Karyawan
     match /salaries/{salaryId} {
-      allow read, write: if isAdmin();
+      allow read, write: if isWhitelisted();
     }
 
     // Cash Ledger / Kas Besar
@@ -116,19 +112,19 @@ service cloud.firestore {
     // Bundling Packages / Paket Bundling
     match /bundling_packages/{pkgId} {
       allow read: if isWhitelisted();
-      allow write: if isAdmin();
+      allow write: if isWhitelisted();
     }
 
     // Reseller Stocks / Stok Komponen Reseller
     match /reseller_stocks/{stockId} {
-      allow read: if isWhitelisted() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
-      allow write: if isAdmin() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
+      allow read: if isWhitelisted();
+      allow write: if isWhitelisted();
     }
 
     // Reseller Package Stocks / Stok Paket Bundling Reseller
     match /reseller_package_stocks/{stockId} {
-      allow read: if isWhitelisted() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
-      allow write: if isAdmin() || (isAuthenticated() && stockId.startsWith(getUserEmail() + '_'));
+      allow read: if isWhitelisted();
+      allow write: if isWhitelisted();
     }
   }
 }

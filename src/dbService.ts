@@ -2155,7 +2155,20 @@ export async function addResellerSaleTransaction(
     const safeEmail = resellerEmail.trim().toLowerCase().replace(/[^a-z0-9@.]+/g, "_");
     const resellerPkgStockId = `${safeEmail}_${packageId}`;
     const resellerPkgStockRef = doc(db, "reseller_package_stocks", resellerPkgStockId);
-    const resellerPkgStockSnap = await transaction.get(resellerPkgStockRef);
+    let resellerPkgStockSnap = await transaction.get(resellerPkgStockRef);
+
+    // Fallback: search by username prefix if full email stock doc not found
+    if (!resellerPkgStockSnap.exists()) {
+      const uname = resellerEmail.split("@")[0].trim().toLowerCase();
+      const altStockId = `${uname}_${packageId}`;
+      if (altStockId !== resellerPkgStockId) {
+        const altRef = doc(db, "reseller_package_stocks", altStockId);
+        const altSnap = await transaction.get(altRef);
+        if (altSnap.exists()) {
+          resellerPkgStockSnap = altSnap;
+        }
+      }
+    }
 
     if (!resellerPkgStockSnap.exists() || (resellerPkgStockSnap.data().quantity || 0) < quantity) {
       const currentQty = resellerPkgStockSnap.exists() ? resellerPkgStockSnap.data().quantity : 0;
@@ -2165,7 +2178,8 @@ export async function addResellerSaleTransaction(
     const totalEssenceNeeded = essenceMl * quantity;
 
     // Deduct stock of physical bundling package from reseller
-    transaction.update(resellerPkgStockRef, { quantity: resellerPkgStockSnap.data().quantity - quantity });
+    const targetRef = doc(db, "reseller_package_stocks", resellerPkgStockSnap.id);
+    transaction.update(targetRef, { quantity: resellerPkgStockSnap.data().quantity - quantity });
 
     // Save transaction in DB
     const txRef = doc(db, "transactions", txId);
