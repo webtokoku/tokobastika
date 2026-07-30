@@ -6945,6 +6945,9 @@ export default function App() {
                             {formatRupiah(
                               saleItems.length > 0 
                                 ? saleItems.reduce((acc, item) => {
+                                    if (item.isBundling) {
+                                      return acc + ((item.bundlingPrice || 0) * (item.bottleCount || 1));
+                                    }
                                     const matchedProduct = masterProducts.find(p => p.category === "essence" && p.referenceKey === item.scentName);
                                     const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === item.scentName)?.pricePerMl || 0);
                                     const essenceCost = item.volumeMl * pricePerMl * item.bottleCount;
@@ -6970,6 +6973,8 @@ export default function App() {
                                     const bottleCost = bottleFee * item.bottleCount;
                                     return acc + essenceCost + bottleCost;
                                   }, 0)
+                                : saleInputMode === "bundling"
+                                ? (saleBundlingPrice || 0) * (saleBundlingCount || 1)
                                 : (
                                     (saleScent ? saleVolume * (prices.find(p => p.scentName === saleScent)?.pricePerMl || 0) * saleBottleCount : 0) +
                                     (saleBottleSize !== "None" && !saleNoBottle ? (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount : 0)
@@ -10203,6 +10208,28 @@ export default function App() {
                       ) : printTx.items && printTx.items.length > 0 ? (
                         <div className="space-y-1.5">
                           {printTx.items.map((item, index) => {
+                            if (item.isBundling) {
+                              const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+                              const { bottleDesc } = getBundlingBottleVolumeInfo(item);
+
+                              return (
+                                <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1 last:border-b-0 last:pb-0">
+                                  <div className="text-[7px] space-y-0.5">
+                                    <div className="flex justify-between font-semibold text-slate-800">
+                                      <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</span>
+                                      <span>Rp {itemTotal.toLocaleString("id-ID")}</span>
+                                    </div>
+                                    <div className="flex justify-between text-[6px] text-slate-500 pl-1">
+                                      <span>
+                                        {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
+                                      </span>
+                                      <span>@ Rp {(item.bundlingPrice || 0).toLocaleString("id-ID")}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            }
+
                             const isHB = item.scentName === "Hanya Botol";
                             const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
                             const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
@@ -10293,6 +10320,9 @@ export default function App() {
                             ? printTx.totalPrice
                             : printTx.items && printTx.items.length > 0
                             ? printTx.items.reduce((acc, item) => {
+                                if (item.isBundling) {
+                                  return acc + ((item.bundlingPrice || 0) * (item.bottleCount || 1));
+                                }
                                 const isHB = item.scentName === "Hanya Botol";
                                 const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
                                 const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
