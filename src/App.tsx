@@ -154,6 +154,19 @@ export const isSameResellerEmail = (email1?: string, email2?: string): boolean =
   return false;
 };
 
+// Helper to save active user session & role persistently across reloads
+const saveUserSession = (email: string, role: UserRole, displayName?: string) => {
+  if (typeof window === "undefined") return;
+  const cleanEmail = (email || "").trim().toLowerCase();
+  const uname = cleanEmail.split("@")[0] || "";
+  localStorage.setItem("bastika_user_role", role);
+  localStorage.setItem("bastika_active_session", JSON.stringify({
+    email: cleanEmail,
+    role: role,
+    displayName: displayName || uname
+  }));
+};
+
 export default function App() {
   // Auth state with synchronous localStorage restoration for persistent login
   const [currentUser, setCurrentUser] = useState<User | null>(() => {
@@ -172,6 +185,14 @@ export default function App() {
             } as User;
           }
         } catch (e) {}
+      }
+      const savedRole = localStorage.getItem("bastika_user_role");
+      if (savedRole) {
+        return {
+          email: "user@bastikaparfum.local",
+          uid: "user@bastikaparfum.local",
+          displayName: "Pengguna Bastika"
+        } as User;
       }
     }
     return null;
@@ -204,7 +225,7 @@ export default function App() {
   });
   const [userWhitelist, setUserWhitelist] = useState<UserProfile[]>([]);
   const [authLoading, setAuthLoading] = useState(() => {
-    if (typeof window !== "undefined" && localStorage.getItem("bastika_active_session")) {
+    if (typeof window !== "undefined" && (localStorage.getItem("bastika_active_session") || localStorage.getItem("bastika_user_role"))) {
       return false;
     }
     return true;
@@ -1168,35 +1189,39 @@ export default function App() {
         const cachedRole = (typeof window !== "undefined" ? localStorage.getItem("bastika_user_role") : null) as UserRole | null;
         const finalRole = cachedRole || defaultRole;
         setUserRole(finalRole);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("bastika_user_role", finalRole);
-          localStorage.setItem("bastika_active_session", JSON.stringify({
-            email: emailClean,
-            role: finalRole,
-            displayName: user.displayName || uname
-          }));
-        }
+        saveUserSession(emailClean, finalRole, user.displayName || uname);
       } else {
-        // Fallback: Check if we have an active saved session in localStorage
+        // Fallback: Check if we have an active saved session or saved role in localStorage
         const savedSessionStr = typeof window !== "undefined" ? localStorage.getItem("bastika_active_session") : null;
-        if (savedSessionStr) {
+        const savedRole = typeof window !== "undefined" ? localStorage.getItem("bastika_user_role") : null;
+        if (savedSessionStr || savedRole) {
           try {
-            const savedSession = JSON.parse(savedSessionStr);
-            if (savedSession && savedSession.email) {
-              const emailClean = String(savedSession.email).trim().toLowerCase();
-              const uname = emailClean.split("@")[0] || "";
-              const restoredUser = ({
-                email: emailClean,
-                uid: emailClean,
-                displayName: savedSession.displayName || uname
-              }) as User;
+            let emailClean = "user@bastikaparfum.local";
+            let roleToUse: UserRole = (savedRole as UserRole) || "admin";
+            let dName = "Pengguna Bastika";
 
-              setCurrentUser(restoredUser);
-              setUserRole(savedSession.role || "admin");
-              setCustomEmail(emailClean);
-              setAuthLoading(false);
-              return;
+            if (savedSessionStr) {
+              const savedSession = JSON.parse(savedSessionStr);
+              if (savedSession && savedSession.email) {
+                emailClean = String(savedSession.email).trim().toLowerCase();
+                if (savedSession.role) roleToUse = savedSession.role as UserRole;
+                if (savedSession.displayName) dName = savedSession.displayName;
+              }
             }
+
+            const uname = emailClean.split("@")[0] || "";
+            const restoredUser = ({
+              email: emailClean,
+              uid: emailClean,
+              displayName: dName || uname
+            }) as User;
+
+            setCurrentUser(restoredUser);
+            setUserRole(roleToUse);
+            setCustomEmail(emailClean);
+            saveUserSession(emailClean, roleToUse, dName);
+            setAuthLoading(false);
+            return;
           } catch (e) {
             console.warn("Gagal membaca saved session:", e);
           }
@@ -1254,7 +1279,10 @@ export default function App() {
       }
 
       if (!resolvedRole) {
-        if (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin")) {
+        const cachedRole = typeof window !== "undefined" ? (localStorage.getItem("bastika_user_role") as UserRole) : null;
+        if (cachedRole) {
+          resolvedRole = cachedRole;
+        } else if (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin")) {
           resolvedRole = "admin";
         } else if (emailClean.includes("reseller") || uname.includes("reseller")) {
           resolvedRole = "reseller";
@@ -1264,22 +1292,21 @@ export default function App() {
       }
 
       setUserRole(resolvedRole);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("bastika_user_role", resolvedRole);
-      }
+      saveUserSession(emailClean, resolvedRole, currentUser.displayName || uname);
       setAuthLoading(false);
     }, (error) => {
       console.error("Gagal memuat dokumen user:", error);
-      const fallbackRole: UserRole = (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin"))
-        ? "admin"
-        : (emailClean.includes("reseller") || uname.includes("reseller"))
-        ? "reseller"
-        : "client";
+      const cachedRole = typeof window !== "undefined" ? (localStorage.getItem("bastika_user_role") as UserRole) : null;
+      const fallbackRole: UserRole = cachedRole || (
+        (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin"))
+          ? "admin"
+          : (emailClean.includes("reseller") || uname.includes("reseller"))
+          ? "reseller"
+          : "client"
+      );
 
       setUserRole(fallbackRole);
-      if (typeof window !== "undefined") {
-        localStorage.setItem("bastika_user_role", fallbackRole);
-      }
+      saveUserSession(emailClean, fallbackRole, currentUser.displayName || uname);
       setAuthLoading(false);
     });
 
@@ -1457,11 +1484,15 @@ export default function App() {
         }
       }
       
-      setCurrentUser(userCredential.user);
+      const role: UserRole = cleanEmail === "bastikacorp@gmail.com" || cleanEmail.startsWith("admin") ? "admin" : cleanEmail.includes("reseller") ? "reseller" : "client";
+      const u = userCredential.user || { email: cleanEmail, uid: cleanEmail, displayName: cleanEmail.split("@")[0] };
+      setCurrentUser(u as User);
+      setUserRole(role);
       setCustomEmail(cleanEmail);
+      saveUserSession(cleanEmail, role, u.displayName || cleanEmail.split("@")[0]);
       showToast(`Berhasil masuk sebagai ${cleanEmail}`, "success");
       
-      if (cleanEmail === "bastikacorp@gmail.com") {
+      if (cleanEmail === "bastikacorp@gmail.com" || role === "admin") {
         setActiveTab("dashboard");
       } else {
         setActiveTab("sales");
@@ -1479,6 +1510,13 @@ export default function App() {
     setIsLoggingIn(true);
     try {
       const result = await signInWithPopup(auth, googleProvider);
+      const emailClean = result.user.email?.trim().toLowerCase() || "";
+      const uname = emailClean.split("@")[0] || "";
+      const role: UserRole = (emailClean === "bastikacorp@gmail.com" || emailClean.startsWith("admin") || uname.startsWith("admin")) ? "admin" : emailClean.includes("reseller") ? "reseller" : "client";
+      setCurrentUser(result.user);
+      setUserRole(role);
+      setCustomEmail(emailClean);
+      saveUserSession(emailClean, role, result.user.displayName || uname);
       showToast(`Selamat datang, ${result.user.displayName || result.user.email}!`, "success");
       setAuthLoading(false);
     } catch (err: any) {
@@ -1599,12 +1637,13 @@ export default function App() {
           targetDocEmail.includes("reseller") || unameInput.includes("reseller") ? "reseller" : "client"
         );
 
+        const emailToUse = signedInUser.email?.trim().toLowerCase() || targetDocEmail;
+        const dName = signedInUser.displayName || dbUserData?.username || dbUserData?.name || unameInput;
+
         setCurrentUser(signedInUser);
         setUserRole(finalRole);
-        if (typeof window !== "undefined") {
-          localStorage.setItem("bastika_user_role", finalRole);
-        }
-        setCustomEmail(signedInUser.email?.trim().toLowerCase() || targetDocEmail);
+        setCustomEmail(emailToUse);
+        saveUserSession(emailToUse, finalRole, dName);
         setAuthLoading(false);
         setIsLoggingIn(false);
         showToast(`Berhasil masuk sebagai ${finalRole.toUpperCase()}!`, "success");
