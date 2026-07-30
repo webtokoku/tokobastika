@@ -438,7 +438,14 @@ export default function App() {
         if (item.isBundling) {
           const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
           calcSubtotal += itemTotal;
-          const bLabel = `[Paket] ${item.bundlingName || item.scentName} (${item.bottleCount || 1}x)`;
+          const bundleUnitEssenceMl = (item.formula && Array.isArray(item.formula))
+            ? item.formula.filter((ing: any) => ing.type === "essence").reduce((sum: number, ing: any) => sum + (ing.quantity || 0), 0)
+            : (item.volumeMl || 0);
+          const totalBundleEssenceMl = bundleUnitEssenceMl * (item.bottleCount || 1);
+
+          addLine(`[Paket] ${item.bundlingName || item.scentName}`);
+          const volStr = totalBundleEssenceMl > 0 ? ` Vol:${totalBundleEssenceMl}ml` : "";
+          const bLabel = `${item.bottleCount || 1}x unit${volStr}`;
           const bVal = `Rp ${itemTotal.toLocaleString("id-ID")}`;
           const bSpaces = 32 - bLabel.length - bVal.length;
           addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
@@ -1696,10 +1703,13 @@ export default function App() {
           showToast("Harga paket bundling harus di atas 0!", "error");
           return;
         }
+        const bundleEssenceMl = (saleBundlingFormula && Array.isArray(saleBundlingFormula))
+          ? saleBundlingFormula.filter(ing => ing.type === "essence").reduce((sum, ing) => sum + (ing.quantity || 0), 0)
+          : 0;
         finalItems.push({
           id: "bundle_" + Math.random().toString(36).substring(2, 9),
           scentName: saleBundlingName.trim(),
-          volumeMl: 0,
+          volumeMl: bundleEssenceMl,
           bottleSize: "Bundling",
           bottleCount: saleBundlingCount || 1,
           isBundling: true,
@@ -1754,8 +1764,16 @@ export default function App() {
     // Determine representative legacy properties for compatibility
     const firstItem = finalItems[0];
     const isMulti = finalItems.length > 1;
-    const representativeScent = isMulti ? `Multi-item (${finalItems.length} item)` : firstItem.scentName;
-    const representativeVolume = finalItems.reduce((acc, it) => acc + (it.volumeMl || 0), 0);
+    const representativeScent = isMulti ? `Multi-item (${finalItems.length} item)` : (firstItem.isBundling ? `[Paket] ${firstItem.bundlingName || firstItem.scentName}` : firstItem.scentName);
+    const representativeVolume = finalItems.reduce((acc, it) => {
+      if (it.isBundling) {
+        const bMl = (it.formula && Array.isArray(it.formula))
+          ? it.formula.filter(ing => ing.type === "essence").reduce((sum, ing) => sum + (ing.quantity || 0), 0)
+          : (it.volumeMl || 0);
+        return acc + (bMl * (it.bottleCount || 1));
+      }
+      return acc + (it.volumeMl || 0);
+    }, 0);
     const representativeBottleSize = isMulti ? "Multi-size" : firstItem.bottleSize;
     const representativeBottleType = isMulti ? undefined : firstItem.bottleType;
     const representativeBottleCount = finalItems.reduce((acc, it) => acc + (it.bottleCount || 0), 0);
@@ -1763,7 +1781,12 @@ export default function App() {
 
     const itemsDescription = finalItems.map(item => {
       if (item.isBundling) {
-        return `[Paket] ${item.bundlingName || item.scentName} x ${item.bottleCount || 1}`;
+        const bMl = (item.formula && Array.isArray(item.formula))
+          ? item.formula.filter(ing => ing.type === "essence").reduce((sum, ing) => sum + (ing.quantity || 0), 0)
+          : (item.volumeMl || 0);
+        const totMl = bMl * (item.bottleCount || 1);
+        const volStr = totMl > 0 ? ` (Vol: ${totMl}ml)` : "";
+        return `[Paket] ${item.bundlingName || item.scentName}${volStr} x ${item.bottleCount || 1}`;
       }
       const isHBotol = item.scentName === "Hanya Botol";
       const bSizeStr = item.bottleSize !== "None" 
@@ -6468,10 +6491,13 @@ export default function App() {
                             return;
                           }
 
+                          const bundleEssenceMl = (saleBundlingFormula && Array.isArray(saleBundlingFormula))
+                            ? saleBundlingFormula.filter(ing => ing.type === "essence").reduce((sum, ing) => sum + (ing.quantity || 0), 0)
+                            : 0;
                           const newBundleItem: SaleItem = {
                             id: "bundle_" + Math.random().toString(36).substring(2, 9),
                             scentName: saleBundlingName.trim(),
-                            volumeMl: 0,
+                            volumeMl: bundleEssenceMl,
                             bottleSize: "Bundling",
                             bottleCount: saleBundlingCount || 1,
                             isBundling: true,
@@ -6520,17 +6546,25 @@ export default function App() {
                         {saleItems.map((item, idx) => {
                           if (item.isBundling) {
                             const bPrice = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+                            const bundleUnitEssenceMl = (item.formula && Array.isArray(item.formula))
+                              ? item.formula.filter((ing: any) => ing.type === "essence").reduce((sum: number, ing: any) => sum + (ing.quantity || 0), 0)
+                              : (item.volumeMl || 0);
+                            const totalBundleEssenceMl = bundleUnitEssenceMl * (item.bottleCount || 1);
+
                             return (
                               <div key={item.id || idx} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl p-3 shadow-sm hover:shadow transition-shadow">
                                 <div className="text-left space-y-1">
                                   <div className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
                                     <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[9px] font-black">PAKET</span>
-                                    {item.bundlingName}
+                                    {item.bundlingName || item.scentName}
                                   </div>
                                   <div className="text-[10px] text-slate-500 flex flex-wrap gap-x-2 gap-y-0.5">
-                                    <span>Qty: <strong className="text-slate-700">{item.bottleCount}x</strong></span>
+                                    <span>Qty: <strong className="text-slate-700">{item.bottleCount}x unit</strong></span>
+                                    {totalBundleEssenceMl > 0 && (
+                                      <span className="text-emerald-700 font-semibold">(Vol. Total: {totalBundleEssenceMl}ml)</span>
+                                    )}
                                     {item.formula && item.formula.length > 0 && (
-                                      <span className="text-slate-500">({item.formula.length} bahan terpotong stok)</span>
+                                      <span className="text-slate-400">({item.formula.length} bahan formula)</span>
                                     )}
                                   </div>
                                 </div>
@@ -9788,12 +9822,24 @@ export default function App() {
                       {printTx.items.map((item, index) => {
                         if (item.isBundling) {
                           const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+                          const bundleUnitEssenceMl = (item.formula && Array.isArray(item.formula))
+                            ? item.formula.filter((ing: any) => ing.type === "essence").reduce((sum: number, ing: any) => sum + (ing.quantity || 0), 0)
+                            : (item.volumeMl || 0);
+                          const totalBundleEssenceMl = bundleUnitEssenceMl * (item.bottleCount || 1);
+
                           return (
                             <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1.5 last:border-b-0 last:pb-0">
                               <div className="text-[8px] space-y-0.5">
                                 <div className="flex justify-between font-bold">
-                                  <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1}x)</span>
+                                  <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</span>
                                   <span>Rp {itemTotal.toLocaleString("id-ID")}</span>
+                                </div>
+                                <div className="flex justify-between text-[7px] text-slate-500 pl-2">
+                                  <span>
+                                    {totalBundleEssenceMl > 0 ? `Vol. Total: ${totalBundleEssenceMl}ml` : "Paket Bundling"}
+                                    {bundleUnitEssenceMl > 0 && (item.bottleCount || 1) > 1 ? ` (${bundleUnitEssenceMl}ml/unit)` : ""}
+                                  </span>
+                                  <span>@ Rp {(item.bundlingPrice || 0).toLocaleString("id-ID")}</span>
                                 </div>
                               </div>
                             </div>
