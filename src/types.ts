@@ -38,6 +38,10 @@ export interface SaleItem {
   bottleType?: "Kaca" | "Plastik";
   bottleCount: number;
   noBottleStockDeduct?: boolean;
+  isBundling?: boolean;
+  bundlingName?: string;
+  bundlingPrice?: number;
+  formula?: FormulaIngredient[];
 }
 
 export interface Transaction {

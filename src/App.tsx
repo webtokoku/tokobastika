@@ -435,6 +435,16 @@ export default function App() {
     let calcSubtotal = 0;
     if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
       tx.items.forEach((item: any) => {
+        if (item.isBundling) {
+          const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+          calcSubtotal += itemTotal;
+          const bLabel = `[Paket] ${item.bundlingName || item.scentName} (${item.bottleCount || 1}x)`;
+          const bVal = `Rp ${itemTotal.toLocaleString("id-ID")}`;
+          const bSpaces = 32 - bLabel.length - bVal.length;
+          addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
+          return;
+        }
+
         const isHB = item.scentName === "Hanya Botol";
         const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
         const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
@@ -452,9 +462,7 @@ export default function App() {
         }
 
         if (item.bottleSize && item.bottleSize !== "None") {
-          const bLabel = item.noBottleStockDeduct 
-            ? `Botol ${item.bottleSize} (${item.bottleCount}x) Bawa` 
-            : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
+          const bLabel = `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
           const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
           const bSpaces = 32 - bLabel.length - bVal.length;
           addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
@@ -477,9 +485,7 @@ export default function App() {
       }
 
       if (tx.bottleSize && tx.bottleSize !== "None") {
-        const bLabel = tx.noBottleStockDeduct 
-          ? `Botol ${tx.bottleSize} (${tx.bottleCount || 1}x) Bawa` 
-          : `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
+        const bLabel = `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
         const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
         const bSpaces = 32 - bLabel.length - bVal.length;
         addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
@@ -861,8 +867,30 @@ export default function App() {
   const [saleDiscountNominal, setSaleDiscountNominal] = useState<number>(0);
   const [saleCustomerName, setSaleCustomerName] = useState("");
   const [saleClaimPromo, setSaleClaimPromo] = useState<boolean>(false);
-  const [saleNoBottle, setSaleNoBottle] = useState<boolean>(false);
+  const [saleNoBottle, setSaleNoBottle] = useState<boolean>(true);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
+
+  // State for Cashier Bundling Sale Input
+  const [saleInputMode, setSaleInputMode] = useState<"regular" | "bundling">("regular");
+  const [saleBundlingName, setSaleBundlingName] = useState<string>("");
+  const [saleBundlingPrice, setSaleBundlingPrice] = useState<number>(0);
+  const [saleBundlingCount, setSaleBundlingCount] = useState<number>(1);
+  const [saleBundlingFormula, setSaleBundlingFormula] = useState<FormulaIngredient[]>([]);
+  const [saleBundlingCartInput, setSaleBundlingCartInput] = useState<{
+    type: "essence" | "alcohol" | "bottle";
+    scentName: string;
+    size: string;
+    bottleType: "Kaca" | "Plastik";
+    solventType: "Absolut Cair" | "Absolut Gel";
+    quantity: number;
+  }>({
+    type: "essence",
+    scentName: "",
+    size: "30ml",
+    bottleType: "Kaca",
+    solventType: "Absolut Cair",
+    quantity: 10
+  });
 
   // Master Produk State
   const [masterProducts, setMasterProducts] = useState<MasterProduct[]>([]);
@@ -1269,6 +1297,9 @@ export default function App() {
 
     if (saleItems.length > 0) {
       subtotal = saleItems.reduce((acc, item) => {
+        if (item.isBundling) {
+          return acc + ((item.bundlingPrice || 0) * (item.bottleCount || 1));
+        }
         const isHB = item.scentName === "Hanya Botol";
         const pricePerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
         const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
@@ -1278,10 +1309,16 @@ export default function App() {
 
       if (saleDiscountType === "free_bottle") {
         computedDiscount = saleItems.reduce((acc, item) => {
+          if (item.isBundling) return acc;
           const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
           return acc + (bottleFee * (item.bottleCount || 1));
         }, 0);
       } else if (saleDiscountType === "nominal") {
+        computedDiscount = saleDiscountNominal;
+      }
+    } else if (saleInputMode === "bundling") {
+      subtotal = (saleBundlingPrice || 0) * (saleBundlingCount || 1);
+      if (saleDiscountType === "nominal") {
         computedDiscount = saleDiscountNominal;
       }
     } else {
@@ -1301,7 +1338,7 @@ export default function App() {
 
     const computedTotal = Math.max(0, subtotal - computedDiscount);
     setSaleTotalPrice(computedTotal);
-  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleDiscountNominal, saleNoBottle, masterProducts, saleBottleType]);
+  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleDiscountNominal, saleNoBottle, masterProducts, saleBottleType, saleInputMode, saleBundlingPrice, saleBundlingCount]);
 
   // Currency Formatter helper (Indonesian Rupiah)
   const formatRupiah = (value: number) => {
@@ -1650,32 +1687,54 @@ export default function App() {
     
     // Fallback: If cart is empty, use current inputs as single item
     if (finalItems.length === 0) {
-      const isHanyaBotol = saleScent === "Hanya Botol";
-      if (!saleScent) {
-        showToast("Harap pilih nama aroma atau tambahkan item ke daftar belanja terlebih dahulu!", "error");
-        return;
+      if (saleInputMode === "bundling") {
+        if (!saleBundlingName.trim()) {
+          showToast("Harap isi nama paket bundling!", "error");
+          return;
+        }
+        if (saleBundlingPrice <= 0) {
+          showToast("Harga paket bundling harus di atas 0!", "error");
+          return;
+        }
+        finalItems.push({
+          id: "bundle_" + Math.random().toString(36).substring(2, 9),
+          scentName: saleBundlingName.trim(),
+          volumeMl: 0,
+          bottleSize: "Bundling",
+          bottleCount: saleBundlingCount || 1,
+          isBundling: true,
+          bundlingName: saleBundlingName.trim(),
+          bundlingPrice: saleBundlingPrice,
+          formula: saleBundlingFormula
+        });
+      } else {
+        const isHanyaBotol = saleScent === "Hanya Botol";
+        if (!saleScent) {
+          showToast("Harap pilih nama aroma atau tambahkan item ke daftar belanja terlebih dahulu!", "error");
+          return;
+        }
+        if (!isHanyaBotol && saleVolume <= 0) {
+          showToast("Volume bibit harus di atas 0 ml!", "error");
+          return;
+        }
+        if (isHanyaBotol && saleBottleSize === "None") {
+          showToast("Harap pilih ukuran botol jika hanya membeli botol!", "error");
+          return;
+        }
+        if (saleBottleCount <= 0) {
+          showToast("Jumlah botol minimal 1!", "error");
+          return;
+        }
+        finalItems.push({
+          id: "item_" + Math.random().toString(36).substring(2, 9),
+          scentName: saleScent,
+          volumeMl: isHanyaBotol ? 0 : saleVolume,
+          bottleSize: saleBottleSize,
+          bottleType: saleBottleSize !== "None" ? saleBottleType : undefined,
+          bottleCount: saleBottleCount,
+          noBottleStockDeduct: saleNoBottle
+        });
       }
-      if (!isHanyaBotol && saleVolume <= 0) {
-        showToast("Volume bibit harus di atas 0 ml!", "error");
-        return;
-      }
-      if (isHanyaBotol && saleBottleSize === "None") {
-        showToast("Harap pilih ukuran botol jika hanya membeli botol!", "error");
-        return;
-      }
-      if (saleBottleCount <= 0) {
-        showToast("Jumlah botol minimal 1!", "error");
-        return;
-      }
-      finalItems.push({
-        id: "item_" + Math.random().toString(36).substring(2, 9),
-        scentName: saleScent,
-        volumeMl: isHanyaBotol ? 0 : saleVolume,
-        bottleSize: saleBottleSize,
-        bottleType: saleBottleSize !== "None" ? saleBottleType : undefined,
-        bottleCount: saleBottleCount,
-        noBottleStockDeduct: saleNoBottle
-      });
     }
 
     const opEmail = currentUser?.email || customEmail || "client_operator@gmail.com";
@@ -1686,6 +1745,7 @@ export default function App() {
       computedDiscount = saleDiscountNominal;
     } else if (saleDiscountType === "free_bottle") {
       computedDiscount = finalItems.reduce((acc, item) => {
+        if (item.isBundling) return acc;
         const bottlePrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
         return acc + (bottlePrice * (item.bottleCount || 1));
       }, 0);
@@ -1694,7 +1754,7 @@ export default function App() {
     // Determine representative legacy properties for compatibility
     const firstItem = finalItems[0];
     const isMulti = finalItems.length > 1;
-    const representativeScent = isMulti ? `Multi-item (${finalItems.length} aroma)` : firstItem.scentName;
+    const representativeScent = isMulti ? `Multi-item (${finalItems.length} item)` : firstItem.scentName;
     const representativeVolume = finalItems.reduce((acc, it) => acc + (it.volumeMl || 0), 0);
     const representativeBottleSize = isMulti ? "Multi-size" : firstItem.bottleSize;
     const representativeBottleType = isMulti ? undefined : firstItem.bottleType;
@@ -1702,9 +1762,12 @@ export default function App() {
     const representativeNoBottle = finalItems.some(it => it.noBottleStockDeduct);
 
     const itemsDescription = finalItems.map(item => {
+      if (item.isBundling) {
+        return `[Paket] ${item.bundlingName || item.scentName} x ${item.bottleCount || 1}`;
+      }
       const isHBotol = item.scentName === "Hanya Botol";
       const bSizeStr = item.bottleSize !== "None" 
-        ? (item.noBottleStockDeduct ? ` + Bawa Botol Sendiri ${item.bottleSize}` : ` + Botol ${item.bottleType || "Kaca"} ${item.bottleSize}`)
+        ? ` + Botol ${item.bottleType || "Kaca"} ${item.bottleSize}`
         : " (Hanya Bibit)";
       return isHBotol 
         ? `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} x ${item.bottleCount}` 
@@ -1768,7 +1831,11 @@ export default function App() {
       setSaleDiscountNominal(0);
       setSaleCustomerName("");
       setSaleClaimPromo(false);
-      setSaleNoBottle(false);
+      setSaleNoBottle(true);
+      setSaleBundlingName("");
+      setSaleBundlingPrice(0);
+      setSaleBundlingCount(1);
+      setSaleBundlingFormula([]);
       setSaleItems([]);
     } catch (err: any) {
       showToast(err.message || "Gagal mencatat penjualan", "error");
@@ -5956,200 +6023,482 @@ export default function App() {
                     })()}
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Scent selection */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Aroma / Scent Parfum</label>
-                      <select
-                        id="sales-scent-select"
-                        value={saleScent}
-                        onChange={(e) => {
-                          setSaleScent(e.target.value);
-                          if (e.target.value === "Hanya Botol") {
-                            setSaleVolume(0);
-                          }
-                        }}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
-                      >
-                        <option value="">-- Pilih Aroma --</option>
-                        <option value="Hanya Botol" className="font-bold text-emerald-700 bg-emerald-50">🛍️ -- Hanya Beli Botol Saja --</option>
-                        {masterBibitList.map(p => (
-                          <option key={p.scentName} value={p.scentName}>
-                            {p.scentName} ({formatRupiah(p.pricePerMl)} / ml)
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Volume (ml) */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Volume Bibit (ml)</label>
-                      <input
-                        id="sales-volume-input"
-                        type="number"
-                        placeholder={saleScent === "Hanya Botol" ? "0 (Hanya Botol)" : "Volume cairan bibit (ml)"}
-                        value={saleScent === "Hanya Botol" ? "" : (saleVolume || "")}
-                        disabled={saleScent === "Hanya Botol"}
-                        onChange={(e) => setSaleVolume(Number(e.target.value))}
-                        className={`w-full border rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
-                          saleScent === "Hanya Botol"
-                            ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
-                            : "bg-slate-50 border-slate-200 focus:bg-white text-slate-800"
-                        }`}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    {/* Bottle size selection */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ukuran Botol (Kemasan)</label>
-                      <select
-                        id="sales-bottle-select"
-                        value={saleBottleSize}
-                        onChange={(e) => {
-                          setSaleBottleSize(e.target.value);
-                          if (e.target.value === "None") {
-                            setSaleNoBottle(false);
-                          }
-                        }}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
-                      >
-                        {bottleSizes.map((b) => (
-                          <option key={b.id} value={b.size}>
-                            Botol {b.size}
-                          </option>
-                        ))}
-                        <option value="None">Hanya Bibit</option>
-                      </select>
-                    </div>
-
-                    {/* Bottle count */}
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jumlah Botol (Unit)</label>
-                      <input
-                        id="sales-count-input"
-                        type="number"
-                        min="1"
-                        placeholder="Jumlah pesanan botol"
-                        value={saleBottleCount || ""}
-                        onChange={(e) => setSaleBottleCount(Number(e.target.value))}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
-                      />
-                    </div>
-
-                    {/* Bottle material selection */}
-                    {saleBottleSize !== "None" && (
-                      <div className="sm:col-span-2">
-                        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Bahan Botol</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            onClick={() => setSaleBottleType("Kaca")}
-                            className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
-                              saleBottleType === "Kaca"
-                                ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
-                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
-                            }`}
-                          >
-                            Botol Kaca ({formatRupiah(bottleSizes.find(b => b.size === saleBottleSize)?.priceKaca ?? bottleSizes.find(b => b.size === saleBottleSize)?.price ?? 0)})
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setSaleBottleType("Plastik")}
-                            className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
-                              saleBottleType === "Plastik"
-                                ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
-                                : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
-                            }`}
-                          >
-                            Botol Plastik ({formatRupiah(bottleSizes.find(b => b.size === saleBottleSize)?.pricePlastik ?? Math.round((bottleSizes.find(b => b.size === saleBottleSize)?.price ?? 0) / 2))})
-                          </button>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Checkbox Bawa Botol Sendiri */}
-                    {saleScent !== "Hanya Botol" && (
-                      <div className="sm:col-span-2">
-                        <label className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
-                          <input
-                            type="checkbox"
-                            checked={saleNoBottle}
-                            disabled={saleBottleSize === "None"}
-                            onChange={(e) => {
-                              setSaleNoBottle(e.target.checked);
-                            }}
-                            className="h-4 w-4 text-emerald-600 focus:ring-emerald-500 border-slate-300 rounded cursor-pointer mt-0.5"
-                          />
-                          <div className="text-left">
-                            <span className={`text-xs font-bold ${saleBottleSize === "None" ? "text-slate-400" : "text-slate-700"}`}>
-                              Tanpa Potong Stok Botol (Bawa Botol Sendiri / Refill)
-                            </span>
-                            <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">
-                              {saleBottleSize === "None" 
-                                ? "Pilih ukuran botol di atas terlebih dahulu jika ingin mengaktifkan perhitungan selisih sisa untuk pengurangan stok Absolut."
-                                : "Mengaktifkan ini akan membuat stok botol fisik toko TIDAK berkurang dan harga botol Rp 0 (Gratis/Bawa Sendiri). Stok Absolut akan tetap berkurang secara akurat berdasarkan selisih kapasitas botol dikurangi volume bibit."}
-                            </p>
-                          </div>
-                        </label>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Tambah ke Daftar Item Belanja Button */}
-                  <div className="pt-2">
+                  {/* Mode Selector: Penjualan Eceran vs Penjualan Bundling */}
+                  <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 mb-4">
                     <button
                       type="button"
-                      onClick={() => {
-                        const isHanyaBotol = saleScent === "Hanya Botol";
-                        if (!saleScent) {
-                          showToast("Harap pilih nama aroma!", "error");
-                          return;
-                        }
-                        if (!isHanyaBotol && saleVolume <= 0) {
-                          showToast("Volume bibit harus di atas 0 ml!", "error");
-                          return;
-                        }
-                        if (isHanyaBotol && saleBottleSize === "None") {
-                          showToast("Harap pilih ukuran botol jika hanya membeli botol!", "error");
-                          return;
-                        }
-                        if (saleBottleCount <= 0) {
-                          showToast("Jumlah botol minimal 1!", "error");
-                          return;
-                        }
-
-                        // Add to state
-                        const newItem: SaleItem = {
-                          id: "item_" + Math.random().toString(36).substring(2, 9),
-                          scentName: saleScent,
-                          volumeMl: isHanyaBotol ? 0 : saleVolume,
-                          bottleSize: saleBottleSize,
-                          bottleType: saleBottleSize !== "None" ? saleBottleType : undefined,
-                          bottleCount: saleBottleCount,
-                          noBottleStockDeduct: saleNoBottle
-                        };
-
-                        setSaleItems(prev => [...prev, newItem]);
-                        showToast(`Berhasil menambahkan ${saleScent} ke daftar belanja!`, "success");
-
-                        // Reset item inputs while keeping customer name etc
-                        setSaleScent("");
-                        setSaleVolume(0);
-                        setSaleBottleCount(1);
-                        setSaleNoBottle(false);
-                      }}
-                      className="w-full bg-emerald-50 hover:bg-emerald-100/80 active:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl py-3 px-4 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow"
+                      onClick={() => setSaleInputMode("regular")}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        saleInputMode === "regular"
+                          ? "bg-white text-emerald-800 shadow-sm border border-slate-200/60 font-extrabold"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
                     >
-                      <Plus className="h-4 w-4" />
-                      Tambah ke Daftar Item Belanja
+                      🧪 Penjualan Eceran / Regular
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSaleInputMode("bundling")}
+                      className={`flex-1 py-2 px-3 rounded-lg text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                        saleInputMode === "bundling"
+                          ? "bg-white text-emerald-800 shadow-sm border border-slate-200/60 font-extrabold"
+                          : "text-slate-500 hover:text-slate-800"
+                      }`}
+                    >
+                      🎁 Penjualan Produk Bundling
                     </button>
                   </div>
 
+                  {saleInputMode === "regular" ? (
+                    <>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        {/* Scent selection */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Aroma / Scent Parfum</label>
+                          <select
+                            id="sales-scent-select"
+                            value={saleScent}
+                            onChange={(e) => {
+                              setSaleScent(e.target.value);
+                              if (e.target.value === "Hanya Botol") {
+                                setSaleVolume(0);
+                              }
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
+                          >
+                            <option value="">-- Pilih Aroma --</option>
+                            <option value="Hanya Botol" className="font-bold text-emerald-700 bg-emerald-50">🛍️ -- Hanya Beli Botol Saja --</option>
+                            {masterBibitList.map(p => (
+                              <option key={p.scentName} value={p.scentName}>
+                                {p.scentName} ({formatRupiah(p.pricePerMl)} / ml)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Volume (ml) */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Volume Bibit (ml)</label>
+                          <input
+                            id="sales-volume-input"
+                            type="number"
+                            placeholder={saleScent === "Hanya Botol" ? "0 (Hanya Botol)" : "Volume cairan bibit (ml)"}
+                            value={saleScent === "Hanya Botol" ? "" : (saleVolume || "")}
+                            disabled={saleScent === "Hanya Botol"}
+                            onChange={(e) => setSaleVolume(Number(e.target.value))}
+                            className={`w-full border rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 ${
+                              saleScent === "Hanya Botol"
+                                ? "bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed"
+                                : "bg-slate-50 border-slate-200 focus:bg-white text-slate-800"
+                            }`}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-4">
+                        {/* Bottle size selection */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ukuran Botol (Kemasan)</label>
+                          <select
+                            id="sales-bottle-select"
+                            value={saleBottleSize}
+                            onChange={(e) => {
+                              setSaleBottleSize(e.target.value);
+                              if (e.target.value === "None") {
+                                setSaleNoBottle(false);
+                              }
+                            }}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
+                          >
+                            {bottleSizes.map((b) => (
+                              <option key={b.id} value={b.size}>
+                                Botol {b.size}
+                              </option>
+                            ))}
+                            <option value="None">Hanya Bibit</option>
+                          </select>
+                        </div>
+
+                        {/* Bottle count */}
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Jumlah Botol (Unit)</label>
+                          <input
+                            id="sales-count-input"
+                            type="number"
+                            min="1"
+                            placeholder="Jumlah pesanan botol"
+                            value={saleBottleCount || ""}
+                            onChange={(e) => setSaleBottleCount(Number(e.target.value))}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
+                          />
+                        </div>
+
+                        {/* Bottle material selection */}
+                        {saleBottleSize !== "None" && (
+                          <div className="sm:col-span-2">
+                            <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Bahan Botol</label>
+                            <div className="grid grid-cols-2 gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setSaleBottleType("Kaca")}
+                                className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                                  saleBottleType === "Kaca"
+                                    ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                }`}
+                              >
+                                Botol Kaca
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSaleBottleType("Plastik")}
+                                className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
+                                  saleBottleType === "Plastik"
+                                    ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                                    : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                                }`}
+                              >
+                                Botol Plastik
+                              </button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Checkbox Absolut Gratis */}
+                        {saleScent !== "Hanya Botol" && (
+                          <div className="sm:col-span-2">
+                            <label className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={saleNoBottle}
+                                disabled={saleBottleSize === "None"}
+                                onChange={(e) => {
+                                  setSaleNoBottle(e.target.checked);
+                                }}
+                                className="h-4 w-4 text-emerald-600 focus:ring-emerald-500 border-slate-300 rounded cursor-pointer mt-0.5"
+                              />
+                              <div className="text-left">
+                                <span className={`text-xs font-bold ${saleBottleSize === "None" ? "text-slate-400" : "text-emerald-700"}`}>
+                                  Absolut Gratis
+                                </span>
+                                <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">
+                                  {saleBottleSize === "None" 
+                                    ? "Pilih ukuran botol di atas terlebih dahulu untuk menghitung pemotongan stok Absolut."
+                                    : "Mengaktifkan ini memberikan pelarut Absolut secara gratis dan memotong stok Absolut secara otomatis berdasarkan selisih kapasitas botol dikurangi volume bibit. Keterangan ini tidak ditampilkan pada invoice."}
+                                </p>
+                              </div>
+                            </label>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Tambah ke Daftar Item Belanja Button */}
+                      <div className="pt-2 mt-4">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const isHanyaBotol = saleScent === "Hanya Botol";
+                            if (!saleScent) {
+                              showToast("Harap pilih nama aroma!", "error");
+                              return;
+                            }
+                            if (!isHanyaBotol && saleVolume <= 0) {
+                              showToast("Volume bibit harus di atas 0 ml!", "error");
+                              return;
+                            }
+                            if (isHanyaBotol && saleBottleSize === "None") {
+                              showToast("Harap pilih ukuran botol jika hanya membeli botol!", "error");
+                              return;
+                            }
+                            if (saleBottleCount <= 0) {
+                              showToast("Jumlah botol minimal 1!", "error");
+                              return;
+                            }
+
+                            // Add to state
+                            const newItem: SaleItem = {
+                              id: "item_" + Math.random().toString(36).substring(2, 9),
+                              scentName: saleScent,
+                              volumeMl: isHanyaBotol ? 0 : saleVolume,
+                              bottleSize: saleBottleSize,
+                              bottleType: saleBottleSize !== "None" ? saleBottleType : undefined,
+                              bottleCount: saleBottleCount,
+                              noBottleStockDeduct: saleNoBottle
+                            };
+
+                            setSaleItems(prev => [...prev, newItem]);
+                            showToast(`Berhasil menambahkan ${saleScent} ke daftar belanja!`, "success");
+
+                            // Reset item inputs while keeping customer name etc
+                            setSaleScent("");
+                            setSaleVolume(0);
+                            setSaleBottleCount(1);
+                            setSaleNoBottle(true);
+                          }}
+                          className="w-full bg-emerald-50 hover:bg-emerald-100/80 active:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl py-3 px-4 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow"
+                        >
+                          <Plus className="h-4 w-4" />
+                          Tambah ke Daftar Item Belanja
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    /* Bundling Mode Input Form */
+                    <div className="space-y-4 border border-emerald-100 bg-emerald-50/20 rounded-2xl p-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Nama Paket / Bundling
+                          </label>
+                          <input
+                            type="text"
+                            placeholder="Contoh: Paket Gift 3 Varian, Bundling Hemat"
+                            value={saleBundlingName}
+                            onChange={(e) => setSaleBundlingName(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 text-slate-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Harga Total Paket (Rp)
+                          </label>
+                          <input
+                            type="number"
+                            min="0"
+                            placeholder="Total Rp"
+                            value={saleBundlingPrice || ""}
+                            onChange={(e) => setSaleBundlingPrice(Number(e.target.value))}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 text-slate-800"
+                          />
+                        </div>
+
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                            Jumlah Unit Paket
+                          </label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={saleBundlingCount || 1}
+                            onChange={(e) => setSaleBundlingCount(Number(e.target.value))}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 text-slate-800"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Formula Input Box for Bundling */}
+                      <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3">
+                        <span className="font-bold text-xs text-slate-800 block flex items-center gap-1.5">
+                          <Package className="h-3.5 w-3.5 text-emerald-600" />
+                          Formula Komposisi Bahan Paket (Pengurangan Stok Master):
+                        </span>
+
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Jenis Bahan</label>
+                            <select
+                              value={saleBundlingCartInput.type}
+                              onChange={(e) => {
+                                const selectedType = e.target.value as "essence" | "alcohol" | "bottle";
+                                let defaultQty = 10;
+                                if (selectedType === "bottle") defaultQty = 1;
+                                else if (selectedType === "alcohol") defaultQty = 20;
+                                setSaleBundlingCartInput(prev => ({ ...prev, type: selectedType, quantity: defaultQty }));
+                              }}
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                            >
+                              <option value="essence">Bibit Aroma (ml)</option>
+                              <option value="bottle">Botol Kemasan (pcs)</option>
+                              <option value="alcohol">Cairan Pelarut (ml)</option>
+                            </select>
+                          </div>
+
+                          {saleBundlingCartInput.type === "essence" && (
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Nama Aroma (Bibit)</label>
+                              <input
+                                type="text"
+                                list="sales-bundle-scents-autocomplete"
+                                placeholder="Pilih / Cari Aroma"
+                                value={saleBundlingCartInput.scentName}
+                                onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, scentName: e.target.value }))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                              />
+                              <datalist id="sales-bundle-scents-autocomplete">
+                                {masterBibitList.map(p => (
+                                  <option key={p.scentName} value={p.scentName} />
+                                ))}
+                              </datalist>
+                            </div>
+                          )}
+
+                          {saleBundlingCartInput.type === "bottle" && (
+                            <div className="grid grid-cols-2 gap-1 sm:col-span-1">
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Ukuran</label>
+                                <select
+                                  value={saleBundlingCartInput.size}
+                                  onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, size: e.target.value }))}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 font-semibold"
+                                >
+                                  {bottleSizes.map(bs => (
+                                    <option key={bs.id} value={bs.size}>{bs.size}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Bahan</label>
+                                <select
+                                  value={saleBundlingCartInput.bottleType}
+                                  onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, bottleType: e.target.value as "Kaca" | "Plastik" }))}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 font-semibold"
+                                >
+                                  <option value="Kaca">Kaca</option>
+                                  <option value="Plastik">Plastik</option>
+                                </select>
+                              </div>
+                            </div>
+                          )}
+
+                          {saleBundlingCartInput.type === "alcohol" && (
+                            <div>
+                              <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Jenis Pelarut</label>
+                              <select
+                                value={saleBundlingCartInput.solventType}
+                                onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, solventType: e.target.value as "Absolut Cair" | "Absolut Gel" }))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                              >
+                                <option value="Absolut Cair">Absolut Cair</option>
+                                <option value="Absolut Gel">Absolut Gel</option>
+                              </select>
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">
+                              {saleBundlingCartInput.type === "bottle" ? "Jumlah (pcs)" : "Volume (ml)"}
+                            </label>
+                            <div className="flex gap-1.5">
+                              <input
+                                type="number"
+                                min="1"
+                                value={saleBundlingCartInput.quantity || ""}
+                                onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, quantity: Number(e.target.value) }))}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (saleBundlingCartInput.type === "essence" && !saleBundlingCartInput.scentName.trim()) {
+                                    showToast("Pilih nama aroma!", "error");
+                                    return;
+                                  }
+                                  if (saleBundlingCartInput.quantity <= 0) {
+                                    showToast("Jumlah / volume harus di atas 0!", "error");
+                                    return;
+                                  }
+                                  const newItem: FormulaIngredient = {
+                                    type: saleBundlingCartInput.type,
+                                    quantity: saleBundlingCartInput.quantity
+                                  };
+                                  if (saleBundlingCartInput.type === "essence") {
+                                    newItem.scentName = saleBundlingCartInput.scentName.trim();
+                                  } else if (saleBundlingCartInput.type === "bottle") {
+                                    newItem.size = saleBundlingCartInput.size;
+                                    newItem.bottleType = saleBundlingCartInput.bottleType;
+                                  } else if (saleBundlingCartInput.type === "alcohol") {
+                                    newItem.solventType = saleBundlingCartInput.solventType;
+                                  }
+                                  setSaleBundlingFormula(prev => [...prev, newItem]);
+                                  setSaleBundlingCartInput(prev => ({ ...prev, scentName: "", quantity: prev.type === "bottle" ? 1 : 10 }));
+                                  showToast("Bahan berhasil ditambahkan ke formula paket!", "success");
+                                }}
+                                className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-3 py-1.5 rounded-lg shrink-0 flex items-center gap-1 cursor-pointer"
+                              >
+                                <Plus className="h-3.5 w-3.5" />
+                                Tambah
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Formula List */}
+                        {saleBundlingFormula.length > 0 && (
+                          <div className="border border-slate-200 rounded-lg p-2 bg-slate-50 space-y-1">
+                            <span className="text-[10px] font-bold text-slate-500 uppercase block mb-1">Bahan Terdaftar Dalam Paket Ini:</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {saleBundlingFormula.map((ing, idx) => (
+                                <span key={idx} className="inline-flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-1 text-[11px] font-semibold text-slate-700 shadow-2xs">
+                                  <span className={`text-[9px] font-bold uppercase px-1 rounded ${ing.type === "essence" ? "bg-amber-100 text-amber-800" : ing.type === "bottle" ? "bg-blue-100 text-blue-800" : "bg-purple-100 text-purple-800"}`}>
+                                    {ing.type === "essence" ? "Bibit" : ing.type === "bottle" ? "Botol" : "Absolut"}
+                                  </span>
+                                  <span>
+                                    {ing.type === "essence" && `${ing.scentName} (${ing.quantity}ml)`}
+                                    {ing.type === "bottle" && `${ing.size} ${ing.bottleType} (${ing.quantity}pcs)`}
+                                    {ing.type === "alcohol" && `${ing.solventType} (${ing.quantity}ml)`}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSaleBundlingFormula(prev => prev.filter((_, i) => i !== idx))}
+                                    className="text-slate-400 hover:text-rose-600 cursor-pointer"
+                                  >
+                                    <X className="h-3 w-3" />
+                                  </button>
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!saleBundlingName.trim()) {
+                            showToast("Nama paket bundling wajib diisi!", "error");
+                            return;
+                          }
+                          if (saleBundlingPrice <= 0) {
+                            showToast("Harga paket bundling harus lebih besar dari 0!", "error");
+                            return;
+                          }
+                          if (saleBundlingCount <= 0) {
+                            showToast("Jumlah paket minimal 1!", "error");
+                            return;
+                          }
+
+                          const newBundleItem: SaleItem = {
+                            id: "bundle_" + Math.random().toString(36).substring(2, 9),
+                            scentName: saleBundlingName.trim(),
+                            volumeMl: 0,
+                            bottleSize: "Bundling",
+                            bottleCount: saleBundlingCount || 1,
+                            isBundling: true,
+                            bundlingName: saleBundlingName.trim(),
+                            bundlingPrice: saleBundlingPrice,
+                            formula: saleBundlingFormula
+                          };
+
+                          setSaleItems(prev => [...prev, newBundleItem]);
+                          showToast(`Berhasil menambahkan paket ${saleBundlingName} ke daftar belanja!`, "success");
+
+                          setSaleBundlingName("");
+                          setSaleBundlingPrice(0);
+                          setSaleBundlingCount(1);
+                          setSaleBundlingFormula([]);
+                        }}
+                        className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                      >
+                        <Plus className="h-4 w-4" />
+                        Tambah Paket ke Daftar Belanja
+                      </button>
+                    </div>
+                  )}
+
                   {/* Daftar Item Belanja (Cart List) */}
                   {saleItems.length > 0 && (
-                    <div className="bg-slate-50/50 border border-slate-200/60 rounded-2xl p-4 space-y-3">
+                    <div className="bg-slate-50/50 border border-slate-200/60 rounded-2xl p-4 space-y-3 mt-4">
                       <div className="flex items-center justify-between border-b border-slate-200/50 pb-2">
                         <span className="text-xs font-bold text-slate-700 flex items-center gap-2">
                           <ShoppingBag className="h-4 w-4 text-emerald-600" />
@@ -6169,6 +6518,41 @@ export default function App() {
                       
                       <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
                         {saleItems.map((item, idx) => {
+                          if (item.isBundling) {
+                            const bPrice = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+                            return (
+                              <div key={item.id || idx} className="flex items-center justify-between bg-white border border-slate-100 rounded-xl p-3 shadow-sm hover:shadow transition-shadow">
+                                <div className="text-left space-y-1">
+                                  <div className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+                                    <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded text-[9px] font-black">PAKET</span>
+                                    {item.bundlingName}
+                                  </div>
+                                  <div className="text-[10px] text-slate-500 flex flex-wrap gap-x-2 gap-y-0.5">
+                                    <span>Qty: <strong className="text-slate-700">{item.bottleCount}x</strong></span>
+                                    {item.formula && item.formula.length > 0 && (
+                                      <span className="text-slate-500">({item.formula.length} bahan terpotong stok)</span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs font-bold text-slate-700">
+                                    {formatRupiah(bPrice)}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSaleItems(prev => prev.filter(it => it.id !== item.id));
+                                      showToast(`Menghapus ${item.bundlingName} dari daftar belanja.`);
+                                    }}
+                                    className="text-slate-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 cursor-pointer"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          }
+
                           const isHB = item.scentName === "Hanya Botol";
                           const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
                           const bFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
@@ -6184,7 +6568,7 @@ export default function App() {
                                   {!isHB && <span>Vol: <strong className="text-slate-700">{item.volumeMl}ml</strong></span>}
                                   <span>Botol: <strong className="text-slate-700">{item.bottleSize !== "None" ? `${item.bottleSize}` : "Tanpa Botol"}</strong></span>
                                   <span>Qty: <strong className="text-slate-700">{item.bottleCount}x</strong></span>
-                                  {item.noBottleStockDeduct && <span className="bg-amber-50 text-amber-700 px-1 py-0.5 rounded text-[8px] font-bold">Bawa Botol</span>}
+                                  {item.noBottleStockDeduct && <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded text-[8px] font-bold">Absolut Gratis</span>}
                                 </div>
                               </div>
                               <div className="flex items-center gap-3">
@@ -9402,6 +9786,20 @@ export default function App() {
                   ) : printTx.items && printTx.items.length > 0 ? (
                     <div className="space-y-2">
                       {printTx.items.map((item, index) => {
+                        if (item.isBundling) {
+                          const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+                          return (
+                            <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1.5 last:border-b-0 last:pb-0">
+                              <div className="text-[8px] space-y-0.5">
+                                <div className="flex justify-between font-bold">
+                                  <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1}x)</span>
+                                  <span>Rp {itemTotal.toLocaleString("id-ID")}</span>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        }
+
                         const isHB = item.scentName === "Hanya Botol";
                         const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
                         const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
@@ -9427,10 +9825,7 @@ export default function App() {
                             {item.bottleSize && item.bottleSize !== "None" && (
                               <div className="text-[8px] pt-0.5 flex justify-between">
                                 <span className="text-slate-600">
-                                  {item.noBottleStockDeduct 
-                                    ? `Botol ${item.bottleSize} (${item.bottleCount} pcs) - Bawa Sendiri`
-                                    : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount} pcs)`
-                                  }
+                                  Botol {item.bottleType || "Kaca"} {item.bottleSize} ({item.bottleCount} pcs)
                                 </span>
                                 <span>
                                   Rp {bottleCost.toLocaleString("id-ID")}
@@ -9470,10 +9865,7 @@ export default function App() {
                       {printTx.bottleSize && printTx.bottleSize !== "None" && (
                         <div className="text-[8px] pt-1 flex justify-between">
                           <span>
-                            {printTx.noBottleStockDeduct 
-                              ? `Botol ${printTx.bottleSize} (${printTx.bottleCount} pcs) - Bawa Sendiri`
-                              : `Botol ${printTx.bottleType || "Kaca"} ${printTx.bottleSize} (${printTx.bottleCount} pcs)`
-                            }
+                            Botol {printTx.bottleType || "Kaca"} {printTx.bottleSize} ({printTx.bottleCount} pcs)
                           </span>
                           <span>
                             Rp {(getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.noBottleStockDeduct, masterProducts, bottleSizes) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
@@ -9494,6 +9886,9 @@ export default function App() {
                         ? printTx.totalPrice
                         : printTx.items && printTx.items.length > 0
                         ? printTx.items.reduce((acc, item) => {
+                            if (item.isBundling) {
+                              return acc + ((item.bundlingPrice || 0) * (item.bottleCount || 1));
+                            }
                             const isHB = item.scentName === "Hanya Botol";
                             const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
                             const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
