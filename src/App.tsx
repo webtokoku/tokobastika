@@ -1433,7 +1433,7 @@ export default function App() {
         }
         const isHB = item.scentName === "Hanya Botol";
         const pricePerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-        const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+        const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
         const baseCost = ((item.volumeMl || 0) * pricePerMl) + bottleFee;
         return acc + (baseCost * (item.bottleCount || 1));
       }, 0);
@@ -1441,7 +1441,7 @@ export default function App() {
       if (saleDiscountType === "free_bottle") {
         computedDiscount = saleItems.reduce((acc, item) => {
           if (item.isBundling) return acc;
-          const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+          const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
           return acc + (bottleFee * (item.bottleCount || 1));
         }, 0);
       } else if (saleDiscountType === "nominal") {
@@ -1456,12 +1456,13 @@ export default function App() {
       // Fallback to single item from form
       const isHB = saleScent === "Hanya Botol";
       const pricePerMl = isHB ? 0 : getEssencePricePerMl(saleScent, masterProducts, prices);
-      const bottleFee = getBottleUnitPrice(saleBottleSize, saleBottleType, saleNoBottle, masterProducts, bottleSizes);
+      const bottleFee = getBottleUnitPrice(saleBottleSize, saleBottleType, saleBringOwnBottle, masterProducts, bottleSizes);
       const baseCost = ((saleVolume || 0) * pricePerMl) + bottleFee;
       subtotal = baseCost * (saleBottleCount || 1);
 
       if (saleDiscountType === "free_bottle") {
-        computedDiscount = bottleFee * (saleBottleCount || 1);
+        const fullBottleFee = getBottleUnitPrice(saleBottleSize, saleBottleType, false, masterProducts, bottleSizes);
+        computedDiscount = fullBottleFee * (saleBottleCount || 1);
       } else if (saleDiscountType === "nominal") {
         computedDiscount = saleDiscountNominal;
       }
@@ -1469,7 +1470,7 @@ export default function App() {
 
     const computedTotal = Math.max(0, subtotal - computedDiscount);
     setSaleTotalPrice(computedTotal);
-  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleDiscountNominal, saleNoBottle, masterProducts, saleBottleType, saleInputMode, saleBundlingPrice, saleBundlingCount]);
+  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleDiscountNominal, saleNoBottle, saleBringOwnBottle, masterProducts, saleBottleType, saleInputMode, saleBundlingPrice, saleBundlingCount]);
 
   // Currency Formatter helper (Indonesian Rupiah)
   const formatRupiah = (value: number) => {
@@ -1892,7 +1893,7 @@ export default function App() {
     } else if (saleDiscountType === "free_bottle") {
       computedDiscount = finalItems.reduce((acc, item) => {
         if (item.isBundling) return acc;
-        const bottlePrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+        const bottlePrice = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
         return acc + (bottlePrice * (item.bottleCount || 1));
       }, 0);
     }
@@ -1914,6 +1915,7 @@ export default function App() {
     const representativeBottleType = isMulti ? undefined : firstItem.bottleType;
     const representativeBottleCount = finalItems.reduce((acc, it) => acc + (it.bottleCount || 0), 0);
     const representativeNoBottle = finalItems.some(it => it.noBottleStockDeduct);
+    const representativeBringOwnBottle = finalItems.every(it => it.bringOwnBottle);
 
     const itemsDescription = finalItems.map(item => {
       if (item.isBundling) {
@@ -1926,7 +1928,7 @@ export default function App() {
       }
       const isHBotol = item.scentName === "Hanya Botol";
       const bSizeStr = item.bottleSize !== "None" 
-        ? ` + Botol ${item.bottleType || "Kaca"} ${item.bottleSize}`
+        ? ` + Botol ${item.bottleType || "Kaca"} ${item.bottleSize}${item.bringOwnBottle ? " (Bawa Sendiri)" : ""}`
         : " (Hanya Bibit)";
       return isHBotol 
         ? `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} x ${item.bottleCount}` 
@@ -1950,6 +1952,7 @@ export default function App() {
         discountNominal: computedDiscount,
         claimPromoOnThisTx: saleClaimPromo,
         noBottleStockDeduct: representativeNoBottle,
+        bringOwnBottle: representativeBringOwnBottle,
         description: desc,
         operatorEmail: opEmail,
         customerName: saleCustomerName.trim() || "Pelanggan Umum",
@@ -1971,6 +1974,7 @@ export default function App() {
         discountNominal: computedDiscount,
         claimPromoOnThisTx: saleClaimPromo,
         noBottleStockDeduct: representativeNoBottle,
+        bringOwnBottle: representativeBringOwnBottle,
         description: desc,
         operatorEmail: opEmail,
         customerName: saleCustomerName.trim() || "Pelanggan Umum",
@@ -6828,15 +6832,12 @@ export default function App() {
                           setSaleDiscountType("free_bottle");
                           setSaleDiscountNominal(0);
                         }}
-                        disabled={saleBottleSize === "None" || saleNoBottle}
                         className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
-                          (saleBottleSize === "None" || saleNoBottle)
-                            ? "opacity-50 cursor-not-allowed bg-slate-100 text-slate-400 border-slate-200"
-                            : saleDiscountType === "free_bottle"
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white text-emerald-700 border-emerald-200 hover:bg-slate-50"
+                          saleDiscountType === "free_bottle"
+                            ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
+                            : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
                         }`}
-                        title={saleNoBottle ? "Harga botol sudah Rp 0" : saleBottleSize === "None" ? "Hanya tersedia jika menggunakan kemasan botol" : ""}
+                        title="Memberikan potongan promo harga botol gratis"
                       >
                         Gratis Botol
                       </button>
