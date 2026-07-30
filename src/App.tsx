@@ -155,17 +155,60 @@ export const isSameResellerEmail = (email1?: string, email2?: string): boolean =
 };
 
 export default function App() {
-  // Auth state
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [customEmail, setCustomEmail] = useState("");
+  // Auth state with synchronous localStorage restoration for persistent login
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    if (typeof window !== "undefined") {
+      const savedSessionStr = localStorage.getItem("bastika_active_session");
+      if (savedSessionStr) {
+        try {
+          const savedSession = JSON.parse(savedSessionStr);
+          if (savedSession && savedSession.email) {
+            const emailClean = String(savedSession.email).trim().toLowerCase();
+            const uname = emailClean.split("@")[0] || "";
+            return {
+              email: emailClean,
+              uid: emailClean,
+              displayName: savedSession.displayName || uname
+            } as User;
+          }
+        } catch (e) {}
+      }
+    }
+    return null;
+  });
+  const [customEmail, setCustomEmail] = useState(() => {
+    if (typeof window !== "undefined") {
+      const savedSessionStr = localStorage.getItem("bastika_active_session");
+      if (savedSessionStr) {
+        try {
+          const savedSession = JSON.parse(savedSessionStr);
+          if (savedSession?.email) return String(savedSession.email).trim().toLowerCase();
+        } catch (e) {}
+      }
+    }
+    return "";
+  });
   const [userRole, setUserRole] = useState<UserRole | null>(() => {
     if (typeof window !== "undefined") {
-      return localStorage.getItem("bastika_user_role") as UserRole | null;
+      const savedRole = localStorage.getItem("bastika_user_role");
+      if (savedRole) return savedRole as UserRole;
+      const savedSessionStr = localStorage.getItem("bastika_active_session");
+      if (savedSessionStr) {
+        try {
+          const savedSession = JSON.parse(savedSessionStr);
+          if (savedSession?.role) return savedSession.role as UserRole;
+        } catch (e) {}
+      }
     }
     return null;
   });
   const [userWhitelist, setUserWhitelist] = useState<UserProfile[]>([]);
-  const [authLoading, setAuthLoading] = useState(true);
+  const [authLoading, setAuthLoading] = useState(() => {
+    if (typeof window !== "undefined" && localStorage.getItem("bastika_active_session")) {
+      return false;
+    }
+    return true;
+  });
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [showLoadingFallback, setShowLoadingFallback] = useState(false);
 
@@ -397,6 +440,53 @@ export default function App() {
     return "DISKON PROMO";
   };
 
+  // Helper to extract bottle size/capacity reference for bundling items (used for invoice display)
+  const getBundlingBottleVolumeInfo = (item: any): {
+    bottleDesc: string;
+    totalBottlesCount: number;
+  } => {
+    let totalBottles = 0;
+    let parts: string[] = [];
+
+    if (item?.formula && Array.isArray(item.formula) && item.formula.length > 0) {
+      const bottleIngs = item.formula.filter((ing: any) => ing.type === "bottle");
+      if (bottleIngs.length > 0) {
+        bottleIngs.forEach((b: any) => {
+          const qty = b.quantity || 1;
+          totalBottles += qty;
+          const sizeStr = b.size || "";
+          parts.push(qty > 1 ? `${qty}x Botol ${sizeStr}` : `Botol ${sizeStr}`);
+        });
+      }
+    }
+
+    if (parts.length === 0 && item?.bottleSize && item.bottleSize !== "None" && item.bottleSize !== "Bundling") {
+      totalBottles = 1;
+      parts.push(`Botol ${item.bottleSize}`);
+    }
+
+    // Fallback: If no explicit bottle ingredient in formula, check liquid volume or volumeMl
+    if (parts.length === 0 && item?.formula && Array.isArray(item.formula) && item.formula.length > 0) {
+      const liquidMl = item.formula.reduce((sum: number, ing: any) => {
+        if (ing.type === "essence" || ing.type === "alcohol") return sum + (ing.quantity || 0);
+        return sum;
+      }, 0);
+      if (liquidMl > 0) {
+        parts.push(`${liquidMl}ml`);
+      }
+    }
+
+    if (parts.length === 0 && item?.volumeMl && item.volumeMl > 0) {
+      parts.push(`${item.volumeMl}ml`);
+    }
+
+    const bottleDesc = parts.join(" + ");
+    return {
+      bottleDesc,
+      totalBottlesCount: (totalBottles || 1) * (item?.bottleCount || 1)
+    };
+  };
+
   // Helper to format receipt for thermal printers using standard ESC/POS
   const formatReceiptToEscPos = (tx: any, settings: InvoiceSettings): Uint8Array => {
     const encoder = new TextEncoder();
@@ -438,14 +528,13 @@ export default function App() {
         if (item.isBundling) {
           const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
           calcSubtotal += itemTotal;
-          const bundleUnitEssenceMl = (item.formula && Array.isArray(item.formula))
-            ? item.formula.filter((ing: any) => ing.type === "essence").reduce((sum: number, ing: any) => sum + (ing.quantity || 0), 0)
-            : (item.volumeMl || 0);
-          const totalBundleEssenceMl = bundleUnitEssenceMl * (item.bottleCount || 1);
+          const { bottleDesc } = getBundlingBottleVolumeInfo(item);
 
           addLine(`[Paket] ${item.bundlingName || item.scentName}`);
-          const volStr = totalBundleEssenceMl > 0 ? ` Vol:${totalBundleEssenceMl}ml` : "";
-          const bLabel = `${item.bottleCount || 1}x unit${volStr}`;
+          if (bottleDesc) {
+            addLine(`  (Ukuran: ${bottleDesc})`);
+          }
+          const bLabel = `  ${item.bottleCount || 1}x unit`;
           const bVal = `Rp ${itemTotal.toLocaleString("id-ID")}`;
           const bSpaces = 32 - bLabel.length - bVal.length;
           addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
@@ -1128,19 +1217,11 @@ export default function App() {
   // 2. Client Whitelist sync & role evaluation (Individual subscription)
   useEffect(() => {
     if (!currentUser) {
-      setUserRole(null);
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("bastika_user_role");
-      }
       return;
     }
 
     const emailClean = currentUser.email?.trim().toLowerCase();
     if (!emailClean) {
-      setUserRole(null);
-      if (typeof window !== "undefined") {
-        localStorage.removeItem("bastika_user_role");
-      }
       setAuthLoading(false);
       return;
     }
@@ -6714,6 +6795,27 @@ export default function App() {
                         {saleItems.length > 0 ? (
                           <div className="max-h-48 overflow-y-auto pr-1 space-y-3">
                             {saleItems.map((item, index) => {
+                              if (item.isBundling) {
+                                const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+                                const { bottleDesc } = getBundlingBottleVolumeInfo(item);
+                                return (
+                                  <div key={index} className="border-b border-slate-100 pb-2 last:border-b-0 last:pb-0">
+                                    <div className="font-bold text-slate-700">{index + 1}. [Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</div>
+                                    <div className="pl-3 space-y-1 mt-0.5 text-[11px] text-slate-500">
+                                      <div className="flex justify-between gap-6">
+                                        <span>Harga Paket ({item.bottleCount || 1}x):</span>
+                                        <span className="font-mono text-slate-700">{formatRupiah(itemTotal)}</span>
+                                      </div>
+                                      {bottleDesc && (
+                                        <div className="text-[10px] text-emerald-700 font-medium">
+                                          Ukuran Botol: {bottleDesc}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              }
+
                               const matchedProduct = masterProducts.find(p => p.category === "essence" && p.referenceKey === item.scentName);
                               const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === item.scentName)?.pricePerMl || 0);
                               const essenceCost = item.volumeMl * pricePerMl * item.bottleCount;
@@ -7069,10 +7171,10 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wider text-[10px] font-bold">
+                <div className="overflow-x-auto max-h-[550px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
+                      <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
                         <th className="py-2.5 px-4">Waktu Transaksi</th>
                         <th className="py-2.5 px-4">Nama Pelanggan</th>
                         <th className="py-2.5 px-4">Aroma Parfum & Takaran</th>
@@ -8368,10 +8470,10 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="bg-slate-50 border-b border-slate-100 text-slate-500 uppercase tracking-wider text-[10px] font-bold">
+              <div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
+                    <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
                       <th className="py-3 px-4">Tanggal & Jam</th>
                       <th className="py-3 px-4">Tipe Transaksi</th>
                       <th className="py-3 px-4">Nama Pelanggan</th>
@@ -9822,10 +9924,7 @@ export default function App() {
                       {printTx.items.map((item, index) => {
                         if (item.isBundling) {
                           const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
-                          const bundleUnitEssenceMl = (item.formula && Array.isArray(item.formula))
-                            ? item.formula.filter((ing: any) => ing.type === "essence").reduce((sum: number, ing: any) => sum + (ing.quantity || 0), 0)
-                            : (item.volumeMl || 0);
-                          const totalBundleEssenceMl = bundleUnitEssenceMl * (item.bottleCount || 1);
+                          const { bottleDesc } = getBundlingBottleVolumeInfo(item);
 
                           return (
                             <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1.5 last:border-b-0 last:pb-0">
@@ -9836,8 +9935,7 @@ export default function App() {
                                 </div>
                                 <div className="flex justify-between text-[7px] text-slate-500 pl-2">
                                   <span>
-                                    {totalBundleEssenceMl > 0 ? `Vol. Total: ${totalBundleEssenceMl}ml` : "Paket Bundling"}
-                                    {bundleUnitEssenceMl > 0 && (item.bottleCount || 1) > 1 ? ` (${bundleUnitEssenceMl}ml/unit)` : ""}
+                                    {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
                                   </span>
                                   <span>@ Rp {(item.bundlingPrice || 0).toLocaleString("id-ID")}</span>
                                 </div>

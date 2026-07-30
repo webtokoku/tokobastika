@@ -9,7 +9,9 @@ import {
   User,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
-  updatePassword
+  updatePassword,
+  setPersistence,
+  browserLocalPersistence
 } from "firebase/auth";
 import { 
   getFirestore, 
@@ -36,8 +38,14 @@ import {
 // Initialize Firebase
 const app = initializeApp(firebaseConfig);
 
-// Initialize Auth
+// Initialize Auth with persistent session storage
 export const auth = getAuth(app);
+if (typeof window !== "undefined") {
+  setPersistence(auth, browserLocalPersistence).catch((err) => {
+    console.warn("Failed to set auth persistence:", err);
+  });
+}
+
 export const googleProvider = new GoogleAuthProvider();
 
 // Initialize Firestore
