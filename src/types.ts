@@ -38,6 +38,7 @@ export interface SaleItem {
   bottleType?: "Kaca" | "Plastik";
   bottleCount: number;
   noBottleStockDeduct?: boolean;
+  bringOwnBottle?: boolean;
   isBundling?: boolean;
   bundlingName?: string;
   bundlingPrice?: number;
@@ -63,6 +64,7 @@ export interface Transaction {
   customerName?: string;
   claimPromoOnThisTx?: boolean;
   noBottleStockDeduct?: boolean;
+  bringOwnBottle?: boolean;
   items?: SaleItem[];
   resellerEmail?: string;
   paymentStatus?: "Lunas" | "Belum Dibayar";

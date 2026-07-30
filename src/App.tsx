@@ -977,6 +977,12 @@ export default function App() {
   const [salesFilterMonth, setSalesFilterMonth] = useState(""); // Format: "MM" (01 to 12)
   const [salesFilterYear, setSalesFilterYear] = useState(""); // Format: "YYYY"
 
+  // Pagination states for POS Sales & Transaction History
+  const [posSalesPage, setPosSalesPage] = useState<number>(1);
+  const [posSalesLimit, setPosSalesLimit] = useState<number | "all">(15);
+  const [historyPage, setHistoryPage] = useState<number>(1);
+  const [historyLimit, setHistoryLimit] = useState<number | "all">(20);
+
   // Input forms state
   const [newShelf, setNewShelf] = useState({ rackNumber: "", scentName: "", pricePerMl: 3500 });
   const [editingPrice, setEditingPrice] = useState<{ scentName: string; pricePerMl: number } | null>(null);
@@ -994,6 +1000,7 @@ export default function App() {
   const [saleCustomerName, setSaleCustomerName] = useState("");
   const [saleClaimPromo, setSaleClaimPromo] = useState<boolean>(false);
   const [saleNoBottle, setSaleNoBottle] = useState<boolean>(true);
+  const [saleBringOwnBottle, setSaleBringOwnBottle] = useState<boolean>(false);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
 
   // State for Cashier Bundling Sale Input
@@ -7250,167 +7257,250 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto max-h-[550px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
-                      <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
-                        <th className="py-2.5 px-4">Waktu Transaksi</th>
-                        <th className="py-2.5 px-4">Nama Pelanggan</th>
-                        <th className="py-2.5 px-4">Aroma Parfum & Takaran</th>
-                        <th className="py-2.5 px-4">Botol</th>
-                        <th className="py-2.5 px-4">Total Bayar</th>
-                        <th className="py-2.5 px-4 text-center">Aksi Nota</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {(() => {
-                        const filteredSales = [...transactions]
-                          .filter(t => t.type === "sale")
-                          .filter(t => {
-                            // 1. Text search filter
-                            if (salesSearchTerm) {
-                              const term = salesSearchCaseSensitive ? salesSearchTerm : salesSearchTerm.toLowerCase();
-                              
-                              // Customer Name
-                              const cust = t.customerName ? (salesSearchCaseSensitive ? t.customerName : t.customerName.toLowerCase()) : "pelanggan umum";
-                              
-                              // Scent Name (flat & items)
-                              const scents: string[] = [];
-                              if (t.scentName) scents.push(t.scentName);
-                              if (t.items) t.items.forEach(it => { if (it.scentName) scents.push(it.scentName); });
-                              const scentMatch = scents.some(s => salesSearchCaseSensitive ? s.includes(term) : s.toLowerCase().includes(term));
-                              
-                              // Bottle Size (flat & items)
-                              const bottles: string[] = [];
-                              if (t.bottleSize && t.bottleSize !== "None") bottles.push(t.bottleSize);
-                              if (t.items) t.items.forEach(it => { if (it.bottleSize && it.bottleSize !== "None") bottles.push(it.bottleSize); });
-                              const bottleMatch = bottles.some(b => salesSearchCaseSensitive ? b.includes(term) : b.toLowerCase().includes(term));
-                              
-                              // Total Price
-                              const priceStr = t.totalPrice.toString();
-                              const priceMatch = priceStr.includes(term);
+                {(() => {
+                  const filteredSales = [...transactions]
+                    .filter(t => t.type === "sale")
+                    .filter(t => {
+                      // 1. Text search filter
+                      if (salesSearchTerm) {
+                        const term = salesSearchCaseSensitive ? salesSearchTerm : salesSearchTerm.toLowerCase();
+                        
+                        // Customer Name
+                        const cust = t.customerName ? (salesSearchCaseSensitive ? t.customerName : t.customerName.toLowerCase()) : "pelanggan umum";
+                        
+                        // Scent Name (flat & items)
+                        const scents: string[] = [];
+                        if (t.scentName) scents.push(t.scentName);
+                        if (t.items) t.items.forEach(it => { if (it.scentName) scents.push(it.scentName); });
+                        const scentMatch = scents.some(s => salesSearchCaseSensitive ? s.includes(term) : s.toLowerCase().includes(term));
+                        
+                        // Bottle Size (flat & items)
+                        const bottles: string[] = [];
+                        if (t.bottleSize && t.bottleSize !== "None") bottles.push(t.bottleSize);
+                        if (t.items) t.items.forEach(it => { if (it.bottleSize && it.bottleSize !== "None") bottles.push(it.bottleSize); });
+                        const bottleMatch = bottles.some(b => salesSearchCaseSensitive ? b.includes(term) : b.toLowerCase().includes(term));
+                        
+                        // Total Price
+                        const priceStr = t.totalPrice.toString();
+                        const priceMatch = priceStr.includes(term);
 
-                              // General search check
-                              if (salesSearchColumn === "all") {
-                                const matchesAny = cust.includes(term) || scentMatch || bottleMatch || priceMatch || t.id.includes(term);
-                                if (!matchesAny) return false;
-                              } else if (salesSearchColumn === "customerName") {
-                                if (!cust.includes(term)) return false;
-                              } else if (salesSearchColumn === "scentName") {
-                                if (!scentMatch) return false;
-                              } else if (salesSearchColumn === "bottle") {
-                                if (!bottleMatch) return false;
-                              } else if (salesSearchColumn === "totalPrice") {
-                                if (!priceMatch) return false;
-                              }
-                            }
-
-                            // 2. Date/Month/Year filters
-                            const txDate = new Date(t.date);
-                            const txDateStr = t.date.substring(0, 10); // "YYYY-MM-DD"
-                            
-                            if (salesFilterStartDate && txDateStr < salesFilterStartDate) {
-                              return false;
-                            }
-                            if (salesFilterEndDate && txDateStr > salesFilterEndDate) {
-                              return false;
-                            }
-
-                            // Month Filter (01 - 12)
-                            if (salesFilterMonth) {
-                              const txMonth = (txDate.getMonth() + 1).toString().padStart(2, "0"); // "01" - "12"
-                              if (txMonth !== salesFilterMonth) {
-                                return false;
-                              }
-                            }
-
-                            // Year Filter (YYYY)
-                            if (salesFilterYear) {
-                              const txYear = txDate.getFullYear().toString(); // "2026" etc
-                              if (txYear !== salesFilterYear) {
-                                return false;
-                              }
-                            }
-
-                            return true;
-                          })
-                          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-
-                        const hasFilter = salesSearchTerm || salesFilterStartDate || salesFilterEndDate || salesFilterMonth || salesFilterYear;
-                        const displayList = hasFilter ? filteredSales : filteredSales.slice(0, 5);
-
-                        if (displayList.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan={6} className="py-8 text-center text-slate-400 italic">
-                                {hasFilter 
-                                  ? "Tidak ada transaksi penjualan yang cocok dengan kriteria pencarian." 
-                                  : "Belum ada transaksi penjualan yang tercatat."}
-                              </td>
-                            </tr>
-                          );
+                        // General search check
+                        if (salesSearchColumn === "all") {
+                          const matchesAny = cust.includes(term) || scentMatch || bottleMatch || priceMatch || t.id.includes(term);
+                          if (!matchesAny) return false;
+                        } else if (salesSearchColumn === "customerName") {
+                          if (!cust.includes(term)) return false;
+                        } else if (salesSearchColumn === "scentName") {
+                          if (!scentMatch) return false;
+                        } else if (salesSearchColumn === "bottle") {
+                          if (!bottleMatch) return false;
+                        } else if (salesSearchColumn === "totalPrice") {
+                          if (!priceMatch) return false;
                         }
+                      }
 
-                        return displayList.map((t) => (
-                          <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                            <td className="py-2.5 px-4 font-semibold text-slate-500">
-                              {new Date(t.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })} - {new Date(t.date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                            </td>
-                            <td className="py-2.5 px-4 font-bold text-slate-700">
-                              {t.customerName || "Pelanggan Umum"}
-                            </td>
-                            <td className="py-2.5 px-4 font-bold text-slate-800">
-                              {t.items && t.items.length > 0 ? (
-                                <div className="space-y-1">
-                                  {t.items.map((it, idx) => (
-                                    <div key={it.id || idx} className="text-xs">
-                                      <span className="font-bold text-slate-800">{it.scentName}</span>{" "}
-                                      <span className="text-slate-400 font-normal">({it.volumeMl}ml)</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                <>
-                                  {t.scentName} <span className="text-slate-400 font-normal">({t.volumeMl}ml)</span>
-                                </>
-                              )}
-                            </td>
-                            <td className="py-2.5 px-4 text-slate-600 font-medium">
-                              {t.items && t.items.length > 0 ? (
-                                <div className="space-y-1">
-                                  {t.items.map((it, idx) => (
-                                    <div key={it.id || idx} className="text-xs text-slate-500">
-                                      {it.bottleSize !== "None" 
-                                        ? `${it.noBottleStockDeduct ? "Bawa" : `Botol ${it.bottleType || "Kaca"}`} ${it.bottleSize} (${it.bottleCount}x)` 
+                      // 2. Date/Month/Year filters
+                      const txDate = new Date(t.date);
+                      const txDateStr = t.date.substring(0, 10); // "YYYY-MM-DD"
+                      
+                      if (salesFilterStartDate && txDateStr < salesFilterStartDate) {
+                        return false;
+                      }
+                      if (salesFilterEndDate && txDateStr > salesFilterEndDate) {
+                        return false;
+                      }
+
+                      // Month Filter (01 - 12)
+                      if (salesFilterMonth) {
+                        const txMonth = (txDate.getMonth() + 1).toString().padStart(2, "0"); // "01" - "12"
+                        if (txMonth !== salesFilterMonth) {
+                          return false;
+                        }
+                      }
+
+                      // Year Filter (YYYY)
+                      if (salesFilterYear) {
+                        const txYear = txDate.getFullYear().toString(); // "2026" etc
+                        if (txYear !== salesFilterYear) {
+                          return false;
+                        }
+                      }
+
+                      return true;
+                    })
+                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                  const totalFilteredCount = filteredSales.length;
+                  const totalPages = posSalesLimit === "all" ? 1 : (Math.ceil(totalFilteredCount / (posSalesLimit as number)) || 1);
+                  const validPage = Math.min(posSalesPage, totalPages) || 1;
+                  const startIndex = posSalesLimit === "all" ? 0 : (validPage - 1) * (posSalesLimit as number);
+                  const displayList = posSalesLimit === "all" 
+                    ? filteredSales 
+                    : filteredSales.slice(startIndex, startIndex + (posSalesLimit as number));
+
+                  return (
+                    <div className="space-y-3">
+                      <div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
+                            <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
+                              <th className="py-2.5 px-4">Waktu Transaksi</th>
+                              <th className="py-2.5 px-4">Nama Pelanggan</th>
+                              <th className="py-2.5 px-4">Aroma Parfum & Takaran</th>
+                              <th className="py-2.5 px-4">Botol</th>
+                              <th className="py-2.5 px-4">Total Bayar</th>
+                              <th className="py-2.5 px-4 text-center">Aksi Nota</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {displayList.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="py-8 text-center text-slate-400 italic">
+                                  Belum ada transaksi penjualan yang cocok.
+                                </td>
+                              </tr>
+                            ) : (
+                              displayList.map((t) => (
+                                <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
+                                  <td className="py-2.5 px-4 font-semibold text-slate-500">
+                                    {new Date(t.date).toLocaleDateString("id-ID", { day: "numeric", month: "short" })} - {new Date(t.date).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                                  </td>
+                                  <td className="py-2.5 px-4 font-bold text-slate-700">
+                                    {t.customerName || "Pelanggan Umum"}
+                                  </td>
+                                  <td className="py-2.5 px-4 font-bold text-slate-800">
+                                    {t.items && t.items.length > 0 ? (
+                                      <div className="space-y-1">
+                                        {t.items.map((it, idx) => (
+                                          <div key={it.id || idx} className="text-xs">
+                                            <span className="font-bold text-slate-800">{it.scentName}</span>{" "}
+                                            <span className="text-slate-400 font-normal">({it.volumeMl}ml)</span>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      <>
+                                        {t.scentName} <span className="text-slate-400 font-normal">({t.volumeMl}ml)</span>
+                                      </>
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-4 text-slate-600 font-medium">
+                                    {t.items && t.items.length > 0 ? (
+                                      <div className="space-y-1">
+                                        {t.items.map((it, idx) => (
+                                          <div key={it.id || idx} className="text-xs text-slate-500">
+                                            {it.bottleSize !== "None" 
+                                              ? `${it.bringOwnBottle || it.noBottleStockDeduct ? "Bawa Sendiri" : `Botol ${it.bottleType || "Kaca"}`} ${it.bottleSize} (${it.bottleCount}x)` 
+                                              : "Hanya Bibit"
+                                            }
+                                          </div>
+                                        ))}
+                                      </div>
+                                    ) : (
+                                      t.bottleSize !== "None" 
+                                        ? `${t.bringOwnBottle || t.noBottleStockDeduct ? "Bawa Sendiri" : `Botol ${t.bottleType || "Kaca"}`} ${t.bottleSize} (${t.bottleCount}x)` 
                                         : "Hanya Bibit"
-                                      }
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                                t.bottleSize !== "None" ? `Botol ${t.bottleType || "Kaca"} ${t.bottleSize} (${t.bottleCount}x)` : "Hanya Bibit"
-                              )}
-                            </td>
-                            <td className="py-2.5 px-4 font-mono font-bold text-emerald-700">
-                              {formatRupiah(t.totalPrice)}
-                            </td>
-                            <td className="py-2.5 px-4 text-center">
+                                    )}
+                                  </td>
+                                  <td className="py-2.5 px-4 font-mono font-bold text-emerald-700">
+                                    {formatRupiah(t.totalPrice)}
+                                  </td>
+                                  <td className="py-2.5 px-4 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => setPrintTx(t)}
+                                      className="bg-slate-900 hover:bg-emerald-600 hover:text-white text-slate-300 font-extrabold py-1.5 px-3.5 rounded-xl text-[10px] transition-all flex items-center gap-1.5 mx-auto cursor-pointer shadow-sm"
+                                      title="Buka Print Preview & Cetak"
+                                    >
+                                      <Printer className="h-3 w-3 text-emerald-400" />
+                                      Preview & Cetak
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Control Bar */}
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 px-1 border-t border-slate-200/70">
+                        <div className="flex items-center gap-2 text-xs text-slate-600">
+                          <span className="font-semibold text-slate-400 text-[11px] uppercase tracking-wider">Tampilkan:</span>
+                          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                            {[10, 25, 50, "all"].map((limitOption) => (
                               <button
+                                key={String(limitOption)}
                                 type="button"
-                                onClick={() => setPrintTx(t)}
-                                className="bg-slate-900 hover:bg-emerald-600 hover:text-white text-slate-300 font-extrabold py-1.5 px-3.5 rounded-xl text-[10px] transition-all flex items-center gap-1.5 mx-auto cursor-pointer shadow-sm"
-                                title="Buka Print Preview & Cetak"
+                                onClick={() => {
+                                  setPosSalesLimit(limitOption === "all" ? "all" : Number(limitOption));
+                                  setPosSalesPage(1);
+                                }}
+                                className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                  posSalesLimit === limitOption
+                                    ? "bg-slate-900 text-white shadow-2xs"
+                                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                                }`}
                               >
-                                <Printer className="h-3 w-3 text-emerald-400" />
-                                Preview & Cetak
+                                {limitOption === "all" ? "Semua" : limitOption}
                               </button>
-                            </td>
-                          </tr>
-                        ));
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
+                            ))}
+                          </div>
+                          <span className="text-[11px] font-medium text-slate-400 ml-1">
+                            {totalFilteredCount > 0 
+                              ? `(${startIndex + 1}-${Math.min(startIndex + (posSalesLimit === "all" ? totalFilteredCount : (posSalesLimit as number)), totalFilteredCount)} dari ${totalFilteredCount} transaksi)` 
+                              : "(0 data)"}
+                          </span>
+                        </div>
+
+                        {/* Page Numbers 1 2 3 ... */}
+                        {totalPages > 1 && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={validPage === 1}
+                              onClick={() => setPosSalesPage(prev => Math.max(1, prev - 1))}
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs"
+                            >
+                              ‹ Prev
+                            </button>
+
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                              .filter(p => p === 1 || p === totalPages || Math.abs(p - validPage) <= 2)
+                              .map((p, idx, arr) => {
+                                const prevP = arr[idx - 1];
+                                return (
+                                  <React.Fragment key={p}>
+                                    {prevP && p - prevP > 1 && <span className="text-slate-400 text-xs px-1">...</span>}
+                                    <button
+                                      type="button"
+                                      onClick={() => setPosSalesPage(p)}
+                                      className={`w-7 h-7 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                                        validPage === p
+                                          ? "bg-emerald-600 text-white shadow-xs scale-105"
+                                          : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                                      }`}
+                                    >
+                                      {p}
+                                    </button>
+                                  </React.Fragment>
+                                );
+                              })}
+
+                            <button
+                              type="button"
+                              disabled={validPage === totalPages}
+                              onClick={() => setPosSalesPage(prev => Math.min(totalPages, prev + 1))}
+                              className="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs"
+                            >
+                              Next ›
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
 
             </div>
@@ -8549,138 +8639,231 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
-                    <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
-                      <th className="py-3 px-4">Tanggal & Jam</th>
-                      <th className="py-3 px-4">Tipe Transaksi</th>
-                      <th className="py-3 px-4">Nama Pelanggan</th>
-                      <th className="py-3 px-4">Detail Mutasi Barang</th>
-                      <th className="py-3 px-4">Operator Kasir</th>
-                      <th className="py-3 px-4 text-right">Total Transaksi</th>
-                      <th className="py-3 px-4 text-center">Aksi</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {transactions.filter(t => {
-                      // 1. Text Search Filter
-                      if (searchTerm) {
-                        const term = searchCaseSensitive ? searchTerm : searchTerm.toLowerCase();
-                        const txId = searchCaseSensitive ? t.id : t.id.toLowerCase();
-                        const scent = t.scentName ? (searchCaseSensitive ? t.scentName : t.scentName.toLowerCase()) : "";
-                        const desc = t.description ? (searchCaseSensitive ? t.description : t.description.toLowerCase()) : "";
-                        const op = searchCaseSensitive ? t.operatorEmail : t.operatorEmail.toLowerCase();
-                        const cust = t.customerName ? (searchCaseSensitive ? t.customerName : t.customerName.toLowerCase()) : "pelanggan umum";
+              {(() => {
+                const filteredHistory = transactions.filter(t => {
+                  // 1. Text Search Filter
+                  if (searchTerm) {
+                    const term = searchCaseSensitive ? searchTerm : searchTerm.toLowerCase();
+                    const txId = searchCaseSensitive ? t.id : t.id.toLowerCase();
+                    const scent = t.scentName ? (searchCaseSensitive ? t.scentName : t.scentName.toLowerCase()) : "";
+                    const desc = t.description ? (searchCaseSensitive ? t.description : t.description.toLowerCase()) : "";
+                    const op = searchCaseSensitive ? t.operatorEmail : t.operatorEmail.toLowerCase();
+                    const cust = t.customerName ? (searchCaseSensitive ? t.customerName : t.customerName.toLowerCase()) : "pelanggan umum";
 
-                        let matchesText = false;
-                        if (searchColumn === "all") {
-                          matchesText = txId.includes(term) || scent.includes(term) || desc.includes(term) || op.includes(term) || cust.includes(term);
-                        } else if (searchColumn === "id") {
-                          matchesText = txId.includes(term);
-                        } else if (searchColumn === "scentName") {
-                          matchesText = scent.includes(term);
-                        } else if (searchColumn === "description") {
-                          matchesText = desc.includes(term);
-                        } else if (searchColumn === "operatorEmail") {
-                          matchesText = op.includes(term);
-                        } else if (searchColumn === "customerName") {
-                          matchesText = cust.includes(term);
-                        }
-                        if (!matchesText) return false;
-                      }
+                    let matchesText = false;
+                    if (searchColumn === "all") {
+                      matchesText = txId.includes(term) || scent.includes(term) || desc.includes(term) || op.includes(term) || cust.includes(term);
+                    } else if (searchColumn === "id") {
+                      matchesText = txId.includes(term);
+                    } else if (searchColumn === "scentName") {
+                      matchesText = scent.includes(term);
+                    } else if (searchColumn === "description") {
+                      matchesText = desc.includes(term);
+                    } else if (searchColumn === "operatorEmail") {
+                      matchesText = op.includes(term);
+                    } else if (searchColumn === "customerName") {
+                      matchesText = cust.includes(term);
+                    }
+                    if (!matchesText) return false;
+                  }
 
-                      // 2. Date filters
-                      const txDate = new Date(t.date);
-                      const txDateStr = t.date.substring(0, 10); // "YYYY-MM-DD"
-                      
-                      if (historyFilterStartDate && txDateStr < historyFilterStartDate) {
-                        return false;
-                      }
-                      if (historyFilterEndDate && txDateStr > historyFilterEndDate) {
-                        return false;
-                      }
+                  // 2. Date filters
+                  const txDate = new Date(t.date);
+                  const txDateStr = t.date.substring(0, 10); // "YYYY-MM-DD"
+                  
+                  if (historyFilterStartDate && txDateStr < historyFilterStartDate) {
+                    return false;
+                  }
+                  if (historyFilterEndDate && txDateStr > historyFilterEndDate) {
+                    return false;
+                  }
 
-                      // Month Filter (01 - 12)
-                      if (historyFilterMonth) {
-                        const txMonth = (txDate.getMonth() + 1).toString().padStart(2, "0"); // "01" - "12"
-                        if (txMonth !== historyFilterMonth) {
-                          return false;
-                        }
-                      }
+                  // Month Filter (01 - 12)
+                  if (historyFilterMonth) {
+                    const txMonth = (txDate.getMonth() + 1).toString().padStart(2, "0"); // "01" - "12"
+                    if (txMonth !== historyFilterMonth) {
+                      return false;
+                    }
+                  }
 
-                      // Year Filter (YYYY)
-                      if (historyFilterYear) {
-                        const txYear = txDate.getFullYear().toString(); // "2026" etc
-                        if (txYear !== historyFilterYear) {
-                          return false;
-                        }
-                      }
+                  // Year Filter (YYYY)
+                  if (historyFilterYear) {
+                    const txYear = txDate.getFullYear().toString(); // "2026" etc
+                    if (txYear !== historyFilterYear) {
+                      return false;
+                    }
+                  }
 
-                      return true;
-                    }).map((t) => (
-                      <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
-                        <td className="py-3 px-4 text-slate-500 font-mono">
-                          {new Date(t.date).toLocaleString("id-ID")}
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
-                            t.type === "sale" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
-                          }`}>
-                            {t.type === "sale" ? "PENJUALAN" : "BELANJA STOK"}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <span className="font-semibold text-slate-800">{t.customerName || "-"}</span>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="font-semibold text-slate-800">{t.description}</div>
-                          <span className="text-[10px] text-slate-400">
-                            ID: {t.id} {t.items && t.items.length > 0 ? `| Multi-item (${t.items.length} macam)` : `${t.volumeMl ? `| Volume: ${t.volumeMl}ml` : ""} ${t.bottleSize && t.bottleSize !== "None" ? `| Botol: ${t.bottleSize} (${t.bottleCount}x)` : ""}`}
-                          </span>
-                        </td>
-                        <td className="py-3 px-4 text-slate-600 font-medium">{t.operatorEmail}</td>
-                        <td className={`py-3 px-4 text-right font-mono font-bold text-sm ${
-                          t.type === "sale" ? "text-emerald-700" : "text-slate-800"
-                        }`}>
-                          {t.type === "sale" ? "+" : "-"}{formatRupiah(t.totalPrice)}
-                        </td>
-                        <td className="py-3 px-4 text-center">
-                          <div className="flex items-center justify-center gap-2">
-                            {t.type === "sale" && (
-                              <button
-                                onClick={() => setPrintTx(t)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 font-extrabold rounded-lg text-[10px] transition-all border border-emerald-100 shadow-sm cursor-pointer"
-                                title="Print Invoice Penjualan"
-                              >
-                                <Printer className="h-3 w-3" />
-                                Invoice
-                              </button>
-                            )}
-                            {userRole === "admin" && (
-                              <button
-                                onClick={() => handleDeleteTransaction(t.id, t.description)}
-                                className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 font-extrabold rounded-lg text-[10px] transition-all border border-rose-100 shadow-sm cursor-pointer"
-                                title="Hapus Transaksi (Kembalikan Kas & Stok)"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                                Hapus
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {transactions.length === 0 && (
-                      <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-400 italic">
-                          Belum ada histori transaksi terekam.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
+                  return true;
+                }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+                const totalHistoryCount = filteredHistory.length;
+                const totalPages = historyLimit === "all" ? 1 : (Math.ceil(totalHistoryCount / (historyLimit as number)) || 1);
+                const validPage = Math.min(historyPage, totalPages) || 1;
+                const startIndex = historyLimit === "all" ? 0 : (validPage - 1) * (historyLimit as number);
+                const displayHistoryList = historyLimit === "all"
+                  ? filteredHistory
+                  : filteredHistory.slice(startIndex, startIndex + (historyLimit as number));
+
+                return (
+                  <div className="space-y-4">
+                    <div className="overflow-x-auto max-h-[650px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
+                          <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
+                            <th className="py-3 px-4">Tanggal & Jam</th>
+                            <th className="py-3 px-4">Tipe Transaksi</th>
+                            <th className="py-3 px-4">Nama Pelanggan</th>
+                            <th className="py-3 px-4">Detail Mutasi Barang</th>
+                            <th className="py-3 px-4">Operator Kasir</th>
+                            <th className="py-3 px-4 text-right">Total Transaksi</th>
+                            <th className="py-3 px-4 text-center">Aksi</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {displayHistoryList.length === 0 ? (
+                            <tr>
+                              <td colSpan={7} className="py-8 text-center text-slate-400 italic">
+                                Belum ada histori transaksi terekam.
+                              </td>
+                            </tr>
+                          ) : (
+                            displayHistoryList.map((t) => (
+                              <tr key={t.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="py-3 px-4 text-slate-500 font-mono">
+                                  {new Date(t.date).toLocaleString("id-ID")}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                                    t.type === "sale" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" : "bg-rose-50 text-rose-700 border border-rose-200"
+                                  }`}>
+                                    {t.type === "sale" ? "PENJUALAN" : "BELANJA STOK"}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className="font-semibold text-slate-800">{t.customerName || "-"}</span>
+                                </td>
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold text-slate-800">{t.description}</div>
+                                  <span className="text-[10px] text-slate-400">
+                                    ID: {t.id} {t.items && t.items.length > 0 ? `| Multi-item (${t.items.length} macam)` : `${t.volumeMl ? `| Volume: ${t.volumeMl}ml` : ""} ${t.bottleSize && t.bottleSize !== "None" ? `| Botol: ${t.bottleSize} (${t.bottleCount}x)` : ""}`}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-slate-600 font-medium">{t.operatorEmail}</td>
+                                <td className={`py-3 px-4 text-right font-mono font-bold text-sm ${
+                                  t.type === "sale" ? "text-emerald-700" : "text-slate-800"
+                                }`}>
+                                  {t.type === "sale" ? "+" : "-"}{formatRupiah(t.totalPrice)}
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  <div className="flex items-center justify-center gap-2">
+                                    {t.type === "sale" && (
+                                      <button
+                                        onClick={() => setPrintTx(t)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 font-extrabold rounded-lg text-[10px] transition-all border border-emerald-100 shadow-sm cursor-pointer"
+                                        title="Print Invoice Penjualan"
+                                      >
+                                        <Printer className="h-3 w-3" />
+                                        Invoice
+                                      </button>
+                                    )}
+                                    {userRole === "admin" && (
+                                      <button
+                                        onClick={() => handleDeleteTransaction(t.id, t.description)}
+                                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 font-extrabold rounded-lg text-[10px] transition-all border border-rose-100 shadow-sm cursor-pointer"
+                                        title="Hapus Transaksi (Kembalikan Kas & Stok)"
+                                      >
+                                        <Trash2 className="h-3 w-3" />
+                                        Hapus
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Pagination Controls Bar */}
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 px-1 border-t border-slate-200/70">
+                      <div className="flex items-center gap-2 text-xs text-slate-600">
+                        <span className="font-semibold text-slate-400 text-[11px] uppercase tracking-wider">Tampilkan:</span>
+                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200">
+                          {[10, 20, 50, "all"].map((limitOption) => (
+                            <button
+                              key={String(limitOption)}
+                              type="button"
+                              onClick={() => {
+                                setHistoryLimit(limitOption === "all" ? "all" : Number(limitOption));
+                                setHistoryPage(1);
+                              }}
+                              className={`px-2.5 py-0.5 rounded text-[10px] font-bold transition-all cursor-pointer ${
+                                historyLimit === limitOption
+                                  ? "bg-slate-900 text-white shadow-2xs"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+                              }`}
+                            >
+                              {limitOption === "all" ? "Semua" : limitOption}
+                            </button>
+                          ))}
+                        </div>
+                        <span className="text-[11px] font-medium text-slate-400 ml-1">
+                          {totalHistoryCount > 0 
+                            ? `(${startIndex + 1}-${Math.min(startIndex + (historyLimit === "all" ? totalHistoryCount : (historyLimit as number)), totalHistoryCount)} dari ${totalHistoryCount} baris data)` 
+                            : "(0 data)"}
+                        </span>
+                      </div>
+
+                      {/* Page Numbers 1 2 3 ... */}
+                      {totalPages > 1 && (
+                        <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            disabled={validPage === 1}
+                            onClick={() => setHistoryPage(prev => Math.max(1, prev - 1))}
+                            className="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs"
+                          >
+                            ‹ Prev
+                          </button>
+
+                          {Array.from({ length: totalPages }, (_, i) => i + 1)
+                            .filter(p => p === 1 || p === totalPages || Math.abs(p - validPage) <= 2)
+                            .map((p, idx, arr) => {
+                              const prevP = arr[idx - 1];
+                              return (
+                                <React.Fragment key={p}>
+                                  {prevP && p - prevP > 1 && <span className="text-slate-400 text-xs px-1">...</span>}
+                                  <button
+                                    type="button"
+                                    onClick={() => setHistoryPage(p)}
+                                    className={`w-7 h-7 text-xs font-extrabold rounded-lg transition-all cursor-pointer ${
+                                      validPage === p
+                                        ? "bg-emerald-600 text-white shadow-xs scale-105"
+                                        : "bg-white text-slate-700 hover:bg-slate-100 border border-slate-200"
+                                    }`}
+                                  >
+                                    {p}
+                                  </button>
+                                </React.Fragment>
+                              );
+                            })}
+
+                          <button
+                            type="button"
+                            disabled={validPage === totalPages}
+                            onClick={() => setHistoryPage(prev => Math.min(totalPages, prev + 1))}
+                            className="px-2.5 py-1 text-xs font-bold rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-2xs"
+                          >
+                            Next ›
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           )}
 
