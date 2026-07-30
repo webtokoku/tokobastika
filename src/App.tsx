@@ -9981,7 +9981,6 @@ export default function App() {
                                   <span>
                                     {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
                                   </span>
-                                  <span>@ Rp {(item.bundlingPrice || 0).toLocaleString("id-ID")}</span>
                                 </div>
                               </div>
                             </div>
@@ -10223,7 +10222,6 @@ export default function App() {
                                       <span>
                                         {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
                                       </span>
-                                      <span>@ Rp {(item.bundlingPrice || 0).toLocaleString("id-ID")}</span>
                                     </div>
                                   </div>
                                 </div>
