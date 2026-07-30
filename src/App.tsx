@@ -425,11 +425,11 @@ export default function App() {
   const getBottleUnitPrice = (
     bottleSize: string | undefined,
     bottleType: string | undefined,
-    noBottleStockDeduct: boolean | undefined,
+    bringOwnBottle: boolean | undefined,
     mpList: MasterProduct[] = masterProducts,
     bList: BottleSize[] = bottleSizes
   ): number => {
-    if (!bottleSize || bottleSize === "None" || noBottleStockDeduct) return 0;
+    if (!bottleSize || bottleSize === "None" || bringOwnBottle) return 0;
     const bCategory = bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
     const matchedBottleProduct = mpList.find(p => p.category === bCategory && (p.referenceKey === bottleSize || p.name === bottleSize));
     if (matchedBottleProduct && matchedBottleProduct.price > 0) {
@@ -446,16 +446,21 @@ export default function App() {
 
   const getDiscountLabel = (tx: {
     discountType?: string;
+    isFreeBottlePromo?: boolean;
+    isDiscountNominalPromo?: boolean;
     claimPromoOnThisTx?: boolean;
     discountNominal?: number;
   }): string => {
     if (tx?.claimPromoOnThisTx) {
       return "POTONGAN PROMO LOYALITAS";
     }
-    if (tx?.discountType === "free_bottle") {
+    if (tx?.isFreeBottlePromo && tx?.isDiscountNominalPromo) {
+      return "PROMO BOTOL GRATIS & POTONGAN HARGA";
+    }
+    if (tx?.isFreeBottlePromo || tx?.discountType === "free_bottle") {
       return "DISKON GRATIS BOTOL";
     }
-    if (tx?.discountType === "nominal") {
+    if (tx?.isDiscountNominalPromo || tx?.discountType === "nominal") {
       return "POTONGAN HARGA (DISKON)";
     }
     return "DISKON PROMO";
@@ -564,7 +569,7 @@ export default function App() {
 
         const isHB = item.scentName === "Hanya Botol";
         const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-        const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+        const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
         const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl * (item.bottleCount || 1));
         const bottleCost = bPrice * (item.bottleCount || 1);
 
@@ -579,7 +584,9 @@ export default function App() {
         }
 
         if (item.bottleSize && item.bottleSize !== "None") {
-          const bLabel = `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
+          const bLabel = item.bringOwnBottle
+            ? `Botol ${item.bottleSize} (${item.bottleCount}x) - Bawa Sendiri`
+            : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
           const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
           const bSpaces = 32 - bLabel.length - bVal.length;
           addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
@@ -588,7 +595,7 @@ export default function App() {
     } else if (tx.scentName && tx.scentName !== "Klaim Promo Potongan") {
       const isHB = tx.scentName === "Hanya Botol";
       const pPerMl = isHB ? 0 : getEssencePricePerMl(tx.scentName, masterProducts, prices);
-      const bPrice = getBottleUnitPrice(tx.bottleSize, tx.bottleType, tx.noBottleStockDeduct, masterProducts, bottleSizes);
+      const bPrice = getBottleUnitPrice(tx.bottleSize, tx.bottleType, tx.bringOwnBottle, masterProducts, bottleSizes);
       const scentCost = isHB ? 0 : ((tx.volumeMl || 0) * pPerMl * (tx.bottleCount || 1));
       const bottleCost = bPrice * (tx.bottleCount || 1);
       calcSubtotal = scentCost + bottleCost;
@@ -602,7 +609,9 @@ export default function App() {
       }
 
       if (tx.bottleSize && tx.bottleSize !== "None") {
-        const bLabel = `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
+        const bLabel = tx.bringOwnBottle
+          ? `Botol ${tx.bottleSize} (${tx.bottleCount || 1}x) - Bawa Sendiri`
+          : `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
         const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
         const bSpaces = 32 - bLabel.length - bVal.length;
         addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
@@ -6307,9 +6316,10 @@ export default function App() {
                           </div>
                         )}
 
-                        {/* Checkbox Absolut Gratis */}
+                        {/* Checkbox Absolut Gratis & Checkbox Bawa Botol Sendiri */}
                         {saleScent !== "Hanya Botol" && (
-                          <div className="sm:col-span-2">
+                          <div className="sm:col-span-2 space-y-3">
+                            {/* Checkbox Absolut Gratis */}
                             <label className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
                               <input
                                 type="checkbox"
@@ -6328,6 +6338,29 @@ export default function App() {
                                   {saleBottleSize === "None" 
                                     ? "Pilih ukuran botol di atas terlebih dahulu untuk menghitung pemotongan stok Absolut."
                                     : "Mengaktifkan ini memberikan pelarut Absolut secara gratis dan memotong stok Absolut secara otomatis berdasarkan selisih kapasitas botol dikurangi volume bibit. Keterangan ini tidak ditampilkan pada invoice."}
+                                </p>
+                              </div>
+                            </label>
+
+                            {/* Checkbox Bawa Botol Sendiri */}
+                            <label className="flex items-start gap-3 bg-slate-50 border border-slate-200 rounded-xl p-3 cursor-pointer hover:bg-slate-100/70 transition-colors">
+                              <input
+                                type="checkbox"
+                                checked={saleBringOwnBottle}
+                                disabled={saleBottleSize === "None"}
+                                onChange={(e) => {
+                                  setSaleBringOwnBottle(e.target.checked);
+                                }}
+                                className="h-4 w-4 text-emerald-600 focus:ring-emerald-500 border-slate-300 rounded cursor-pointer mt-0.5"
+                              />
+                              <div className="text-left">
+                                <span className={`text-xs font-bold ${saleBottleSize === "None" ? "text-slate-400" : "text-emerald-700"}`}>
+                                  Bawa Botol Sendiri
+                                </span>
+                                <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">
+                                  {saleBottleSize === "None"
+                                    ? "Pilih ukuran botol terlebih dahulu."
+                                    : "Jika tercentang (default), biaya botol menjadi Rp 0 karena pelanggan membawa botol sendiri."}
                                 </p>
                               </div>
                             </label>
@@ -6366,7 +6399,8 @@ export default function App() {
                               bottleSize: saleBottleSize,
                               bottleType: saleBottleSize !== "None" ? saleBottleType : undefined,
                               bottleCount: saleBottleCount,
-                              noBottleStockDeduct: saleNoBottle
+                              noBottleStockDeduct: saleNoBottle,
+                              bringOwnBottle: saleBottleSize !== "None" ? saleBringOwnBottle : false
                             };
 
                             setSaleItems(prev => [...prev, newItem]);
@@ -6377,6 +6411,7 @@ export default function App() {
                             setSaleVolume(0);
                             setSaleBottleCount(1);
                             setSaleNoBottle(true);
+                            setSaleBringOwnBottle(true);
                           }}
                           className="w-full bg-emerald-50 hover:bg-emerald-100/80 active:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl py-3 px-4 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow"
                         >
@@ -9989,7 +10024,7 @@ export default function App() {
 
                         const isHB = item.scentName === "Hanya Botol";
                         const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                        const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+                        const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
                         const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl * (item.bottleCount || 1));
                         const bottleCost = bPrice * (item.bottleCount || 1);
 
@@ -10012,7 +10047,10 @@ export default function App() {
                             {item.bottleSize && item.bottleSize !== "None" && (
                               <div className="text-[8px] pt-0.5 flex justify-between">
                                 <span className="text-slate-600">
-                                  Botol {item.bottleType || "Kaca"} {item.bottleSize} ({item.bottleCount} pcs)
+                                  {item.bringOwnBottle 
+                                    ? `Botol ${item.bottleSize} (${item.bottleCount} pcs) - Bawa Sendiri`
+                                    : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount} pcs)`
+                                  }
                                 </span>
                                 <span>
                                   Rp {bottleCost.toLocaleString("id-ID")}
@@ -10052,10 +10090,13 @@ export default function App() {
                       {printTx.bottleSize && printTx.bottleSize !== "None" && (
                         <div className="text-[8px] pt-1 flex justify-between">
                           <span>
-                            Botol {printTx.bottleType || "Kaca"} {printTx.bottleSize} ({printTx.bottleCount} pcs)
+                            {printTx.bringOwnBottle
+                              ? `Botol ${printTx.bottleSize} (${printTx.bottleCount} pcs) - Bawa Sendiri`
+                              : `Botol ${printTx.bottleType || "Kaca"} ${printTx.bottleSize} (${printTx.bottleCount} pcs)`
+                            }
                           </span>
                           <span>
-                            Rp {(getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.noBottleStockDeduct, masterProducts, bottleSizes) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
+                            Rp {(getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
                           </span>
                         </div>
                       )}
@@ -10078,12 +10119,12 @@ export default function App() {
                             }
                             const isHB = item.scentName === "Hanya Botol";
                             const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                            const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+                            const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
                             const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl);
                             return acc + ((scentCost + bPrice) * (item.bottleCount || 1));
                           }, 0)
                         : (((printTx.volumeMl || 0) * getEssencePricePerMl(printTx.scentName, masterProducts, prices) * (printTx.bottleCount || 1)) +
-                           (getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.noBottleStockDeduct, masterProducts, bottleSizes) * (printTx.bottleCount || 1)))
+                           (getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)))
                       ).toLocaleString("id-ID")}
                     </span>
                   </div>
@@ -10230,7 +10271,7 @@ export default function App() {
 
                             const isHB = item.scentName === "Hanya Botol";
                             const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                            const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+                            const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
                             const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl * (item.bottleCount || 1));
                             const bottleCost = bPrice * (item.bottleCount || 1);
 
@@ -10253,7 +10294,7 @@ export default function App() {
                                 {item.bottleSize && item.bottleSize !== "None" && (
                                   <div className="text-[7px] pt-0.5 flex justify-between text-slate-800">
                                     <span className="text-slate-600">
-                                      {item.noBottleStockDeduct 
+                                      {item.bringOwnBottle 
                                         ? `Botol ${item.bottleSize} (${item.bottleCount} pcs) - Bawa Sendiri`
                                         : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount} pcs)`
                                       }
@@ -10294,13 +10335,13 @@ export default function App() {
                           {printTx.bottleSize && printTx.bottleSize !== "None" && (
                             <div className="text-[7px] pt-1 flex justify-between text-slate-800">
                               <span>
-                                {printTx.noBottleStockDeduct 
+                                {printTx.bringOwnBottle 
                                   ? `Botol ${printTx.bottleSize} (${printTx.bottleCount} pcs) - Bawa Sendiri`
                                   : `Botol ${printTx.bottleType || "Kaca"} ${printTx.bottleSize} (${printTx.bottleCount} pcs)`
                                 }
                               </span>
                               <span>
-                                Rp {(getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.noBottleStockDeduct, masterProducts, bottleSizes) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
+                                Rp {(getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
                               </span>
                             </div>
                           )}
@@ -10323,12 +10364,12 @@ export default function App() {
                                 }
                                 const isHB = item.scentName === "Hanya Botol";
                                 const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                                const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+                                const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
                                 const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl);
                                 return acc + ((scentCost + bPrice) * (item.bottleCount || 1));
                               }, 0)
                             : (((printTx.volumeMl || 0) * getEssencePricePerMl(printTx.scentName, masterProducts, prices) * (printTx.bottleCount || 1)) +
-                               (getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.noBottleStockDeduct, masterProducts, bottleSizes) * (printTx.bottleCount || 1)))
+                               (getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)))
                           ).toLocaleString("id-ID")}
                         </span>
                       </div>
