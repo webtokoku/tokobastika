@@ -4493,8 +4493,12 @@ export default function App() {
   // ==========================================
   if (userRole === "reseller") {
     return (
-      <div className={`min-h-screen bg-slate-900 text-slate-100 selection:bg-emerald-500 selection:text-white font-sans transition-all ${
-        effectiveOrientation === "portrait" ? "max-w-md mx-auto shadow-2xl border-x border-slate-800 flex flex-col" : "flex flex-col md:flex-row"
+      <div className={`min-h-screen bg-slate-900 text-slate-100 selection:bg-emerald-500 selection:text-white font-sans transition-all w-full ${
+        displayOrientation === "landscape"
+          ? "flex flex-row overflow-x-auto min-w-full"
+          : displayOrientation === "portrait"
+          ? "flex flex-col w-full"
+          : "flex flex-col md:flex-row w-full"
       }`}>
         {/* Toast Notification */}
         {toast && (
@@ -4512,7 +4516,11 @@ export default function App() {
 
         {/* Reseller Sidebar */}
         <aside className={`bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800 shrink-0 transition-all duration-300 ${
-          isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64"
+          displayOrientation === "landscape"
+            ? (isSidebarCollapsed ? "w-20" : "w-64")
+            : displayOrientation === "portrait"
+            ? "w-full"
+            : (isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64")
         }`}>
           <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isSidebarCollapsed ? "flex-col gap-3" : ""}`}>
             <div className="flex items-center gap-3 overflow-hidden">
@@ -4656,8 +4664,12 @@ export default function App() {
 
   // MAIN DASHBOARD LAYOUT
   return (
-    <div className={`min-h-screen bg-slate-50 text-slate-800 selection:bg-emerald-500 selection:text-white font-sans transition-all ${
-      effectiveOrientation === "portrait" ? "max-w-md mx-auto shadow-2xl border-x border-slate-300 flex flex-col" : "flex flex-col md:flex-row"
+    <div className={`min-h-screen bg-slate-50 text-slate-800 selection:bg-emerald-500 selection:text-white font-sans transition-all w-full ${
+      displayOrientation === "landscape"
+        ? "flex flex-row overflow-x-auto min-w-full"
+        : displayOrientation === "portrait"
+        ? "flex flex-col w-full"
+        : "flex flex-col md:flex-row w-full"
     }`}>
       {/* Toast Notification */}
       {toast && (
@@ -4675,7 +4687,11 @@ export default function App() {
 
       {/* Sidebar Navigation */}
       <aside className={`print:hidden bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 shrink-0 transition-all duration-300 ${
-        isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64"
+        displayOrientation === "landscape"
+          ? (isSidebarCollapsed ? "w-20" : "w-64")
+          : displayOrientation === "portrait"
+          ? "w-full"
+          : (isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64")
       }`}>
         {/* Brand Header */}
         <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isSidebarCollapsed ? "flex-col gap-3 text-center" : ""}`}>
@@ -4939,28 +4955,30 @@ export default function App() {
       {/* Main Content Pane */}
       <main className="flex-1 flex flex-col min-w-0">
         {/* Top Navbar */}
-        <header className="print:hidden bg-white border-b border-slate-200 py-4 px-6 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 shrink-0">
-          <div>
-            <h1 className="text-xl font-bold font-display text-slate-900 tracking-tight flex items-center gap-2">
-              <span>{activeTab === 'dashboard' ? 'Ringkasan Laba & Omset' :
-                     activeTab === 'shelves' ? 'Manajemen Rak Aroma' :
-                     activeTab === 'stocks' ? 'Manajemen Stok & Inventori' :
-                     activeTab === 'sales' ? 'Kasir Penjualan Parfum' :
-                     activeTab === 'master_products' ? 'Master Database Produk (Source of Truth)' :
-                     activeTab === 'purchases' ? 'Pencatatan Belanja Stok' :
-                     activeTab === 'accounting' ? 'Buku Kas & Laporan Keuangan' :
-                     activeTab === 'users' ? 'Manajemen Akses Karyawan (Client)' :
-                     activeTab === 'invoice_settings' ? 'Format Kop Invoice' :
-                     activeTab === 'customers' ? 'Sistem Database Pelanggan & Promo' :
-                     activeTab === 'db_management' ? 'Pengaturan Backup & Database' :
-                     activeTab === 'printer_settings' ? 'Sistem Konektivitas & Pengaturan Printer' :
-                     'Riwayat Semua Mutasi'}</span>
-              <span className="text-xs font-normal text-slate-500">| Bastika Parfum</span>
-            </h1>
-            <p className="text-xs text-slate-500 mt-0.5">Sistem data real-time, sinkron otomatis ke seluruh perangkat.</p>
+        <header className="print:hidden bg-white border-b border-slate-200 py-3.5 px-4 sm:px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shrink-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="text-lg sm:text-xl font-bold font-display text-slate-900 tracking-tight">
+                {activeTab === 'dashboard' ? 'Ringkasan Laba & Omset' :
+                 activeTab === 'shelves' ? 'Manajemen Rak Aroma' :
+                 activeTab === 'stocks' ? 'Manajemen Stok & Inventori' :
+                 activeTab === 'sales' ? 'Kasir Penjualan Parfum' :
+                 activeTab === 'master_products' ? 'Master Database Produk (Source of Truth)' :
+                 activeTab === 'purchases' ? 'Pencatatan Belanja Stok' :
+                 activeTab === 'accounting' ? 'Buku Kas & Laporan Keuangan' :
+                 activeTab === 'users' ? 'Manajemen Akses Karyawan (Client)' :
+                 activeTab === 'invoice_settings' ? 'Format Kop Invoice' :
+                 activeTab === 'customers' ? 'Sistem Database Pelanggan & Promo' :
+                 activeTab === 'db_management' ? 'Pengaturan Backup & Database' :
+                 activeTab === 'printer_settings' ? 'Sistem Konektivitas & Pengaturan Printer' :
+                 'Riwayat Semua Mutasi'}
+              </h1>
+              <span className="text-xs font-normal text-slate-500 shrink-0">| Bastika Parfum</span>
+            </div>
+            <p className="text-xs text-slate-500 mt-0.5 truncate">Sistem data real-time, sinkron otomatis ke seluruh perangkat.</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             {/* Mode Tampilan / Orientation Selector */}
             <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs shadow-inner">
               <button
