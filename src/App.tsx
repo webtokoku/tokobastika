@@ -3816,7 +3816,7 @@ export default function App() {
                           {myPackageStocks.length === 0 ? (
                             <p className="text-slate-400 italic text-xs">Belum ada paket bundling yang dikirim ke reseller ini.</p>
                           ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-40 overflow-y-auto pt-1">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[650px] overflow-y-auto pt-1">
                               {myPackageStocks.map(ps => (
                                 <div key={ps.id} className="bg-white border border-slate-200 rounded-lg p-2.5 flex justify-between items-center text-xs shadow-sm">
                                   <div>
@@ -8677,7 +8677,7 @@ export default function App() {
 
                 return (
                   <div className="space-y-4">
-                    <div className="overflow-x-auto max-h-[650px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
+                    <div className="overflow-x-auto max-h-[1000px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
                       <table className="w-full text-left text-xs border-collapse">
                         <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
                           <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
