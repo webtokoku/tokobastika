@@ -138,7 +138,9 @@ import {
   UserCheck,
   Share2,
   Download,
-  Image
+  Image,
+  Eye,
+  EyeOff
 } from "lucide-react";
 
 export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
@@ -236,6 +238,7 @@ export default function App() {
   // Real Email/Password Auth State
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Core Data State
   const [cashBalance, setCashBalance] = useState(0);
@@ -2975,16 +2978,30 @@ export default function App() {
                 </div>
                 <div>
                   <label className="block text-[10px] font-semibold text-slate-400 mb-1">Kata Sandi</label>
-                  <input
-                    id="password-login-input"
-                    type="password"
-                    placeholder="••••••••"
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                    required
-                    disabled={isLoggingIn}
-                  />
+                  <div className="relative">
+                    <input
+                      id="password-login-input"
+                      type={showLoginPassword ? "text" : "password"}
+                      placeholder="••••••••"
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      className="w-full bg-slate-800 border border-slate-700 rounded-lg pl-3 pr-10 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-sans"
+                      required
+                      disabled={isLoggingIn}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword(!showLoginPassword)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-200 transition-colors p-1 cursor-pointer focus:outline-none"
+                      title={showLoginPassword ? "Sembunyikan Kata Sandi" : "Tampilkan Kata Sandi"}
+                    >
+                      {showLoginPassword ? (
+                        <EyeOff className="h-4 w-4 text-emerald-400" />
+                      ) : (
+                        <Eye className="h-4 w-4 text-slate-400" />
+                      )}
+                    </button>
+                  </div>
                 </div>
               </div>
 
