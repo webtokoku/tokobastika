@@ -1916,7 +1916,7 @@ export default function App() {
     const representativeBottleType = isMulti ? undefined : firstItem.bottleType;
     const representativeBottleCount = finalItems.reduce((acc, it) => acc + (it.bottleCount || 0), 0);
     const representativeNoBottle = finalItems.some(it => it.noBottleStockDeduct);
-    const representativeBringOwnBottle = finalItems.every(it => it.bringOwnBottle);
+    const representativeBringOwnBottle = finalItems.length > 0 && finalItems.every(it => Boolean(it.bringOwnBottle));
 
     const itemsDescription = finalItems.map(item => {
       if (item.isBundling) {
@@ -6375,7 +6375,7 @@ export default function App() {
                                 <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">
                                   {saleBottleSize === "None"
                                     ? "Pilih ukuran botol terlebih dahulu."
-                                    : "Jika tercentang (default), biaya botol menjadi Rp 0 karena pelanggan membawa botol sendiri."}
+                                    : "Jika tercentang, biaya botol menjadi Rp 0 karena pelanggan membawa botol sendiri."}
                                 </p>
                               </div>
                             </label>
@@ -6712,7 +6712,7 @@ export default function App() {
                         </button>
                       </div>
                       
-                      <div className="space-y-2 max-h-[220px] overflow-y-auto pr-1">
+                      <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
                         {saleItems.map((item, idx) => {
                           if (item.isBundling) {
                             const bPrice = (item.bundlingPrice || 0) * (item.bottleCount || 1);
@@ -7310,7 +7310,7 @@ export default function App() {
 
                   return (
                     <div className="space-y-3">
-                      <div className="overflow-x-auto max-h-[600px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
+                      <div className="overflow-x-auto max-h-[850px] overflow-y-auto border border-slate-200/60 rounded-xl shadow-2xs">
                         <table className="w-full text-left text-xs border-collapse">
                           <thead className="sticky top-0 z-10 bg-slate-50 border-b border-slate-200 shadow-2xs">
                             <tr className="text-slate-500 uppercase tracking-wider text-[10px] font-bold">
