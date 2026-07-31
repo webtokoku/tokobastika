@@ -140,7 +140,12 @@ import {
   Download,
   Image,
   Eye,
-  EyeOff
+  EyeOff,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Smartphone,
+  Monitor,
+  RotateCw
 } from "lucide-react";
 
 export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
@@ -239,6 +244,28 @@ export default function App() {
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+
+  // Minimizable Sidebar & Display Orientation States
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
+  const [displayOrientation, setDisplayOrientation] = useState<"auto" | "portrait" | "landscape">("auto");
+  const [isDevicePortrait, setIsDevicePortrait] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      return window.innerHeight > window.innerWidth;
+    }
+    return false;
+  });
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsDevicePortrait(window.innerHeight > window.innerWidth);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+  const effectiveOrientation = displayOrientation === "auto" 
+    ? (isDevicePortrait ? "portrait" : "landscape") 
+    : displayOrientation;
 
   // Core Data State
   const [cashBalance, setCashBalance] = useState(0);
@@ -2924,7 +2951,51 @@ export default function App() {
   // LOGIN SCREEN
   if (!userRole) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 selection:bg-emerald-500 selection:text-white">
+      <div className={`min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 selection:bg-emerald-500 selection:text-white transition-all ${
+        effectiveOrientation === "portrait" ? "max-w-md mx-auto shadow-2xl border-x border-slate-800" : ""
+      }`}>
+        <div className="w-full max-w-md mb-3 flex justify-end">
+          {/* Mode Tampilan / Orientation Selector */}
+          <div className="flex items-center gap-1 bg-slate-800/80 border border-slate-700 rounded-xl p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => setDisplayOrientation("auto")}
+              className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                displayOrientation === "auto" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-700"
+              }`}
+              title="Otomatis menyesuaikan orientasi layar perangkat saat ini"
+            >
+              <RotateCw className="h-3 w-3" />
+              <span className="text-[10px]">Auto</span>
+              {displayOrientation === "auto" && (
+                <span className="text-[8px] text-emerald-200">({isDevicePortrait ? "Portrait" : "Landscape"})</span>
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayOrientation("portrait")}
+              className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                displayOrientation === "portrait" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-700"
+              }`}
+              title="Mode Portrait (HP Mode Tegak)"
+            >
+              <Smartphone className="h-3 w-3" />
+              <span className="text-[10px]">Portrait</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDisplayOrientation("landscape")}
+              className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                displayOrientation === "landscape" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-700"
+              }`}
+              title="Mode Landscape (Laptop Mode Mendatar)"
+            >
+              <Monitor className="h-3 w-3" />
+              <span className="text-[10px]">Landscape</span>
+            </button>
+          </div>
+        </div>
+
         <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl border border-slate-700/50 p-8 overflow-hidden relative">
           {/* Accent Glow */}
           <div className="absolute top-0 left-1/4 w-1/2 h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 rounded-full"></div>
@@ -4422,7 +4493,9 @@ export default function App() {
   // ==========================================
   if (userRole === "reseller") {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col md:flex-row text-slate-100 selection:bg-emerald-500 selection:text-white font-sans">
+      <div className={`min-h-screen bg-slate-900 text-slate-100 selection:bg-emerald-500 selection:text-white font-sans transition-all ${
+        effectiveOrientation === "portrait" ? "max-w-md mx-auto shadow-2xl border-x border-slate-800 flex flex-col" : "flex flex-col md:flex-row"
+      }`}>
         {/* Toast Notification */}
         {toast && (
           <div id="toast-notif" className={`fixed bottom-5 right-5 z-50 flex items-center gap-3 py-3 px-5 rounded-xl shadow-2xl border transition-all duration-300 transform translate-y-0 ${
@@ -4438,53 +4511,81 @@ export default function App() {
         )}
 
         {/* Reseller Sidebar */}
-        <aside className="w-full md:w-64 bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800 shrink-0">
-          <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5">
+        <aside className={`bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800 shrink-0 transition-all duration-300 ${
+          isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64"
+        }`}>
+          <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isSidebarCollapsed ? "flex-col gap-3" : ""}`}>
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="h-9 w-9 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
                 <img src={invoiceSettings?.appIconUrl || "/icon.jpg"} alt="Bastika Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
               </div>
-              <div>
-                <h2 className="font-bold font-display text-white tracking-tight text-sm">BASTIKA RESELLER</h2>
-                <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase">KONSINYASI</span>
-              </div>
+              {!isSidebarCollapsed && (
+                <div className="overflow-hidden">
+                  <h2 className="font-bold font-display text-white tracking-tight text-sm truncate">BASTIKA RESELLER</h2>
+                  <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase block">KONSINYASI</span>
+                </div>
+              )}
             </div>
+
+            {/* Sidebar Collapse Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+              className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-white transition-all cursor-pointer flex items-center justify-center border border-slate-700 shrink-0"
+              title={isSidebarCollapsed ? "Perluas Menu Sidebar (Tampilkan Teks)" : "Ciutkan Menu Sidebar (Hanya Ikon)"}
+            >
+              {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            </button>
           </div>
 
-          <div className="px-6 py-4 border-b border-slate-800 bg-slate-900/40">
-            <p className="text-[10px] font-semibold text-slate-500 uppercase">Reseller Aktif</p>
-            <p className="text-xs font-bold text-white truncate mt-1">{currentUser?.email || customEmail}</p>
+          <div className={`px-4 py-3 border-b border-slate-800 bg-slate-900/40 ${isSidebarCollapsed ? "text-center" : ""}`}>
+            {!isSidebarCollapsed ? (
+              <>
+                <p className="text-[10px] font-semibold text-slate-500 uppercase">Reseller Aktif</p>
+                <p className="text-xs font-bold text-white truncate mt-0.5">{currentUser?.email || customEmail}</p>
+              </>
+            ) : (
+              <div 
+                className="h-8 w-8 mx-auto rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs uppercase cursor-pointer"
+                title={`Reseller: ${currentUser?.email || customEmail}`}
+              >
+                {(currentUser?.email || customEmail || "R").substring(0, 2)}
+              </div>
+            )}
           </div>
 
-          <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
+          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
             <button
               onClick={() => setResellerActiveTab("penjualan")}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                resellerActiveTab === "penjualan" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              title="Penjualan Paket Konsinyasi"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                resellerActiveTab === "penjualan" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              <ShoppingBag className="h-4 w-4" />
-              Penjualan Paket
+              <ShoppingBag className="h-4.5 w-4.5 shrink-0" />
+              {!isSidebarCollapsed && <span>Penjualan Paket</span>}
             </button>
 
             <button
               onClick={() => setResellerActiveTab("setoran")}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                resellerActiveTab === "setoran" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              title="Status Setoran Uang & Tagihan"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                resellerActiveTab === "setoran" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              <Wallet className="h-4 w-4" />
-              Status Setoran Uang
+              <Wallet className="h-4.5 w-4.5 shrink-0" />
+              {!isSidebarCollapsed && <span>Status Setoran Uang</span>}
             </button>
           </nav>
 
-          <div className="p-4 border-t border-slate-800 bg-slate-900/40">
+          <div className="p-3 border-t border-slate-800 bg-slate-900/40">
             <button
               onClick={handleSignOut}
-              className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold py-2 px-3 rounded-lg transition-colors cursor-pointer"
+              title="Keluar Sistem"
+              className={`w-full flex items-center justify-center ${isSidebarCollapsed ? "p-2.5" : "gap-2 py-2 px-3"} bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer`}
             >
-              <LogOut className="h-4 w-4" />
-              Keluar Sistem
+              <LogOut className="h-4 w-4 shrink-0" />
+              {!isSidebarCollapsed && <span>Keluar Sistem</span>}
             </button>
           </div>
         </aside>
@@ -4492,12 +4593,54 @@ export default function App() {
         {/* Reseller Main Panel */}
         <main className="flex-1 flex flex-col min-w-0 bg-slate-900 text-slate-100 overflow-y-auto">
           {/* Header */}
-          <header className="bg-slate-950 border-b border-slate-800 py-4 px-6 flex items-center justify-between">
+          <header className="bg-slate-950 border-b border-slate-800 py-4 px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
               <h1 className="text-lg font-bold font-display text-white tracking-tight">
                 {resellerActiveTab === "penjualan" ? "Penjualan Paket Konsinyasi" : "Status Tagihan & Setoran"}
               </h1>
               <p className="text-xs text-slate-400">Portal Reseller Resmi Bastika Parfum</p>
+            </div>
+
+            {/* Mode Tampilan / Orientation Selector */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-xl p-1 text-xs shrink-0 shadow-inner">
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("auto")}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "auto" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-800"
+                }`}
+                title="Otomatis membaca orientasi layar perangkat saat ini"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Auto</span>
+                {displayOrientation === "auto" && (
+                  <span className="text-[9px] text-emerald-200 font-normal">({isDevicePortrait ? "Portrait" : "Landscape"})</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("portrait")}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "portrait" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-800"
+                }`}
+                title="Tampilan Portrait (HP Mode Tegak)"
+              >
+                <Smartphone className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Portrait (HP)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("landscape")}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "landscape" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-800"
+                }`}
+                title="Tampilan Landscape (Laptop/Tablet Mode Mendatar)"
+              >
+                <Monitor className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Landscape</span>
+              </button>
             </div>
           </header>
 
@@ -4513,7 +4656,9 @@ export default function App() {
 
   // MAIN DASHBOARD LAYOUT
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col md:flex-row text-slate-800 selection:bg-emerald-500 selection:text-white font-sans">
+    <div className={`min-h-screen bg-slate-50 text-slate-800 selection:bg-emerald-500 selection:text-white font-sans transition-all ${
+      effectiveOrientation === "portrait" ? "max-w-md mx-auto shadow-2xl border-x border-slate-300 flex flex-col" : "flex flex-col md:flex-row"
+    }`}>
       {/* Toast Notification */}
       {toast && (
         <div id="toast-notif" className={`print:hidden fixed bottom-5 right-5 z-50 flex items-center gap-3 py-3 px-5 rounded-xl shadow-2xl border transition-all duration-300 transform translate-y-0 ${
@@ -4529,109 +4674,133 @@ export default function App() {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className="print:hidden w-full md:w-64 bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 shrink-0">
+      <aside className={`print:hidden bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 shrink-0 transition-all duration-300 ${
+        isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64"
+      }`}>
         {/* Brand Header */}
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="h-9 w-9 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5">
+        <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isSidebarCollapsed ? "flex-col gap-3 text-center" : ""}`}>
+          <div className="flex items-center gap-3 overflow-hidden">
+            <div className="h-9 w-9 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
               <img src={invoiceSettings?.appIconUrl || "/icon.jpg"} alt="Bastika Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
             </div>
-            <div>
-              <h2 className="font-bold font-display text-white tracking-tight text-sm">BASTIKA PARFUM</h2>
-              <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase">Online Cloud DB</span>
-            </div>
+            {!isSidebarCollapsed && (
+              <div className="overflow-hidden">
+                <h2 className="font-bold font-display text-white tracking-tight text-sm truncate">BASTIKA PARFUM</h2>
+                <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase block">Online Cloud DB</span>
+              </div>
+            )}
           </div>
-          {/* Connection status badge */}
-          <div className="flex items-center">
-            <span className={`h-2.5 w-2.5 rounded-full ${
-              syncStatus === "synced" ? "bg-emerald-500" : "bg-amber-500 animate-pulse"
-            }`} title={syncStatus === "synced" ? "Tersambung ke Cloud Firestore" : "Koneksi Offline (Caching aktif)"}></span>
-          </div>
+
+          {/* Toggle Sidebar Collapse Button */}
+          <button
+            type="button"
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-white transition-all cursor-pointer flex items-center justify-center border border-slate-700 shrink-0"
+            title={isSidebarCollapsed ? "Perluas Menu Sidebar (Tampilkan Teks)" : "Ciutkan Menu Sidebar (Hanya Ikon)"}
+          >
+            {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </button>
         </div>
 
         {/* Current User Info */}
-        <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40">
-          <div className="flex items-center gap-3">
-            <div className="h-8 w-8 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs uppercase">
+        <div className={`px-4 py-3 border-b border-slate-800 bg-slate-950/40 ${isSidebarCollapsed ? "flex justify-center" : ""}`}>
+          {isSidebarCollapsed ? (
+            <div 
+              className="h-8 w-8 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs uppercase cursor-pointer"
+              title={`User: ${currentUser?.email || customEmail} (${userRole})`}
+            >
               {(currentUser?.email || customEmail || "U").substring(0, 2)}
             </div>
-            <div className="overflow-hidden">
-              <p className="text-xs font-semibold text-white truncate">{currentUser?.email || customEmail}</p>
-              <div className="flex items-center gap-1 mt-0.5">
-                <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                  userRole === "admin" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-slate-800 text-slate-400 border border-slate-700"
-                }`}>
-                  {userRole}
-                </span>
-                {syncStatus === "offline" && (
-                  <span className="text-[8px] text-amber-400 font-bold uppercase">(Offline Mode)</span>
-                )}
+          ) : (
+            <div className="flex items-center gap-3 overflow-hidden">
+              <div className="h-8 w-8 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs uppercase shrink-0">
+                {(currentUser?.email || customEmail || "U").substring(0, 2)}
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-xs font-semibold text-white truncate">{currentUser?.email || customEmail}</p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                    userRole === "admin" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-slate-800 text-slate-400 border border-slate-700"
+                  }`}>
+                    {userRole}
+                  </span>
+                  {syncStatus === "offline" && (
+                    <span className="text-[8px] text-amber-400 font-bold uppercase">(Offline Mode)</span>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 px-4 py-4 space-y-1 overflow-y-auto">
-          <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider mb-2">Menu Utama</p>
+        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+          {!isSidebarCollapsed && (
+            <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider mb-2">Menu Utama</p>
+          )}
           
           {userRole === "admin" && (
             <button
               id="nav-dashboard-btn"
               onClick={() => setActiveTab("dashboard")}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                activeTab === "dashboard" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              title="Dashboard & Laba"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                activeTab === "dashboard" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              <TrendingUp className="h-4 w-4" />
-              Dashboard & Laba
+              <TrendingUp className="h-4.5 w-4.5 shrink-0" />
+              {!isSidebarCollapsed && <span>Dashboard & Laba</span>}
             </button>
           )}
 
           <button
             id="nav-shelves-btn"
             onClick={() => setActiveTab("shelves")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "shelves" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            title="Sistem Rak Aroma"
+            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+              activeTab === "shelves" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <Layers className="h-4 w-4" />
-            Sistem Rak Aroma
+            <Layers className="h-4.5 w-4.5 shrink-0" />
+            {!isSidebarCollapsed && <span>Sistem Rak Aroma</span>}
           </button>
 
           <button
             id="nav-stocks-btn"
             onClick={() => setActiveTab("stocks")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "stocks" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            title="Inventori Stok Master"
+            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+              activeTab === "stocks" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <Box className="h-4 w-4" />
-            Inventori Stok Master
+            <Box className="h-4.5 w-4.5 shrink-0" />
+            {!isSidebarCollapsed && <span>Inventori Stok Master</span>}
           </button>
 
           {userRole === "admin" && (
             <button
               id="nav-master-products-btn"
               onClick={() => setActiveTab("master_products")}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                activeTab === "master_products" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+              title="Master Produk"
+              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                activeTab === "master_products" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
               }`}
             >
-              <Package className="h-4 w-4" />
-              Master Produk
+              <Package className="h-4.5 w-4.5 shrink-0" />
+              {!isSidebarCollapsed && <span>Master Produk</span>}
             </button>
           )}
 
           <button
             id="nav-sales-btn"
             onClick={() => setActiveTab("sales")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "sales" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            title="Input Penjualan (Kasir)"
+            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+              activeTab === "sales" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <PlusCircle className="h-4 w-4" />
-            Input Penjualan (Kasir)
+            <PlusCircle className="h-4.5 w-4.5 shrink-0" />
+            {!isSidebarCollapsed && <span>Input Penjualan (Kasir)</span>}
           </button>
 
           {userRole === "admin" && (
@@ -4639,80 +4808,91 @@ export default function App() {
               <button
                 id="nav-consignment-btn"
                 onClick={() => setActiveTab("consignment")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "consignment" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                title="Konsinyasi & Bundling"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                  activeTab === "consignment" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 }`}
               >
-                <Layers className="h-4 w-4" />
-                Konsinyasi & Bundling
+                <Layers className="h-4.5 w-4.5 shrink-0" />
+                {!isSidebarCollapsed && <span>Konsinyasi & Bundling</span>}
               </button>
 
               <button
                 id="nav-purchases-btn"
                 onClick={() => setActiveTab("purchases")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "purchases" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                title="Catat Belanja Stok"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                  activeTab === "purchases" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 }`}
               >
-                <ArrowDownRight className="h-4 w-4" />
-                Catat Belanja Stok
+                <ArrowDownRight className="h-4.5 w-4.5 shrink-0" />
+                {!isSidebarCollapsed && <span>Catat Belanja Stok</span>}
               </button>
 
-              <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider pt-4 mb-2">Keuangan & Akses</p>
+              {!isSidebarCollapsed ? (
+                <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider pt-4 mb-2">Keuangan & Akses</p>
+              ) : (
+                <div className="border-t border-slate-800 my-2" />
+              )}
 
               <button
                 id="nav-accounting-btn"
                 onClick={() => setActiveTab("accounting")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "accounting" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                title="Akuntansi & Kas Besar"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                  activeTab === "accounting" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 }`}
               >
-                <Wallet className="h-4 w-4" />
-                Akuntansi & Kas Besar
+                <Wallet className="h-4.5 w-4.5 shrink-0" />
+                {!isSidebarCollapsed && <span>Akuntansi & Kas Besar</span>}
               </button>
 
               <button
                 id="nav-history-btn"
                 onClick={() => setActiveTab("history")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "history" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                title="Riwayat Transaksi"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                  activeTab === "history" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 }`}
               >
-                <Calendar className="h-4 w-4" />
-                Riwayat Transaksi
+                <Calendar className="h-4.5 w-4.5 shrink-0" />
+                {!isSidebarCollapsed && <span>Riwayat Transaksi</span>}
               </button>
 
               <button
                 id="nav-users-btn"
                 onClick={() => setActiveTab("users")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "users" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                title="Hak Akses Client"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                  activeTab === "users" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 }`}
               >
-                <Users className="h-4 w-4" />
-                Hak Akses Client
+                <Users className="h-4.5 w-4.5 shrink-0" />
+                {!isSidebarCollapsed && <span>Hak Akses Client</span>}
               </button>
 
               <button
                 id="nav-invoice-settings-btn"
                 onClick={() => setActiveTab("invoice_settings")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "invoice_settings" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                title="Format Kop Invoice"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                  activeTab === "invoice_settings" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 }`}
               >
-                <Settings className="h-4 w-4" />
-                Format Kop Invoice
+                <Settings className="h-4.5 w-4.5 shrink-0" />
+                {!isSidebarCollapsed && <span>Format Kop Invoice</span>}
               </button>
 
               <button
                 id="nav-db-management-btn"
                 onClick={() => setActiveTab("db_management")}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "db_management" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                title="Pengaturan Database"
+                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                  activeTab === "db_management" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
                 }`}
               >
-                <Database className="h-4 w-4" />
-                Pengaturan Database
+                <Database className="h-4.5 w-4.5 shrink-0" />
+                {!isSidebarCollapsed && <span>Pengaturan Database</span>}
               </button>
             </>
           )}
@@ -4720,35 +4900,38 @@ export default function App() {
           <button
             id="nav-customers-btn"
             onClick={() => setActiveTab("customers")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "customers" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            title="Database Pelanggan"
+            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+              activeTab === "customers" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <UserCheck className="h-4 w-4" />
-            Database Pelanggan
+            <UserCheck className="h-4.5 w-4.5 shrink-0" />
+            {!isSidebarCollapsed && <span>Database Pelanggan</span>}
           </button>
 
           <button
             id="nav-printer-settings-btn"
             onClick={() => setActiveTab("printer_settings")}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "printer_settings" ? "bg-emerald-600 text-white font-bold" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+            title="Pengaturan Printer"
+            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+              activeTab === "printer_settings" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
             }`}
           >
-            <Printer className="h-4 w-4" />
-            Pengaturan Printer
+            <Printer className="h-4.5 w-4.5 shrink-0" />
+            {!isSidebarCollapsed && <span>Pengaturan Printer</span>}
           </button>
         </nav>
 
         {/* Footer info & Logout */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/40">
+        <div className="p-3 border-t border-slate-800 bg-slate-950/40">
           <button
             id="logout-btn"
             onClick={handleSignOut}
-            className="w-full flex items-center justify-center gap-2 bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold py-2 px-3 rounded-lg transition-colors cursor-pointer"
+            title="Keluar Sistem"
+            className={`w-full flex items-center justify-center ${isSidebarCollapsed ? "p-2.5" : "gap-2 py-2 px-3"} bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer`}
           >
-            <LogOut className="h-4 w-4" />
-            Keluar Sistem
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!isSidebarCollapsed && <span>Keluar Sistem</span>}
           </button>
         </div>
       </aside>
@@ -4777,7 +4960,49 @@ export default function App() {
             <p className="text-xs text-slate-500 mt-0.5">Sistem data real-time, sinkron otomatis ke seluruh perangkat.</p>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Mode Tampilan / Orientation Selector */}
+            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs shadow-inner">
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("auto")}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "auto" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
+                }`}
+                title="Otomatis membaca orientasi layar perangkat saat ini"
+              >
+                <RotateCw className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Auto</span>
+                {displayOrientation === "auto" && (
+                  <span className="text-[9px] opacity-80 font-normal">({isDevicePortrait ? "Portrait" : "Landscape"})</span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("portrait")}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "portrait" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
+                }`}
+                title="Tampilan Portrait (HP Mode Tegak)"
+              >
+                <Smartphone className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Portrait (HP)</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("landscape")}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "landscape" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
+                }`}
+                title="Tampilan Landscape (Laptop/Tablet Mode Mendatar)"
+              >
+                <Monitor className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Landscape</span>
+              </button>
+            </div>
+
             {/* Real-time Indicator status */}
             <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-semibold ${
               syncStatus === "synced" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"

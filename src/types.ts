@@ -57,7 +57,7 @@ export interface Transaction {
   bottleType?: "Kaca" | "Plastik";
   bottleCount?: number; // Quantity of bottles
   totalPrice: number;
-  discountType?: "none" | "free_bottle" | "nominal";
+  discountType?: "none" | "free_bottle" | "nominal" | "free_bottle_nominal";
   discountNominal?: number;
   description: string;
   operatorEmail: string;
