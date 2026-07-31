@@ -148,7 +148,8 @@ import {
   RotateCw,
   Menu,
   ChevronUp,
-  ChevronDown
+  ChevronDown,
+  Keyboard
 } from "lucide-react";
 
 export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
@@ -269,6 +270,124 @@ export default function App() {
   const effectiveOrientation = displayOrientation === "auto" 
     ? (isDevicePortrait ? "portrait" : "landscape") 
     : displayOrientation;
+
+  // Virtual On-Screen Keyboard States (Prevents Mobile Browser Auto-Zoom in Desktop View)
+  const [showVirtualKeyboard, setShowVirtualKeyboard] = useState<boolean>(false);
+  const [keyboardType, setKeyboardType] = useState<"qwerty" | "numpad">("qwerty");
+  const [keyboardCaps, setKeyboardCaps] = useState<boolean>(false);
+  const [keyboardMinimized, setKeyboardMinimized] = useState<boolean>(false);
+  const [focusedInputElement, setFocusedInputElement] = useState<HTMLInputElement | HTMLTextAreaElement | null>(null);
+  const [focusedInputLabel, setFocusedInputLabel] = useState<string>("");
+
+  // Track focused input elements globally for virtual keyboard binding
+  useEffect(() => {
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
+        const inputEl = target as HTMLInputElement | HTMLTextAreaElement;
+        if (inputEl.type !== "file" && inputEl.type !== "checkbox" && inputEl.type !== "radio") {
+          setFocusedInputElement(inputEl);
+          const labelText = inputEl.placeholder || inputEl.name || inputEl.id || inputEl.ariaLabel || "Kolom Input Teks/Angka";
+          setFocusedInputLabel(labelText);
+
+          // Auto-select numpad for numerical fields
+          if (
+            inputEl.type === "number" || 
+            inputEl.inputMode === "numeric" || 
+            inputEl.inputMode === "decimal" || 
+            inputEl.id?.includes("price") || 
+            inputEl.id?.includes("nominal") || 
+            inputEl.id?.includes("amount") || 
+            inputEl.id?.includes("qty") || 
+            inputEl.id?.includes("volume")
+          ) {
+            setKeyboardType("numpad");
+          } else {
+            setKeyboardType("qwerty");
+          }
+
+          // Auto-open virtual keyboard on Desktop mode if not explicitly closed
+          if (effectiveOrientation === "landscape") {
+            setShowVirtualKeyboard(true);
+            setKeyboardMinimized(false);
+          }
+        }
+      }
+    };
+
+    document.addEventListener("focusin", handleFocusIn);
+    return () => document.removeEventListener("focusin", handleFocusIn);
+  }, [effectiveOrientation]);
+
+  // Virtual Keyboard Key Press Handler (Dispatches native events for React state compatibility)
+  const handleVirtualKeyPress = (key: string) => {
+    let targetInput = focusedInputElement;
+    if (!targetInput || !document.body.contains(targetInput)) {
+      const activeEl = document.activeElement as HTMLInputElement | HTMLTextAreaElement;
+      if (activeEl && (activeEl.tagName === "INPUT" || activeEl.tagName === "TEXTAREA")) {
+        targetInput = activeEl;
+        setFocusedInputElement(activeEl);
+      } else {
+        return;
+      }
+    }
+
+    const start = targetInput.selectionStart ?? targetInput.value.length;
+    const end = targetInput.selectionEnd ?? targetInput.value.length;
+    const currentValue = targetInput.value;
+
+    let newValue = currentValue;
+    let newCursorPos = start;
+
+    if (key === "BACKSPACE") {
+      if (start === end && start > 0) {
+        newValue = currentValue.slice(0, start - 1) + currentValue.slice(start);
+        newCursorPos = start - 1;
+      } else if (start !== end) {
+        newValue = currentValue.slice(0, start) + currentValue.slice(end);
+        newCursorPos = start;
+      }
+    } else if (key === "CLEAR") {
+      newValue = "";
+      newCursorPos = 0;
+    } else if (key === "SPACE") {
+      newValue = currentValue.slice(0, start) + " " + currentValue.slice(end);
+      newCursorPos = start + 1;
+    } else if (key === "ENTER" || key === "DONE" || key === "OK") {
+      targetInput.blur();
+      return;
+    } else if (key === "000") {
+      newValue = currentValue.slice(0, start) + "000" + currentValue.slice(end);
+      newCursorPos = start + 3;
+    } else {
+      const insertText = keyboardCaps ? key.toUpperCase() : key;
+      newValue = currentValue.slice(0, start) + insertText + currentValue.slice(end);
+      newCursorPos = start + insertText.length;
+    }
+
+    // Set native input value and trigger React synthetic event
+    const nativeSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype,
+      "value"
+    )?.set || Object.getOwnPropertyDescriptor(
+      window.HTMLTextAreaElement.prototype,
+      "value"
+    )?.set;
+
+    if (nativeSetter) {
+      nativeSetter.call(targetInput, newValue);
+    } else {
+      targetInput.value = newValue;
+    }
+
+    targetInput.dispatchEvent(new Event("input", { bubbles: true }));
+    targetInput.dispatchEvent(new Event("change", { bubbles: true }));
+
+    try {
+      targetInput.focus();
+      targetInput.setSelectionRange(newCursorPos, newCursorPos);
+    } catch (e) {}
+  };
 
   // Core Data State
   const [cashBalance, setCashBalance] = useState(0);
@@ -4487,6 +4606,372 @@ export default function App() {
   };
 
   // ==========================================
+  // RENDER VIRTUAL KEYBOARD COMPONENT
+  // ==========================================
+  const renderVirtualKeyboard = () => {
+    if (!showVirtualKeyboard) return null;
+
+    return (
+      <div className="fixed bottom-0 left-0 right-0 z-[200] print:hidden animate-in slide-in-from-bottom-5 duration-200">
+        {keyboardMinimized ? (
+          /* MINIMIZED FLOATING BAR */
+          <div className="max-w-md mx-auto mb-2 px-4 py-2 bg-slate-900/95 text-white backdrop-blur-md border border-slate-700 rounded-2xl shadow-2xl flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0">
+              <Keyboard className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-xs font-bold truncate">Keyboard Virtual</span>
+            </div>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => setKeyboardMinimized(false)}
+                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg shadow-sm transition-all cursor-pointer"
+              >
+                Tampilkan
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowVirtualKeyboard(false)}
+                className="p-1 text-slate-400 hover:text-white cursor-pointer"
+                title="Tutup Keyboard"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        ) : (
+          /* FULL COMPACT VIRTUAL KEYBOARD PANEL */
+          <div className="bg-slate-950/95 text-slate-100 border-t-2 border-emerald-500 backdrop-blur-md shadow-2xl p-2 sm:p-3 max-w-4xl mx-auto rounded-t-2xl">
+            {/* Header Ribbon */}
+            <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-800 text-xs">
+              <div className="flex items-center gap-2 min-w-0">
+                <Keyboard className="h-4 w-4 text-emerald-400 shrink-0" />
+                <span className="font-bold text-white text-[11px] sm:text-xs shrink-0">Keyboard Virtual</span>
+                <div className="hidden sm:flex items-center gap-1 bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-0.5 text-[10px] text-slate-300 truncate max-w-[280px]">
+                  <span className="text-emerald-400 font-semibold">Target Input:</span>
+                  <span className="truncate">{focusedInputLabel || "Ketuk kolom mana saja untuk mengetik"}</span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                {/* Layout Switcher */}
+                <div className="flex items-center bg-slate-900 border border-slate-700 rounded-lg p-0.5 text-[10px]">
+                  <button
+                    type="button"
+                    onClick={() => setKeyboardType("qwerty")}
+                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                      keyboardType === "qwerty" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    ABC Teks
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setKeyboardType("numpad")}
+                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                      keyboardType === "numpad" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
+                    }`}
+                  >
+                    123 Angka
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setKeyboardMinimized(true)}
+                  className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all cursor-pointer"
+                  title="Sembunyikan Keyboard"
+                >
+                  <ChevronDown className="h-3.5 w-3.5" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowVirtualKeyboard(false)}
+                  className="p-1 bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-rose-200 rounded-lg transition-all cursor-pointer"
+                  title="Tutup Keyboard Virtual"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Keyboard Layout Content */}
+            {keyboardType === "qwerty" ? (
+              <div className="space-y-1 sm:space-y-1.5 select-none text-xs">
+                {/* Row 1: Numbers & Symbols */}
+                <div className="flex gap-1 justify-center">
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "/", "@"].map((k) => (
+                    <button
+                      key={k}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleVirtualKeyPress(k)}
+                      className="flex-1 py-1.5 sm:py-2 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-bold rounded-md sm:rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-[11px] sm:text-xs"
+                    >
+                      {k}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Row 2: QWERTY Top Row */}
+                <div className="flex gap-1 justify-center">
+                  {["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"].map((k) => {
+                    const displayChar = keyboardCaps ? k.toUpperCase() : k;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleVirtualKeyPress(displayChar)}
+                        className="flex-1 py-1.5 sm:py-2 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-bold rounded-md sm:rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-[11px] sm:text-xs"
+                      >
+                        {displayChar}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Row 3: QWERTY Middle Row */}
+                <div className="flex gap-1 justify-center px-2">
+                  {["a", "s", "d", "f", "g", "h", "j", "k", "l"].map((k) => {
+                    const displayChar = keyboardCaps ? k.toUpperCase() : k;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleVirtualKeyPress(displayChar)}
+                        className="flex-1 py-1.5 sm:py-2 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-bold rounded-md sm:rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-[11px] sm:text-xs"
+                      >
+                        {displayChar}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Row 4: Caps, Bottom Row, Backspace */}
+                <div className="flex gap-1 justify-center">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setKeyboardCaps(!keyboardCaps)}
+                    className={`px-2 py-1.5 sm:py-2 text-[10px] sm:text-xs font-bold rounded-md sm:rounded-lg shadow-xs transition-all cursor-pointer ${
+                      keyboardCaps ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    }`}
+                  >
+                    CAPS
+                  </button>
+                  {["z", "x", "c", "v", "b", "n", "m", ",", "."].map((k) => {
+                    const displayChar = keyboardCaps ? k.toUpperCase() : k;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => handleVirtualKeyPress(displayChar)}
+                        className="flex-1 py-1.5 sm:py-2 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-bold rounded-md sm:rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-[11px] sm:text-xs"
+                      >
+                        {displayChar}
+                      </button>
+                    );
+                  })}
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleVirtualKeyPress("BACKSPACE")}
+                    className="px-2.5 py-1.5 sm:py-2 bg-rose-950/80 hover:bg-rose-900 text-rose-200 text-[10px] sm:text-xs font-bold rounded-md sm:rounded-lg shadow-xs transition-all cursor-pointer"
+                  >
+                    ⌫
+                  </button>
+                </div>
+
+                {/* Row 5: Action Row */}
+                <div className="flex gap-1 justify-center pt-0.5">
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setKeyboardType("numpad")}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-md sm:rounded-lg text-[11px]"
+                  >
+                    123 Numpad
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleVirtualKeyPress("CLEAR")}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-md sm:rounded-lg text-[11px]"
+                  >
+                    Hapus
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleVirtualKeyPress("SPACE")}
+                    className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-bold rounded-md sm:rounded-lg text-center text-[11px]"
+                  >
+                    Spasi
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleVirtualKeyPress(".com")}
+                    className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-md sm:rounded-lg text-[10px]"
+                  >
+                    .com
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => handleVirtualKeyPress("DONE")}
+                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-md sm:rounded-lg text-[11px] shadow-sm"
+                  >
+                    Selesai / OK
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* COMPACT NUMPAD LAYOUT */
+              <div className="max-w-md mx-auto grid grid-cols-4 gap-1.5 select-none p-1">
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("7")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  7
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("8")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  8
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("9")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  9
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("BACKSPACE")}
+                  className="py-2.5 bg-rose-950/80 hover:bg-rose-900 text-rose-200 font-extrabold text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
+                >
+                  ⌫ Hapus
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("4")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  4
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("5")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  5
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("6")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  6
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("000")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold text-sm rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  +000
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("1")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  1
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("2")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  2
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("3")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  3
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("CLEAR")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  Reset All
+                </button>
+
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("0")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  0
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress(".")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  .
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress(",")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                >
+                  ,
+                </button>
+                <button
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleVirtualKeyPress("DONE")}
+                  className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm rounded-xl shadow-md transition-all cursor-pointer"
+                >
+                  OK / Selesai
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // ==========================================
   // RESELLER FULL LAYOUT REDIRECTION
   // ==========================================
   if (userRole === "reseller") {
@@ -4722,6 +5207,24 @@ export default function App() {
                 <Monitor className="h-3.5 w-3.5" />
                 <span className="hidden sm:inline">Landscape</span>
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVirtualKeyboard(!showVirtualKeyboard);
+                  if (keyboardMinimized) setKeyboardMinimized(false);
+                }}
+                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer border ${
+                  showVirtualKeyboard ? "bg-slate-800 text-emerald-400 border-slate-700" : "text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800"
+                }`}
+                title="Toggle Keyboard Virtual On-Screen"
+              >
+                <Keyboard className="h-3.5 w-3.5 text-emerald-400" />
+                <span className="hidden sm:inline">Keyboard</span>
+                <span className={`text-[9px] px-1 py-0.2 rounded font-black ${showVirtualKeyboard ? "bg-emerald-500 text-slate-950" : "bg-slate-800 text-slate-400"}`}>
+                  {showVirtualKeyboard ? "ON" : "OFF"}
+                </span>
+              </button>
             </div>
           </header>
 
@@ -4731,6 +5234,7 @@ export default function App() {
             {resellerActiveTab === "setoran" && renderResellerSetoran()}
           </div>
         </main>
+        {renderVirtualKeyboard()}
       </div>
     );
   }
@@ -5021,6 +5525,27 @@ export default function App() {
                 <span className="hidden md:inline">Desktop</span>
               </button>
             </div>
+
+            {/* Keyboard Virtual Toggle */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowVirtualKeyboard(!showVirtualKeyboard);
+                if (keyboardMinimized) setKeyboardMinimized(false);
+              }}
+              className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer text-[11px] border ${
+                showVirtualKeyboard
+                  ? "bg-slate-900 text-emerald-400 border-slate-700 shadow-xs"
+                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+              }`}
+              title="Toggle Keyboard Virtual On-Screen"
+            >
+              <Keyboard className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+              <span className="hidden sm:inline">Keyboard</span>
+              <span className={`text-[9px] px-1 py-0.2 rounded font-black ${showVirtualKeyboard ? "bg-emerald-500 text-slate-950" : "bg-slate-200 text-slate-600"}`}>
+                {showVirtualKeyboard ? "ON" : "OFF"}
+              </span>
+            </button>
           </div>
         </header>
 
@@ -10964,6 +11489,7 @@ export default function App() {
             }
           `}</style>
 
+        {renderVirtualKeyboard()}
       </main>
     </div>
   );
