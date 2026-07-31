@@ -2951,52 +2951,8 @@ export default function App() {
   // LOGIN SCREEN
   if (!userRole) {
     return (
-      <div className={`min-h-screen bg-slate-900 flex flex-col justify-center items-center p-4 selection:bg-emerald-500 selection:text-white transition-all ${
-        effectiveOrientation === "portrait" ? "max-w-md mx-auto shadow-2xl border-x border-slate-800" : ""
-      }`}>
-        <div className="w-full max-w-md mb-3 flex justify-end">
-          {/* Mode Tampilan / Orientation Selector */}
-          <div className="flex items-center gap-1 bg-slate-800/80 border border-slate-700 rounded-xl p-1 text-xs">
-            <button
-              type="button"
-              onClick={() => setDisplayOrientation("auto")}
-              className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                displayOrientation === "auto" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-700"
-              }`}
-              title="Otomatis menyesuaikan orientasi layar perangkat saat ini"
-            >
-              <RotateCw className="h-3 w-3" />
-              <span className="text-[10px]">Auto</span>
-              {displayOrientation === "auto" && (
-                <span className="text-[8px] text-emerald-200">({isDevicePortrait ? "Portrait" : "Landscape"})</span>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisplayOrientation("portrait")}
-              className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                displayOrientation === "portrait" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-700"
-              }`}
-              title="Mode Portrait (HP Mode Tegak)"
-            >
-              <Smartphone className="h-3 w-3" />
-              <span className="text-[10px]">Portrait</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setDisplayOrientation("landscape")}
-              className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                displayOrientation === "landscape" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-400 hover:text-white hover:bg-slate-700"
-              }`}
-              title="Mode Landscape (Laptop Mode Mendatar)"
-            >
-              <Monitor className="h-3 w-3" />
-              <span className="text-[10px]">Landscape</span>
-            </button>
-          </div>
-        </div>
-
-        <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl border border-slate-700/50 p-8 overflow-hidden relative">
+      <div className="min-h-screen w-full bg-slate-900 flex flex-col justify-center items-center p-4 sm:p-6 selection:bg-emerald-500 selection:text-white">
+        <div className="w-full max-w-md bg-slate-800 rounded-2xl shadow-2xl border border-slate-700/50 p-6 sm:p-8 overflow-hidden relative my-auto">
           {/* Accent Glow */}
           <div className="absolute top-0 left-1/4 w-1/2 h-1 bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 rounded-full"></div>
           
@@ -3107,9 +3063,48 @@ export default function App() {
             )}
           </div>
 
-          <div className="mt-8 pt-4 border-t border-slate-700/50 flex justify-between items-center text-[10px] text-slate-500">
-            <span>BASTIKA PARFUM v1.0.0</span>
-            <span>Cloud Sync Powered</span>
+          <div className="mt-6 pt-4 border-t border-slate-700/50 flex flex-wrap items-center justify-between gap-2 text-[10px] text-slate-400">
+            <div>
+              <span className="font-semibold text-slate-300">BASTIKA PARFUM</span>
+              <span className="text-slate-500 ml-1">v1.0.0</span>
+            </div>
+
+            {/* Mode Tampilan Selector inside card footer */}
+            <div className="flex items-center gap-1 bg-slate-900/80 border border-slate-700 rounded-lg p-1">
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("auto")}
+                className={`px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "auto" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
+                }`}
+                title="Otomatis mengikuti orientasi layar"
+              >
+                <RotateCw className="h-3 w-3" />
+                <span>Auto</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("portrait")}
+                className={`px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "portrait" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
+                }`}
+                title="Tampilan Mode HP"
+              >
+                <Smartphone className="h-3 w-3" />
+                <span>HP</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDisplayOrientation("landscape")}
+                className={`px-2 py-0.5 rounded font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  displayOrientation === "landscape" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
+                }`}
+                title="Tampilan Mode Desktop"
+              >
+                <Monitor className="h-3 w-3" />
+                <span>Desktop</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -4953,12 +4948,13 @@ export default function App() {
       </aside>
 
       {/* Main Content Pane */}
-      <main className="flex-1 flex flex-col min-w-0">
-        {/* Top Navbar */}
-        <header className="print:hidden bg-white border-b border-slate-200 py-3.5 px-4 sm:px-6 flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shrink-0">
+      <main className="flex-1 flex flex-col min-w-0 bg-slate-50">
+        {/* Top Navbar Header */}
+        <header className="print:hidden bg-white border-b border-slate-200 py-3 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 shrink-0">
+          {/* Left Title & App Name */}
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h1 className="text-lg sm:text-xl font-bold font-display text-slate-900 tracking-tight">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-base sm:text-lg font-bold font-display text-slate-900 tracking-tight">
                 {activeTab === 'dashboard' ? 'Ringkasan Laba & Omset' :
                  activeTab === 'shelves' ? 'Manajemen Rak Aroma' :
                  activeTab === 'stocks' ? 'Manajemen Stok & Inventori' :
@@ -4973,134 +4969,133 @@ export default function App() {
                  activeTab === 'printer_settings' ? 'Sistem Konektivitas & Pengaturan Printer' :
                  'Riwayat Semua Mutasi'}
               </h1>
-              <span className="text-xs font-normal text-slate-500 shrink-0">| Bastika Parfum</span>
+              <span className="text-xs font-medium text-slate-400 shrink-0">| Bastika Parfum</span>
             </div>
-            <p className="text-xs text-slate-500 mt-0.5 truncate">Sistem data real-time, sinkron otomatis ke seluruh perangkat.</p>
+            <p className="text-[11px] text-slate-500 mt-0.5 truncate hidden sm:block">Sistem data real-time, sinkron otomatis ke seluruh perangkat.</p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2 shrink-0">
-            {/* Mode Tampilan / Orientation Selector */}
-            <div className="flex items-center gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 text-xs shadow-inner">
+          {/* Right Status Badges & View Selector */}
+          <div className="flex items-center gap-2 shrink-0 ml-auto">
+            {/* Real-time Indicator status */}
+            <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-semibold ${
+              syncStatus === "synced" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"
+            }`}>
+              <span className={`h-1.5 w-1.5 rounded-full ${syncStatus === 'synced' ? 'bg-emerald-500' : 'bg-amber-500 animate-ping'}`} />
+              <span>{syncStatus === "synced" ? "Cloud Connected" : "Local Caching"}</span>
+            </div>
+
+            {/* Mode Tampilan Selector */}
+            <div className="flex items-center gap-0.5 bg-slate-100 border border-slate-200 rounded-lg p-0.5 text-xs shadow-inner">
               <button
                 type="button"
                 onClick={() => setDisplayOrientation("auto")}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  displayOrientation === "auto" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
+                className={`px-2 py-1 rounded font-bold transition-all flex items-center gap-1 cursor-pointer text-[11px] ${
+                  displayOrientation === "auto" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
                 }`}
-                title="Otomatis membaca orientasi layar perangkat saat ini"
+                title="Otomatis mengikuti layar perangkat"
               >
-                <RotateCw className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Auto</span>
-                {displayOrientation === "auto" && (
-                  <span className="text-[9px] opacity-80 font-normal">({isDevicePortrait ? "Portrait" : "Landscape"})</span>
-                )}
+                <RotateCw className="h-3 w-3" />
+                <span className="hidden md:inline">Auto</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setDisplayOrientation("portrait")}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  displayOrientation === "portrait" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
+                className={`px-2 py-1 rounded font-bold transition-all flex items-center gap-1 cursor-pointer text-[11px] ${
+                  displayOrientation === "portrait" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
                 }`}
-                title="Tampilan Portrait (HP Mode Tegak)"
+                title="Tampilan HP / Vertical"
               >
-                <Smartphone className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Portrait (HP)</span>
+                <Smartphone className="h-3 w-3" />
+                <span className="hidden md:inline">HP</span>
               </button>
 
               <button
                 type="button"
                 onClick={() => setDisplayOrientation("landscape")}
-                className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  displayOrientation === "landscape" ? "bg-emerald-600 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/70"
+                className={`px-2 py-1 rounded font-bold transition-all flex items-center gap-1 cursor-pointer text-[11px] ${
+                  displayOrientation === "landscape" ? "bg-emerald-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
                 }`}
-                title="Tampilan Landscape (Laptop/Tablet Mode Mendatar)"
+                title="Tampilan Desktop / Mendatar"
               >
-                <Monitor className="h-3.5 w-3.5" />
-                <span className="hidden sm:inline">Landscape</span>
+                <Monitor className="h-3 w-3" />
+                <span className="hidden md:inline">Desktop</span>
               </button>
             </div>
-
-            {/* Real-time Indicator status */}
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full border text-[11px] font-semibold ${
-              syncStatus === "synced" ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-amber-50 text-amber-800 border-amber-200"
-            }`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${syncStatus === 'synced' ? 'bg-emerald-500' : 'bg-amber-500 animate-ping'}`} />
-              {syncStatus === "synced" ? "Cloud Connected" : "Local Caching (Offline)"}
-            </div>
-
-            {/* Quick search bar for specific views */}
-            {["shelves", "stocks", "history"].includes(activeTab) && (
-              <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-1.5 shadow-sm">
-                
-                {/* Search input field */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    id="navbar-search-input"
-                    type="text"
-                    placeholder="Cari kata kunci..."
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    className="bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs w-48 focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-medium"
-                  />
-                </div>
-
-                {/* Column Selector */}
-                <div className="flex items-center gap-1">
-                  <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider pl-1">Kolom:</span>
-                  <select
-                    value={searchColumn}
-                    onChange={(e) => setSearchColumn(e.target.value)}
-                    className="bg-white border border-slate-200 rounded-xl px-2 py-1 text-[11px] focus:outline-none text-slate-700 font-bold cursor-pointer"
-                  >
-                    <option value="all">Semua Kolom</option>
-                    {activeTab === "shelves" && (
-                      <>
-                        <option value="rackNumber">Nomor Rak</option>
-                        <option value="scentName">Aroma Parfum</option>
-                      </>
-                    )}
-                    {activeTab === "stocks" && (
-                      <>
-                        <option value="scentName">Aroma Parfum</option>
-                        <option value="type">Jenis Gudang</option>
-                        <option value="size">Ukuran Botol</option>
-                      </>
-                    )}
-                    {activeTab === "history" && (
-                      <>
-                        <option value="id">ID Transaksi</option>
-                        <option value="scentName">Aroma Parfum</option>
-                        <option value="description">Keterangan</option>
-                        <option value="operatorEmail">Operator Kasir</option>
-                        <option value="customerName">Nama Pelanggan</option>
-                      </>
-                    )}
-                  </select>
-                </div>
-
-                {/* Case Sensitive Toggle Button */}
-                <button
-                  type="button"
-                  onClick={() => setSearchCaseSensitive(!searchCaseSensitive)}
-                  className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wide transition-all border cursor-pointer select-none ${
-                    searchCaseSensitive 
-                      ? "bg-rose-50 text-rose-700 border-rose-200 shadow-sm" 
-                      : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
-                  }`}
-                  title="Sensitif Huruf Kapital (Case-Sensitive)"
-                >
-                  <span className={`h-1.5 w-1.5 rounded-full ${searchCaseSensitive ? "bg-rose-500 animate-pulse" : "bg-slate-300"}`} />
-                  Aa Sensitif
-                </button>
-              </div>
-            )}
           </div>
         </header>
 
+        {/* Dedicated Secondary Filter Toolbar (Separated from header row to prevent overlapping) */}
+        {["shelves", "stocks", "history"].includes(activeTab) && (
+          <div className="print:hidden bg-slate-100/90 border-b border-slate-200 px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs">
+            {/* Search input field */}
+            <div className="relative min-w-[180px] flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+              <input
+                id="navbar-search-input"
+                type="text"
+                placeholder="Cari kata kunci..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-medium"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Column Selector */}
+              <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-xl px-2 py-1">
+                <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Kolom:</span>
+                <select
+                  value={searchColumn}
+                  onChange={(e) => setSearchColumn(e.target.value)}
+                  className="bg-transparent text-[11px] focus:outline-none text-slate-700 font-bold cursor-pointer"
+                >
+                  <option value="all">Semua Kolom</option>
+                  {activeTab === "shelves" && (
+                    <>
+                      <option value="rackNumber">Nomor Rak</option>
+                      <option value="scentName">Aroma Parfum</option>
+                    </>
+                  )}
+                  {activeTab === "stocks" && (
+                    <>
+                      <option value="scentName">Aroma Parfum</option>
+                      <option value="type">Jenis Gudang</option>
+                      <option value="size">Ukuran Botol</option>
+                    </>
+                  )}
+                  {activeTab === "history" && (
+                    <>
+                      <option value="id">ID Transaksi</option>
+                      <option value="scentName">Aroma Parfum</option>
+                      <option value="description">Keterangan</option>
+                      <option value="operatorEmail">Operator Kasir</option>
+                      <option value="customerName">Nama Pelanggan</option>
+                    </>
+                  )}
+                </select>
+              </div>
+
+              {/* Case Sensitive Toggle Button */}
+              <button
+                type="button"
+                onClick={() => setSearchCaseSensitive(!searchCaseSensitive)}
+                className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[10px] font-bold uppercase tracking-wide transition-all border cursor-pointer select-none ${
+                  searchCaseSensitive 
+                    ? "bg-rose-50 text-rose-700 border-rose-200 shadow-xs" 
+                    : "bg-white text-slate-500 border-slate-200 hover:bg-slate-50"
+                }`}
+                title="Sensitif Huruf Kapital (Case-Sensitive)"
+              >
+                <span className={`h-1.5 w-1.5 rounded-full ${searchCaseSensitive ? "bg-rose-500 animate-pulse" : "bg-slate-300"}`} />
+                Aa Sensitif
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* Dashboard content workspace container */}
-        <div className="print:hidden flex-1 p-6 overflow-y-auto">
+        <div className="print:hidden flex-1 p-3 sm:p-6 overflow-y-auto">
           
           {/* ==========================================
               1. DASHBOARD VIEW (Admin Only)
