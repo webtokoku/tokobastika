@@ -995,11 +995,12 @@ export default function App() {
   const [saleBottleCount, setSaleBottleCount] = useState<number>(1);
   const [saleTotalPrice, setSaleTotalPrice] = useState<number>(0);
   const [saleDescription, setSaleDescription] = useState("");
-  const [saleDiscountType, setSaleDiscountType] = useState<"none" | "free_bottle" | "nominal">("none");
+  const [saleDiscountType, setSaleDiscountType] = useState<"none" | "free_bottle" | "nominal" | "free_bottle_nominal">("none");
+  const [saleFreeBottleDiscount, setSaleFreeBottleDiscount] = useState<boolean>(false);
   const [saleDiscountNominal, setSaleDiscountNominal] = useState<number>(0);
   const [saleCustomerName, setSaleCustomerName] = useState("");
   const [saleClaimPromo, setSaleClaimPromo] = useState<boolean>(false);
-  const [saleNoBottle, setSaleNoBottle] = useState<boolean>(false);
+  const [saleNoBottle, setSaleNoBottle] = useState<boolean>(true);
   const [saleBringOwnBottle, setSaleBringOwnBottle] = useState<boolean>(false);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
 
@@ -1424,7 +1425,7 @@ export default function App() {
   // Price Calculation Logic for Sales
   useEffect(() => {
     let subtotal = 0;
-    let computedDiscount = 0;
+    let bottleDiscount = 0;
 
     if (saleItems.length > 0) {
       subtotal = saleItems.reduce((acc, item) => {
@@ -1438,20 +1439,15 @@ export default function App() {
         return acc + (baseCost * (item.bottleCount || 1));
       }, 0);
 
-      if (saleDiscountType === "free_bottle") {
-        computedDiscount = saleItems.reduce((acc, item) => {
+      if (saleFreeBottleDiscount) {
+        bottleDiscount = saleItems.reduce((acc, item) => {
           if (item.isBundling) return acc;
           const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
           return acc + (bottleFee * (item.bottleCount || 1));
         }, 0);
-      } else if (saleDiscountType === "nominal") {
-        computedDiscount = saleDiscountNominal;
       }
     } else if (saleInputMode === "bundling") {
       subtotal = (saleBundlingPrice || 0) * (saleBundlingCount || 1);
-      if (saleDiscountType === "nominal") {
-        computedDiscount = saleDiscountNominal;
-      }
     } else {
       // Fallback to single item from form
       const isHB = saleScent === "Hanya Botol";
@@ -1460,17 +1456,16 @@ export default function App() {
       const baseCost = ((saleVolume || 0) * pricePerMl) + bottleFee;
       subtotal = baseCost * (saleBottleCount || 1);
 
-      if (saleDiscountType === "free_bottle") {
+      if (saleFreeBottleDiscount) {
         const fullBottleFee = getBottleUnitPrice(saleBottleSize, saleBottleType, false, masterProducts, bottleSizes);
-        computedDiscount = fullBottleFee * (saleBottleCount || 1);
-      } else if (saleDiscountType === "nominal") {
-        computedDiscount = saleDiscountNominal;
+        bottleDiscount = fullBottleFee * (saleBottleCount || 1);
       }
     }
 
+    const computedDiscount = bottleDiscount + (saleDiscountNominal || 0);
     const computedTotal = Math.max(0, subtotal - computedDiscount);
     setSaleTotalPrice(computedTotal);
-  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleDiscountNominal, saleNoBottle, saleBringOwnBottle, masterProducts, saleBottleType, saleInputMode, saleBundlingPrice, saleBundlingCount]);
+  }, [saleScent, saleVolume, saleBottleSize, saleBottleCount, saleItems, prices, bottleSizes, saleDiscountType, saleFreeBottleDiscount, saleDiscountNominal, saleNoBottle, saleBringOwnBottle, masterProducts, saleBottleType, saleInputMode, saleBundlingPrice, saleBundlingCount]);
 
   // Currency Formatter helper (Indonesian Rupiah)
   const formatRupiah = (value: number) => {
@@ -1888,16 +1883,20 @@ export default function App() {
     const opEmail = currentUser?.email || customEmail || "client_operator@gmail.com";
 
     // Calculate total discount
-    let computedDiscount = 0;
-    if (saleDiscountType === "nominal") {
-      computedDiscount = saleDiscountNominal;
-    } else if (saleDiscountType === "free_bottle") {
-      computedDiscount = finalItems.reduce((acc, item) => {
+    let bottleDiscount = 0;
+    if (saleFreeBottleDiscount) {
+      bottleDiscount = finalItems.reduce((acc, item) => {
         if (item.isBundling) return acc;
         const bottlePrice = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
         return acc + (bottlePrice * (item.bottleCount || 1));
       }, 0);
     }
+    const nominalDiscount = saleDiscountNominal || 0;
+    const computedDiscount = bottleDiscount + nominalDiscount;
+
+    const savedDiscountType = (saleFreeBottleDiscount && nominalDiscount > 0)
+      ? "free_bottle_nominal"
+      : (saleFreeBottleDiscount ? "free_bottle" : (nominalDiscount > 0 ? "nominal" : "none"));
 
     // Determine representative legacy properties for compatibility
     const firstItem = finalItems[0];
@@ -1936,7 +1935,11 @@ export default function App() {
         : `${item.scentName} (${item.volumeMl}ml)${bSizeStr} x ${item.bottleCount}`;
     }).join(", ");
 
-    const desc = saleDescription || `Penjualan: ${itemsDescription}${saleDiscountType !== 'none' ? ` (Diskon: ${saleDiscountType === 'free_bottle' ? 'Gratis Botol' : formatRupiah(computedDiscount)})` : ''}`;
+    const descPromoStr = (saleFreeBottleDiscount && nominalDiscount > 0)
+      ? ` (Diskon: Gratis Botol + ${formatRupiah(nominalDiscount)})`
+      : (saleFreeBottleDiscount ? ` (Diskon: Gratis Botol)` : (nominalDiscount > 0 ? ` (Diskon: ${formatRupiah(nominalDiscount)})` : ""));
+
+    const desc = saleDescription || `Penjualan: ${itemsDescription}${descPromoStr}`;
 
     try {
       const txId = await addTransaction({
@@ -1949,7 +1952,7 @@ export default function App() {
         bottleType: representativeBottleType,
         bottleCount: representativeBottleCount,
         totalPrice: saleTotalPrice,
-        discountType: saleDiscountType,
+        discountType: savedDiscountType,
         discountNominal: computedDiscount,
         claimPromoOnThisTx: saleClaimPromo,
         noBottleStockDeduct: representativeNoBottle,
@@ -1971,7 +1974,7 @@ export default function App() {
         bottleType: representativeBottleType,
         bottleCount: representativeBottleCount,
         totalPrice: saleTotalPrice,
-        discountType: saleDiscountType,
+        discountType: savedDiscountType,
         discountNominal: computedDiscount,
         claimPromoOnThisTx: saleClaimPromo,
         noBottleStockDeduct: representativeNoBottle,
@@ -1992,10 +1995,11 @@ export default function App() {
       setSaleBottleCount(1);
       setSaleDescription("");
       setSaleDiscountType("none");
+      setSaleFreeBottleDiscount(false);
       setSaleDiscountNominal(0);
       setSaleCustomerName("");
       setSaleClaimPromo(false);
-      setSaleNoBottle(false);
+      setSaleNoBottle(true);
       setSaleBringOwnBottle(false);
       setSaleBundlingName("");
       setSaleBundlingPrice(0);
@@ -3454,10 +3458,24 @@ export default function App() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Left Panel: Katalog Paket Konsinyasi (Siap Jual) */}
           <div className="lg:col-span-2 space-y-4">
-            <h3 className="text-sm font-bold text-slate-300 flex items-center gap-2">
-              <ShoppingBag className="h-4.5 w-4.5 text-emerald-400" />
-              Katalog Paket Siap Jual
-            </h3>
+            {(() => {
+              const totalUnitsAll = myPackageStocks.reduce((sum, s) => sum + (s.quantity || 0), 0);
+              return (
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/60 border border-slate-800 rounded-2xl p-4">
+                  <div>
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <ShoppingBag className="h-4.5 w-4.5 text-emerald-400" />
+                      Katalog Paket Siap Jual (Reseller)
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Daftar stok paket bundling titipan yang saat ini ada pada Anda.</p>
+                  </div>
+                  <div className="bg-emerald-500/10 border border-emerald-500/30 px-4 py-2 rounded-xl text-center shrink-0">
+                    <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider block">Total Unit Titipan (All)</span>
+                    <span className="text-lg font-extrabold text-emerald-300 font-mono">{totalUnitsAll} Unit</span>
+                  </div>
+                </div>
+              );
+            })()}
             {myPackageStocks.length === 0 ? (
               <div className="bg-slate-950/40 border border-slate-800 rounded-2xl p-8 text-center text-slate-500 italic">
                 Belum ada paket bundling titipan yang dikirimkan oleh Admin ke Anda.
@@ -3812,7 +3830,17 @@ export default function App() {
                         </div>
 
                         <div className="space-y-1.5 text-xs">
-                          <span className="font-semibold text-slate-500 block text-[9px] uppercase tracking-wider">Daftar Paket Titipan Tersedia:</span>
+                          {(() => {
+                            const totalResellerUnits = myPackageStocks.reduce((sum, ps) => sum + (ps.quantity || 0), 0);
+                            return (
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold text-slate-500 block text-[9px] uppercase tracking-wider">Daftar Paket Titipan Tersedia:</span>
+                                <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-lg text-[10px] font-black">
+                                  Total Unit (All): {totalResellerUnits} pcs
+                                </span>
+                              </div>
+                            );
+                          })()}
                           {myPackageStocks.length === 0 ? (
                             <p className="text-slate-400 italic text-xs">Belum ada paket bundling yang dikirim ke reseller ini.</p>
                           ) : (
@@ -6425,7 +6453,7 @@ export default function App() {
                             setSaleScent("");
                             setSaleVolume(0);
                             setSaleBottleCount(1);
-                            setSaleNoBottle(false);
+                            setSaleNoBottle(true);
                             setSaleBringOwnBottle(false);
                           }}
                           className="w-full bg-emerald-50 hover:bg-emerald-100/80 active:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl py-3 px-4 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow"
@@ -6812,63 +6840,84 @@ export default function App() {
 
                   {/* Discount Section */}
                   <div className="bg-emerald-50/40 border border-emerald-100 rounded-2xl p-4 space-y-3">
-                    <label className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
-                      Promo & Diskon Transaksi (Opsional)
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
+                    <div className="flex justify-between items-center">
+                      <label className="block text-[11px] font-bold text-emerald-800 uppercase tracking-wider">
+                        Promo & Diskon Transaksi (Opsional)
+                      </label>
+                      {(saleFreeBottleDiscount || saleDiscountNominal > 0) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSaleFreeBottleDiscount(false);
+                            setSaleDiscountNominal(0);
+                            setSaleDiscountType("none");
+                          }}
+                          className="text-[10px] font-bold text-rose-600 hover:text-rose-800 underline cursor-pointer"
+                        >
+                          Reset Promo / Diskon
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {/* Promo Gratis Botol Toggle */}
                       <button
                         type="button"
                         onClick={() => {
-                          setSaleDiscountType("none");
-                          setSaleDiscountNominal(0);
+                          const nextState = !saleFreeBottleDiscount;
+                          setSaleFreeBottleDiscount(nextState);
+                          if (nextState && saleDiscountNominal > 0) {
+                            setSaleDiscountType("free_bottle_nominal");
+                          } else if (nextState) {
+                            setSaleDiscountType("free_bottle");
+                          } else if (saleDiscountNominal > 0) {
+                            setSaleDiscountType("nominal");
+                          } else {
+                            setSaleDiscountType("none");
+                          }
                         }}
-                        className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
-                          saleDiscountType === "none"
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                        }`}
-                      >
-                        Tanpa Diskon
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSaleDiscountType("free_bottle");
-                          setSaleDiscountNominal(0);
-                        }}
-                        className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
-                          saleDiscountType === "free_bottle"
+                        className={`py-2.5 px-3 rounded-xl border text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer ${
+                          saleFreeBottleDiscount
                             ? "bg-emerald-600 text-white border-emerald-600 shadow-sm"
                             : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
                         }`}
-                        title="Memberikan potongan promo harga botol gratis"
+                        title="Klik untuk mengaktifkan/mematikan promo potongan botol gratis"
                       >
-                        Gratis Botol
+                        <span className="text-sm">🎁</span>
+                        <span>{saleFreeBottleDiscount ? "✓ Promo Gratis Botol (Aktif)" : "+ Promo Gratis Botol"}</span>
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => setSaleDiscountType("nominal")}
-                        className={`py-2 px-3 rounded-xl border text-xs font-bold transition-all text-center cursor-pointer ${
-                          saleDiscountType === "nominal"
-                            ? "bg-emerald-600 text-white border-emerald-600"
-                            : "bg-white text-slate-600 border-slate-200 hover:bg-slate-50"
-                        }`}
-                      >
-                        Potongan (Rp)
-                      </button>
-                    </div>
 
-                    {saleDiscountType === "nominal" && (
-                      <div className="animate-in fade-in slide-in-from-top-1 duration-200">
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Nominal Potongan Harga (Rupiah)</label>
+                      {/* Potongan Harga Nominal Input */}
+                      <div className="relative">
+                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">Rp</span>
                         <input
                           id="sales-discount-input"
                           type="number"
-                          placeholder="Contoh: 10000"
+                          min="0"
+                          placeholder="Potongan Harga (Nominal)..."
                           value={saleDiscountNominal || ""}
-                          onChange={(e) => setSaleDiscountNominal(Math.max(0, Number(e.target.value)))}
-                          className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800"
+                          onChange={(e) => {
+                            const val = Math.max(0, Number(e.target.value));
+                            setSaleDiscountNominal(val);
+                            if (val > 0 && saleFreeBottleDiscount) {
+                              setSaleDiscountType("free_bottle_nominal");
+                            } else if (val > 0) {
+                              setSaleDiscountType("nominal");
+                            } else if (saleFreeBottleDiscount) {
+                              setSaleDiscountType("free_bottle");
+                            } else {
+                              setSaleDiscountType("none");
+                            }
+                          }}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-semibold"
                         />
+                      </div>
+                    </div>
+
+                    {saleFreeBottleDiscount && saleDiscountNominal > 0 && (
+                      <div className="p-2 bg-emerald-100/60 border border-emerald-200 rounded-xl text-[11px] font-bold text-emerald-900 flex items-center gap-1.5">
+                        <Check className="h-4 w-4 text-emerald-700 shrink-0" />
+                        <span>Kombinasi promo aktif: <strong>Gratis Botol + Potongan Rp {saleDiscountNominal.toLocaleString("id-ID")}</strong></span>
                       </div>
                     )}
                   </div>
@@ -6995,47 +7044,39 @@ export default function App() {
                           </span>
                         </div>
 
-                        {((saleDiscountType === "free_bottle" && (saleItems.length > 0 ? true : (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount > 0)) ||
-                          (saleDiscountType === "nominal" && saleDiscountNominal > 0)) && (
-                          <div className="flex justify-between gap-6 text-emerald-600 font-bold bg-emerald-50/50 border border-emerald-100/30 rounded-lg p-1.5">
-                            <span className="flex items-center gap-1">
-                              <span>🎁</span>
-                              <span>
-                                {saleClaimPromo 
-                                  ? "Klaim Promo Loyalitas:" 
-                                  : saleDiscountType === "free_bottle" 
-                                  ? "Diskon Gratis Botol:" 
-                                  : "Potongan Harga (Diskon):"
-                                }
-                              </span>
-                            </span>
-                            <span className="font-mono">
-                              -{formatRupiah(
-                                saleDiscountType === "free_bottle" 
-                                  ? (saleItems.length > 0 
+                        {(saleFreeBottleDiscount || saleDiscountNominal > 0) && (
+                          <div className="space-y-1.5 pt-1">
+                            {saleFreeBottleDiscount && (
+                              <div className="flex justify-between gap-6 text-emerald-600 font-bold bg-emerald-50/50 border border-emerald-100/30 rounded-lg p-1.5 text-xs">
+                                <span className="flex items-center gap-1">
+                                  <span>🎁</span>
+                                  <span>Diskon Gratis Botol:</span>
+                                </span>
+                                <span className="font-mono">
+                                  -{formatRupiah(
+                                    saleItems.length > 0 
                                       ? saleItems.reduce((acc, item) => {
-                                          let bottleFee = 0;
-                                          if (item.bottleSize !== "None") {
-                                            const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
-                                            const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
-                                            if (matchedBottleProduct) {
-                                              bottleFee = matchedBottleProduct.price;
-                                            } else {
-                                              const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
-                                              if (matchedBottle) {
-                                                bottleFee = item.bottleType === "Plastik"
-                                                  ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
-                                                  : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
-                                              }
-                                            }
-                                          }
+                                          if (item.isBundling) return acc;
+                                          const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
                                           return acc + (bottleFee * item.bottleCount);
                                         }, 0)
                                       : (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount
-                                    ) 
-                                  : saleDiscountNominal
-                              )}
-                            </span>
+                                  )}
+                                </span>
+                              </div>
+                            )}
+
+                            {saleDiscountNominal > 0 && (
+                              <div className="flex justify-between gap-6 text-emerald-600 font-bold bg-emerald-50/50 border border-emerald-100/30 rounded-lg p-1.5 text-xs">
+                                <span className="flex items-center gap-1">
+                                  <span>🏷️</span>
+                                  <span>Potongan Harga (Nominal):</span>
+                                </span>
+                                <span className="font-mono">
+                                  -{formatRupiah(saleDiscountNominal)}
+                                </span>
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
