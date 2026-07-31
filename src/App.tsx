@@ -999,7 +999,7 @@ export default function App() {
   const [saleDiscountNominal, setSaleDiscountNominal] = useState<number>(0);
   const [saleCustomerName, setSaleCustomerName] = useState("");
   const [saleClaimPromo, setSaleClaimPromo] = useState<boolean>(false);
-  const [saleNoBottle, setSaleNoBottle] = useState<boolean>(true);
+  const [saleNoBottle, setSaleNoBottle] = useState<boolean>(false);
   const [saleBringOwnBottle, setSaleBringOwnBottle] = useState<boolean>(false);
   const [saleItems, setSaleItems] = useState<SaleItem[]>([]);
 
@@ -1879,7 +1879,8 @@ export default function App() {
           bottleSize: saleBottleSize,
           bottleType: saleBottleSize !== "None" ? saleBottleType : undefined,
           bottleCount: saleBottleCount,
-          noBottleStockDeduct: saleNoBottle
+          noBottleStockDeduct: saleNoBottle,
+          bringOwnBottle: saleBottleSize !== "None" ? saleBringOwnBottle : false
         });
       }
     }
@@ -1994,7 +1995,8 @@ export default function App() {
       setSaleDiscountNominal(0);
       setSaleCustomerName("");
       setSaleClaimPromo(false);
-      setSaleNoBottle(true);
+      setSaleNoBottle(false);
+      setSaleBringOwnBottle(false);
       setSaleBundlingName("");
       setSaleBundlingPrice(0);
       setSaleBundlingCount(1);
@@ -2165,7 +2167,8 @@ export default function App() {
           bottleSize: saleBottleSize,
           bottleType: saleBottleType,
           bottleCount: saleBottleCount,
-          noBottleStockDeduct: saleNoBottle
+          noBottleStockDeduct: saleNoBottle,
+          bringOwnBottle: saleBottleSize !== "None" ? saleBringOwnBottle : false
         }
       ];
     }
@@ -2182,15 +2185,16 @@ export default function App() {
       bottleType: saleBottleType || undefined,
       bottleCount: saleBottleCount || undefined,
       noBottleStockDeduct: saleNoBottle,
+      bringOwnBottle: saleBringOwnBottle,
       totalPrice: saleTotalPrice,
       discountType: saleDiscountType,
       discountNominal: saleDiscountType === "free_bottle" 
         ? (saleItems.length > 0 
             ? saleItems.reduce((acc, item) => {
-                const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+                const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
                 return acc + (bottleFee * (item.bottleCount || 1));
               }, 0)
-            : getBottleUnitPrice(saleBottleSize, saleBottleType, saleNoBottle, masterProducts, bottleSizes) * (saleBottleCount || 1)
+            : getBottleUnitPrice(saleBottleSize, saleBottleType, false, masterProducts, bottleSizes) * (saleBottleCount || 1)
           )
         : saleDiscountNominal,
       description: saleDescription || "Pratinjau Nota Penjualan",
@@ -6421,8 +6425,8 @@ export default function App() {
                             setSaleScent("");
                             setSaleVolume(0);
                             setSaleBottleCount(1);
-                            setSaleNoBottle(true);
-                            setSaleBringOwnBottle(true);
+                            setSaleNoBottle(false);
+                            setSaleBringOwnBottle(false);
                           }}
                           className="w-full bg-emerald-50 hover:bg-emerald-100/80 active:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-xl py-3 px-4 text-xs font-bold transition-all flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow"
                         >
@@ -6902,24 +6906,7 @@ export default function App() {
                               const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === item.scentName)?.pricePerMl || 0);
                               const essenceCost = item.volumeMl * pricePerMl * item.bottleCount;
 
-                              let bottleFee = 0;
-                              if (item.bottleSize !== "None") {
-                                const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
-                                const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
-                                if (matchedBottleProduct) {
-                                  bottleFee = matchedBottleProduct.price;
-                                } else {
-                                  const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
-                                  if (matchedBottle) {
-                                    bottleFee = item.bottleType === "Plastik"
-                                      ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
-                                      : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
-                                  }
-                                }
-                              }
-                              if (item.noBottleStockDeduct) {
-                                bottleFee = 0;
-                              }
+                              const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
                               const bottleCost = bottleFee * item.bottleCount;
                               const itemTotal = essenceCost + bottleCost;
 
@@ -6934,13 +6921,13 @@ export default function App() {
                                     {item.bottleSize !== "None" && (
                                       <div className="flex justify-between gap-6">
                                         <span>
-                                          {item.noBottleStockDeduct 
+                                          {item.bringOwnBottle 
                                             ? `Bawa Botol (${item.bottleSize} x ${item.bottleCount}):` 
                                             : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}):`
                                           }
                                         </span>
                                         <span className="font-mono text-slate-700">
-                                          {item.noBottleStockDeduct ? "Rp 0" : formatRupiah(bottleCost)}
+                                          {item.bringOwnBottle ? "Rp 0" : formatRupiah(bottleCost)}
                                         </span>
                                       </div>
                                     )}
@@ -6969,13 +6956,13 @@ export default function App() {
                             {saleBottleSize !== "None" && (
                               <div className="flex justify-between gap-6">
                                 <span>
-                                  {saleNoBottle 
+                                  {saleBringOwnBottle 
                                     ? `Bawa Botol Sendiri (${saleBottleSize} x ${saleBottleCount} pcs):` 
                                     : `Botol ${saleBottleSize} (${saleBottleCount} pcs):`
                                   }
                                 </span>
                                 <span className="font-mono text-slate-800">
-                                  {saleNoBottle ? "Rp 0 (Bawa Sendiri)" : formatRupiah((bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount)}
+                                  {saleBringOwnBottle ? "Rp 0 (Bawa Sendiri)" : formatRupiah(getBottleUnitPrice(saleBottleSize, saleBottleType, false, masterProducts, bottleSizes) * saleBottleCount)}
                                 </span>
                               </div>
                             )}
@@ -6994,25 +6981,7 @@ export default function App() {
                                     const matchedProduct = masterProducts.find(p => p.category === "essence" && p.referenceKey === item.scentName);
                                     const pricePerMl = matchedProduct ? matchedProduct.price : (prices.find(p => p.scentName === item.scentName)?.pricePerMl || 0);
                                     const essenceCost = item.volumeMl * pricePerMl * item.bottleCount;
-
-                                    let bottleFee = 0;
-                                    if (item.bottleSize !== "None") {
-                                      const bType = item.bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
-                                      const matchedBottleProduct = masterProducts.find(p => p.category === bType && p.referenceKey === item.bottleSize);
-                                      if (matchedBottleProduct) {
-                                        bottleFee = matchedBottleProduct.price;
-                                      } else {
-                                        const matchedBottle = bottleSizes.find(b => b.size === item.bottleSize);
-                                        if (matchedBottle) {
-                                          bottleFee = item.bottleType === "Plastik"
-                                            ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
-                                            : (matchedBottle.priceKaca ?? matchedBottle.price ?? 10000);
-                                        }
-                                      }
-                                    }
-                                    if (item.noBottleStockDeduct) {
-                                      bottleFee = 0;
-                                    }
+                                    const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
                                     const bottleCost = bottleFee * item.bottleCount;
                                     return acc + essenceCost + bottleCost;
                                   }, 0)
@@ -7020,7 +6989,7 @@ export default function App() {
                                 ? (saleBundlingPrice || 0) * (saleBundlingCount || 1)
                                 : (
                                     (saleScent ? saleVolume * (prices.find(p => p.scentName === saleScent)?.pricePerMl || 0) * saleBottleCount : 0) +
-                                    (saleBottleSize !== "None" && !saleNoBottle ? (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount : 0)
+                                    (saleBottleSize !== "None" ? getBottleUnitPrice(saleBottleSize, saleBottleType, saleBringOwnBottle, masterProducts, bottleSizes) * saleBottleCount : 0)
                                   )
                             )}
                           </span>
