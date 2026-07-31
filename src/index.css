@@ -25,3 +25,12 @@ body, html {
   text-size-adjust: 100% !important;
 }
 
+/* Hide scrollbar for clean horizontal icon ribbons */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+

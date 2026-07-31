@@ -145,7 +145,10 @@ import {
   PanelLeftOpen,
   Smartphone,
   Monitor,
-  RotateCw
+  RotateCw,
+  Menu,
+  ChevronUp,
+  ChevronDown
 } from "lucide-react";
 
 export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
@@ -4487,13 +4490,16 @@ export default function App() {
   // RESELLER FULL LAYOUT REDIRECTION
   // ==========================================
   if (userRole === "reseller") {
+    const resellerNavItems = [
+      { id: "penjualan", label: "Penjualan Paket", icon: ShoppingBag },
+      { id: "setoran", label: "Status Setoran Uang", icon: Wallet },
+    ];
+
     return (
-      <div className={`min-h-screen bg-slate-900 text-slate-100 selection:bg-emerald-500 selection:text-white font-sans transition-all w-full ${
-        displayOrientation === "landscape"
-          ? "flex flex-row overflow-x-auto min-w-full"
-          : displayOrientation === "portrait"
-          ? "flex flex-col w-full"
-          : "flex flex-col md:flex-row w-full"
+      <div className={`bg-slate-900 text-slate-100 selection:bg-emerald-500 selection:text-white font-sans transition-all w-full ${
+        effectiveOrientation === "landscape"
+          ? "h-screen max-h-screen overflow-hidden flex flex-row min-w-full"
+          : "min-h-screen flex flex-col w-full"
       }`}>
         {/* Toast Notification */}
         {toast && (
@@ -4509,92 +4515,164 @@ export default function App() {
           </div>
         )}
 
-        {/* Reseller Sidebar */}
+        {/* Reseller Sidebar Navigation */}
         <aside className={`bg-slate-950 text-slate-300 flex flex-col border-r border-slate-800 shrink-0 transition-all duration-300 ${
-          displayOrientation === "landscape"
-            ? (isSidebarCollapsed ? "w-20" : "w-64")
-            : displayOrientation === "portrait"
-            ? "w-full"
-            : (isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64")
+          effectiveOrientation === "landscape"
+            ? (isSidebarCollapsed ? "w-20 h-full" : "w-64 h-full")
+            : "w-full border-b border-slate-800"
         }`}>
-          <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isSidebarCollapsed ? "flex-col gap-3" : ""}`}>
+          {/* Header Bar */}
+          <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
             <div className="flex items-center gap-3 overflow-hidden">
-              <div className="h-9 w-9 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
+              <div className="h-8 w-8 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
                 <img src={invoiceSettings?.appIconUrl || "/icon.jpg"} alt="Bastika Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
               </div>
-              {!isSidebarCollapsed && (
+              {(effectiveOrientation === "landscape" ? !isSidebarCollapsed : true) && (
                 <div className="overflow-hidden">
-                  <h2 className="font-bold font-display text-white tracking-tight text-sm truncate">BASTIKA RESELLER</h2>
-                  <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase block">KONSINYASI</span>
+                  <h2 className="font-bold font-display text-white tracking-tight text-xs truncate">BASTIKA RESELLER</h2>
+                  <span className="text-[9px] text-emerald-400 font-semibold tracking-wider uppercase block truncate">
+                    {currentUser?.email || customEmail}
+                  </span>
                 </div>
               )}
             </div>
 
-            {/* Sidebar Collapse Toggle Button */}
+            {/* Toggle Button */}
             <button
               type="button"
               onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
               className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-white transition-all cursor-pointer flex items-center justify-center border border-slate-700 shrink-0"
-              title={isSidebarCollapsed ? "Perluas Menu Sidebar (Tampilkan Teks)" : "Ciutkan Menu Sidebar (Hanya Ikon)"}
+              title={isSidebarCollapsed ? "Buka / Perluas Menu" : "Ciutkan / Minimalkan Menu"}
             >
-              {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+              {effectiveOrientation === "portrait" ? (
+                isSidebarCollapsed ? <Menu className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />
+              ) : (
+                isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />
+              )}
             </button>
           </div>
 
-          <div className={`px-4 py-3 border-b border-slate-800 bg-slate-900/40 ${isSidebarCollapsed ? "text-center" : ""}`}>
-            {!isSidebarCollapsed ? (
-              <>
-                <p className="text-[10px] font-semibold text-slate-500 uppercase">Reseller Aktif</p>
-                <p className="text-xs font-bold text-white truncate mt-0.5">{currentUser?.email || customEmail}</p>
-              </>
-            ) : (
-              <div 
-                className="h-8 w-8 mx-auto rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs uppercase cursor-pointer"
-                title={`Reseller: ${currentUser?.email || customEmail}`}
-              >
-                {(currentUser?.email || customEmail || "R").substring(0, 2)}
+          {/* PORTRAIT MODE MENU: Horizontal Ribbon when collapsed, Slide-down drawer when expanded */}
+          {effectiveOrientation === "portrait" ? (
+            isSidebarCollapsed ? (
+              /* Minimized Horizontal Scroll Ribbon in HP mode */
+              <div className="flex items-center gap-2 p-2 bg-slate-900 border-b border-slate-800 overflow-x-auto no-scrollbar shrink-0 justify-around">
+                {resellerNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = resellerActiveTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setResellerActiveTab(item.id)}
+                      title={item.label}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shrink-0 ${
+                        isActive
+                          ? "bg-emerald-600 text-white shadow-md ring-1 ring-emerald-400"
+                          : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                      }`}
+                    >
+                      <Icon className="h-4 w-4" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={handleSignOut}
+                  title="Keluar"
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-700 transition-all cursor-pointer flex items-center gap-1 text-xs shrink-0"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span className="hidden sm:inline">Keluar</span>
+                </button>
               </div>
-            )}
-          </div>
+            ) : (
+              /* Expanded Slide-down Drawer in HP mode */
+              <nav className="p-3 bg-slate-900 border-b border-slate-800 space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                {resellerNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = resellerActiveTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => {
+                        setResellerActiveTab(item.id);
+                        setIsSidebarCollapsed(true);
+                      }}
+                      className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                        isActive ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      <Icon className="h-4.5 w-4.5 shrink-0" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={handleSignOut}
+                  className="w-full flex items-center justify-center gap-2 py-2 px-3 mt-2 bg-slate-800 hover:bg-red-950 hover:text-red-300 border border-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+                >
+                  <LogOut className="h-4 w-4" />
+                  <span>Keluar Sistem</span>
+                </button>
+              </nav>
+            )
+          ) : (
+            /* LANDSCAPE / DESKTOP MODE MENU (Vertical Sidebar) */
+            <>
+              <div className={`px-4 py-3 border-b border-slate-800 bg-slate-900/40 ${isSidebarCollapsed ? "text-center" : ""}`}>
+                {!isSidebarCollapsed ? (
+                  <>
+                    <p className="text-[10px] font-semibold text-slate-500 uppercase">Reseller Aktif</p>
+                    <p className="text-xs font-bold text-white truncate mt-0.5">{currentUser?.email || customEmail}</p>
+                  </>
+                ) : (
+                  <div 
+                    className="h-8 w-8 mx-auto rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-emerald-400 font-bold text-xs uppercase cursor-pointer"
+                    title={`Reseller: ${currentUser?.email || customEmail}`}
+                  >
+                    {(currentUser?.email || customEmail || "R").substring(0, 2)}
+                  </div>
+                )}
+              </div>
 
-          <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-            <button
-              onClick={() => setResellerActiveTab("penjualan")}
-              title="Penjualan Paket Konsinyasi"
-              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                resellerActiveTab === "penjualan" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              <ShoppingBag className="h-4.5 w-4.5 shrink-0" />
-              {!isSidebarCollapsed && <span>Penjualan Paket</span>}
-            </button>
+              <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+                {resellerNavItems.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = resellerActiveTab === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setResellerActiveTab(item.id)}
+                      title={item.label}
+                      className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                        isActive ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                      }`}
+                    >
+                      <Icon className="h-4.5 w-4.5 shrink-0" />
+                      {!isSidebarCollapsed && <span>{item.label}</span>}
+                    </button>
+                  );
+                })}
+              </nav>
 
-            <button
-              onClick={() => setResellerActiveTab("setoran")}
-              title="Status Setoran Uang & Tagihan"
-              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                resellerActiveTab === "setoran" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              <Wallet className="h-4.5 w-4.5 shrink-0" />
-              {!isSidebarCollapsed && <span>Status Setoran Uang</span>}
-            </button>
-          </nav>
-
-          <div className="p-3 border-t border-slate-800 bg-slate-900/40">
-            <button
-              onClick={handleSignOut}
-              title="Keluar Sistem"
-              className={`w-full flex items-center justify-center ${isSidebarCollapsed ? "p-2.5" : "gap-2 py-2 px-3"} bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer`}
-            >
-              <LogOut className="h-4 w-4 shrink-0" />
-              {!isSidebarCollapsed && <span>Keluar Sistem</span>}
-            </button>
-          </div>
+              <div className="p-3 border-t border-slate-800 bg-slate-900/40">
+                <button
+                  onClick={handleSignOut}
+                  title="Keluar Sistem"
+                  className={`w-full flex items-center justify-center ${isSidebarCollapsed ? "p-2.5" : "gap-2 py-2 px-3"} bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer`}
+                >
+                  <LogOut className="h-4 w-4 shrink-0" />
+                  {!isSidebarCollapsed && <span>Keluar Sistem</span>}
+                </button>
+              </div>
+            </>
+          )}
         </aside>
 
         {/* Reseller Main Panel */}
-        <main className="flex-1 flex flex-col min-w-0 bg-slate-900 text-slate-100 overflow-y-auto">
+        <main className={`flex-1 flex flex-col min-w-0 bg-slate-900 text-slate-100 ${
+          effectiveOrientation === "landscape" ? "h-full overflow-hidden" : "overflow-y-auto"
+        }`}>
           {/* Header */}
           <header className="bg-slate-950 border-b border-slate-800 py-4 px-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
@@ -4658,13 +4736,28 @@ export default function App() {
   }
 
   // MAIN DASHBOARD LAYOUT
+  const adminNavList = [
+    { id: "dashboard", label: "Dashboard & Laba", icon: TrendingUp, adminOnly: true },
+    { id: "shelves", label: "Sistem Rak Aroma", icon: Layers, adminOnly: false },
+    { id: "stocks", label: "Inventori Stok Master", icon: Box, adminOnly: false },
+    { id: "master_products", label: "Master Produk", icon: Package, adminOnly: true },
+    { id: "sales", label: "Input Penjualan (Kasir)", icon: PlusCircle, adminOnly: false },
+    { id: "consignment", label: "Konsinyasi & Bundling", icon: Layers, adminOnly: true },
+    { id: "purchases", label: "Catat Belanja Stok", icon: ArrowDownRight, adminOnly: true },
+    { id: "accounting", label: "Akuntansi & Kas Besar", icon: Wallet, adminOnly: true },
+    { id: "history", label: "Riwayat Transaksi", icon: Calendar, adminOnly: true },
+    { id: "users", label: "Hak Akses Client", icon: Users, adminOnly: true },
+    { id: "invoice_settings", label: "Format Kop Invoice", icon: Settings, adminOnly: true },
+    { id: "db_management", label: "Pengaturan Database", icon: Database, adminOnly: true },
+    { id: "customers", label: "Database Pelanggan", icon: UserCheck, adminOnly: false },
+    { id: "printer_settings", label: "Pengaturan Printer", icon: Printer, adminOnly: false },
+  ].filter(item => !item.adminOnly || userRole === "admin");
+
   return (
-    <div className={`min-h-screen bg-slate-50 text-slate-800 selection:bg-emerald-500 selection:text-white font-sans transition-all w-full ${
-      displayOrientation === "landscape"
-        ? "flex flex-row overflow-x-auto min-w-full"
-        : displayOrientation === "portrait"
-        ? "flex flex-col w-full"
-        : "flex flex-col md:flex-row w-full"
+    <div className={`bg-slate-50 text-slate-800 selection:bg-emerald-500 selection:text-white font-sans transition-all w-full ${
+      effectiveOrientation === "landscape"
+        ? "h-screen max-h-screen overflow-hidden flex flex-row min-w-full"
+        : "min-h-screen flex flex-col w-full"
     }`}>
       {/* Toast Notification */}
       {toast && (
@@ -4681,274 +4774,180 @@ export default function App() {
       )}
 
       {/* Sidebar Navigation */}
-      <aside className={`print:hidden bg-slate-900 text-slate-300 flex flex-col border-r border-slate-800 shrink-0 transition-all duration-300 ${
-        displayOrientation === "landscape"
-          ? (isSidebarCollapsed ? "w-20" : "w-64")
-          : displayOrientation === "portrait"
-          ? "w-full"
-          : (isSidebarCollapsed ? "w-full md:w-20" : "w-full md:w-64")
+      <aside className={`print:hidden bg-slate-900 text-slate-300 flex flex-col shrink-0 transition-all duration-300 ${
+        effectiveOrientation === "landscape"
+          ? (isSidebarCollapsed ? "w-20 h-full border-r border-slate-800" : "w-64 h-full border-r border-slate-800")
+          : "w-full border-b border-slate-800"
       }`}>
         {/* Brand Header */}
-        <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isSidebarCollapsed ? "flex-col gap-3 text-center" : ""}`}>
+        <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
           <div className="flex items-center gap-3 overflow-hidden">
-            <div className="h-9 w-9 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
+            <div className="h-8 w-8 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
               <img src={invoiceSettings?.appIconUrl || "/icon.jpg"} alt="Bastika Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
             </div>
-            {!isSidebarCollapsed && (
+            {(effectiveOrientation === "landscape" ? !isSidebarCollapsed : true) && (
               <div className="overflow-hidden">
-                <h2 className="font-bold font-display text-white tracking-tight text-sm truncate">BASTIKA PARFUM</h2>
-                <span className="text-[10px] text-emerald-400 font-semibold tracking-wider uppercase block">Online Cloud DB</span>
+                <h2 className="font-bold font-display text-white tracking-tight text-xs truncate">BASTIKA PARFUM</h2>
+                <span className="text-[9px] text-emerald-400 font-semibold tracking-wider uppercase block truncate">
+                  {currentUser?.email || customEmail} ({userRole})
+                </span>
               </div>
             )}
           </div>
 
-          {/* Toggle Sidebar Collapse Button */}
+          {/* Toggle Sidebar Button */}
           <button
             type="button"
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
             className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-400 hover:text-white transition-all cursor-pointer flex items-center justify-center border border-slate-700 shrink-0"
-            title={isSidebarCollapsed ? "Perluas Menu Sidebar (Tampilkan Teks)" : "Ciutkan Menu Sidebar (Hanya Ikon)"}
+            title={isSidebarCollapsed ? "Buka / Perluas Menu" : "Ciutkan / Minimalkan Menu"}
           >
-            {isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+            {effectiveOrientation === "portrait" ? (
+              isSidebarCollapsed ? <Menu className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />
+            ) : (
+              isSidebarCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />
+            )}
           </button>
         </div>
 
-        {/* Current User Info */}
-        <div className={`px-4 py-3 border-b border-slate-800 bg-slate-950/40 ${isSidebarCollapsed ? "flex justify-center" : ""}`}>
-          {isSidebarCollapsed ? (
-            <div 
-              className="h-8 w-8 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs uppercase cursor-pointer"
-              title={`User: ${currentUser?.email || customEmail} (${userRole})`}
-            >
-              {(currentUser?.email || customEmail || "U").substring(0, 2)}
+        {/* PORTRAIT / HP MODE MENU */}
+        {effectiveOrientation === "portrait" ? (
+          isSidebarCollapsed ? (
+            /* Sleek Horizontal Scroll Ribbon when Minimized in HP Mode */
+            <div className="flex items-center gap-1.5 p-2 bg-slate-900 border-b border-slate-800 overflow-x-auto no-scrollbar shrink-0">
+              {adminNavList.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    title={item.label}
+                    className={`p-2 rounded-xl transition-all flex items-center justify-center shrink-0 cursor-pointer ${
+                      isActive
+                        ? "bg-emerald-600 text-white font-bold shadow-md ring-1 ring-emerald-400 scale-105"
+                        : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4" />
+                  </button>
+                );
+              })}
+              <button
+                onClick={handleSignOut}
+                title="Keluar Sistem"
+                className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950 text-slate-400 hover:text-rose-300 border border-slate-700 transition-all cursor-pointer shrink-0"
+              >
+                <LogOut className="h-4 w-4" />
+              </button>
             </div>
           ) : (
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="h-8 w-8 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs uppercase shrink-0">
-                {(currentUser?.email || customEmail || "U").substring(0, 2)}
-              </div>
-              <div className="overflow-hidden">
-                <p className="text-xs font-semibold text-white truncate">{currentUser?.email || customEmail}</p>
-                <div className="flex items-center gap-1 mt-0.5">
-                  <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
-                    userRole === "admin" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-slate-800 text-slate-400 border border-slate-700"
-                  }`}>
-                    {userRole}
-                  </span>
-                  {syncStatus === "offline" && (
-                    <span className="text-[8px] text-amber-400 font-bold uppercase">(Offline Mode)</span>
-                  )}
+            /* Slide-down Drawer when Expanded in HP Mode */
+            <nav className="p-3 bg-slate-900 border-b border-slate-800 max-h-[60vh] overflow-y-auto space-y-1 animate-in slide-in-from-top-2 duration-200">
+              <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider mb-2">Menu Utama ({adminNavList.length} Menu)</p>
+              {adminNavList.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => {
+                      setActiveTab(item.id);
+                      setIsSidebarCollapsed(true);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                      isActive ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <Icon className="h-4.5 w-4.5 shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 py-2 px-3 mt-3 bg-slate-800 hover:bg-red-950 hover:text-red-300 border border-slate-700 text-slate-300 text-xs font-semibold rounded-xl transition-colors cursor-pointer"
+              >
+                <LogOut className="h-4 w-4" />
+                <span>Keluar Sistem</span>
+              </button>
+            </nav>
+          )
+        ) : (
+          /* DESKTOP / LANDSCAPE MODE MENU */
+          <>
+            <div className={`px-4 py-3 border-b border-slate-800 bg-slate-950/40 ${isSidebarCollapsed ? "flex justify-center" : ""}`}>
+              {isSidebarCollapsed ? (
+                <div 
+                  className="h-8 w-8 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs uppercase cursor-pointer"
+                  title={`User: ${currentUser?.email || customEmail} (${userRole})`}
+                >
+                  {(currentUser?.email || customEmail || "U").substring(0, 2)}
                 </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Navigation Menu */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {!isSidebarCollapsed && (
-            <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider mb-2">Menu Utama</p>
-          )}
-          
-          {userRole === "admin" && (
-            <button
-              id="nav-dashboard-btn"
-              onClick={() => setActiveTab("dashboard")}
-              title="Dashboard & Laba"
-              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                activeTab === "dashboard" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              <TrendingUp className="h-4.5 w-4.5 shrink-0" />
-              {!isSidebarCollapsed && <span>Dashboard & Laba</span>}
-            </button>
-          )}
-
-          <button
-            id="nav-shelves-btn"
-            onClick={() => setActiveTab("shelves")}
-            title="Sistem Rak Aroma"
-            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "shelves" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            <Layers className="h-4.5 w-4.5 shrink-0" />
-            {!isSidebarCollapsed && <span>Sistem Rak Aroma</span>}
-          </button>
-
-          <button
-            id="nav-stocks-btn"
-            onClick={() => setActiveTab("stocks")}
-            title="Inventori Stok Master"
-            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "stocks" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            <Box className="h-4.5 w-4.5 shrink-0" />
-            {!isSidebarCollapsed && <span>Inventori Stok Master</span>}
-          </button>
-
-          {userRole === "admin" && (
-            <button
-              id="nav-master-products-btn"
-              onClick={() => setActiveTab("master_products")}
-              title="Master Produk"
-              className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                activeTab === "master_products" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-              }`}
-            >
-              <Package className="h-4.5 w-4.5 shrink-0" />
-              {!isSidebarCollapsed && <span>Master Produk</span>}
-            </button>
-          )}
-
-          <button
-            id="nav-sales-btn"
-            onClick={() => setActiveTab("sales")}
-            title="Input Penjualan (Kasir)"
-            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "sales" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            <PlusCircle className="h-4.5 w-4.5 shrink-0" />
-            {!isSidebarCollapsed && <span>Input Penjualan (Kasir)</span>}
-          </button>
-
-          {userRole === "admin" && (
-            <>
-              <button
-                id="nav-consignment-btn"
-                onClick={() => setActiveTab("consignment")}
-                title="Konsinyasi & Bundling"
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "consignment" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <Layers className="h-4.5 w-4.5 shrink-0" />
-                {!isSidebarCollapsed && <span>Konsinyasi & Bundling</span>}
-              </button>
-
-              <button
-                id="nav-purchases-btn"
-                onClick={() => setActiveTab("purchases")}
-                title="Catat Belanja Stok"
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "purchases" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <ArrowDownRight className="h-4.5 w-4.5 shrink-0" />
-                {!isSidebarCollapsed && <span>Catat Belanja Stok</span>}
-              </button>
-
-              {!isSidebarCollapsed ? (
-                <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider pt-4 mb-2">Keuangan & Akses</p>
               ) : (
-                <div className="border-t border-slate-800 my-2" />
+                <div className="flex items-center gap-3 overflow-hidden">
+                  <div className="h-8 w-8 rounded-full bg-slate-700 border border-slate-600 flex items-center justify-center text-white font-bold text-xs uppercase shrink-0">
+                    {(currentUser?.email || customEmail || "U").substring(0, 2)}
+                  </div>
+                  <div className="overflow-hidden">
+                    <p className="text-xs font-semibold text-white truncate">{currentUser?.email || customEmail}</p>
+                    <div className="flex items-center gap-1 mt-0.5">
+                      <span className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                        userRole === "admin" ? "bg-emerald-950 text-emerald-300 border border-emerald-800" : "bg-slate-800 text-slate-400 border border-slate-700"
+                      }`}>
+                        {userRole}
+                      </span>
+                      {syncStatus === "offline" && (
+                        <span className="text-[8px] text-amber-400 font-bold uppercase">(Offline Mode)</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
+            </div>
 
+            <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+              {!isSidebarCollapsed && (
+                <p className="text-[10px] font-bold text-slate-500 px-3 uppercase tracking-wider mb-2">Menu Utama</p>
+              )}
+              {adminNavList.map((item) => {
+                const Icon = item.icon;
+                const isActive = activeTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    onClick={() => setActiveTab(item.id)}
+                    title={item.label}
+                    className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
+                      isActive ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
+                    }`}
+                  >
+                    <Icon className="h-4.5 w-4.5 shrink-0" />
+                    {!isSidebarCollapsed && <span>{item.label}</span>}
+                  </button>
+                );
+              })}
+            </nav>
+
+            <div className="p-3 border-t border-slate-800 bg-slate-950/40">
               <button
-                id="nav-accounting-btn"
-                onClick={() => setActiveTab("accounting")}
-                title="Akuntansi & Kas Besar"
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "accounting" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
+                id="logout-btn"
+                onClick={handleSignOut}
+                title="Keluar Sistem"
+                className={`w-full flex items-center justify-center ${isSidebarCollapsed ? "p-2.5" : "gap-2 py-2 px-3"} bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer`}
               >
-                <Wallet className="h-4.5 w-4.5 shrink-0" />
-                {!isSidebarCollapsed && <span>Akuntansi & Kas Besar</span>}
+                <LogOut className="h-4 w-4 shrink-0" />
+                {!isSidebarCollapsed && <span>Keluar Sistem</span>}
               </button>
-
-              <button
-                id="nav-history-btn"
-                onClick={() => setActiveTab("history")}
-                title="Riwayat Transaksi"
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "history" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <Calendar className="h-4.5 w-4.5 shrink-0" />
-                {!isSidebarCollapsed && <span>Riwayat Transaksi</span>}
-              </button>
-
-              <button
-                id="nav-users-btn"
-                onClick={() => setActiveTab("users")}
-                title="Hak Akses Client"
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "users" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <Users className="h-4.5 w-4.5 shrink-0" />
-                {!isSidebarCollapsed && <span>Hak Akses Client</span>}
-              </button>
-
-              <button
-                id="nav-invoice-settings-btn"
-                onClick={() => setActiveTab("invoice_settings")}
-                title="Format Kop Invoice"
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "invoice_settings" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <Settings className="h-4.5 w-4.5 shrink-0" />
-                {!isSidebarCollapsed && <span>Format Kop Invoice</span>}
-              </button>
-
-              <button
-                id="nav-db-management-btn"
-                onClick={() => setActiveTab("db_management")}
-                title="Pengaturan Database"
-                className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-                  activeTab === "db_management" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-                }`}
-              >
-                <Database className="h-4.5 w-4.5 shrink-0" />
-                {!isSidebarCollapsed && <span>Pengaturan Database</span>}
-              </button>
-            </>
-          )}
-
-          <button
-            id="nav-customers-btn"
-            onClick={() => setActiveTab("customers")}
-            title="Database Pelanggan"
-            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "customers" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            <UserCheck className="h-4.5 w-4.5 shrink-0" />
-            {!isSidebarCollapsed && <span>Database Pelanggan</span>}
-          </button>
-
-          <button
-            id="nav-printer-settings-btn"
-            onClick={() => setActiveTab("printer_settings")}
-            title="Pengaturan Printer"
-            className={`w-full flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"} rounded-xl text-xs font-medium transition-colors cursor-pointer ${
-              activeTab === "printer_settings" ? "bg-emerald-600 text-white font-bold shadow-md" : "text-slate-400 hover:bg-slate-800 hover:text-white"
-            }`}
-          >
-            <Printer className="h-4.5 w-4.5 shrink-0" />
-            {!isSidebarCollapsed && <span>Pengaturan Printer</span>}
-          </button>
-        </nav>
-
-        {/* Footer info & Logout */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/40">
-          <button
-            id="logout-btn"
-            onClick={handleSignOut}
-            title="Keluar Sistem"
-            className={`w-full flex items-center justify-center ${isSidebarCollapsed ? "p-2.5" : "gap-2 py-2 px-3"} bg-slate-800 hover:bg-red-950 hover:text-red-300 hover:border-red-900 border border-slate-700 text-slate-300 text-xs font-semibold rounded-lg transition-colors cursor-pointer`}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {!isSidebarCollapsed && <span>Keluar Sistem</span>}
-          </button>
-        </div>
+            </div>
+          </>
+        )}
       </aside>
 
       {/* Main Content Pane */}
-      <main className="flex-1 flex flex-col min-w-0 bg-slate-50">
+      <main className={`flex-1 flex flex-col min-w-0 bg-slate-50 ${
+        effectiveOrientation === "landscape" ? "h-full overflow-hidden" : ""
+      }`}>
         {/* Top Navbar Header */}
         <header className="print:hidden bg-white border-b border-slate-200 py-3 px-4 sm:px-6 flex flex-wrap items-center justify-between gap-3 shrink-0">
           {/* Left Title & App Name */}
