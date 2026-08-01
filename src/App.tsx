@@ -334,9 +334,20 @@ export default function App() {
     const applyInputMode = () => {
       const inputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
       inputs.forEach((input) => {
+        if (input.type === "file" || input.type === "checkbox" || input.type === "radio") return;
         if (showVirtualKeyboard) {
+          if (!input.hasAttribute("data-orig-readonly")) {
+            input.setAttribute("data-orig-readonly", input.readOnly ? "true" : "false");
+          }
           input.setAttribute("inputmode", "none");
+          if (input.getAttribute("data-orig-readonly") !== "true") {
+            input.readOnly = true;
+          }
         } else {
+          if (input.hasAttribute("data-orig-readonly")) {
+            input.readOnly = input.getAttribute("data-orig-readonly") === "true";
+            input.removeAttribute("data-orig-readonly");
+          }
           if (input.type === "number") {
             input.setAttribute("inputmode", "numeric");
           } else {
@@ -363,9 +374,15 @@ export default function App() {
           const labelText = inputEl.placeholder || inputEl.name || inputEl.id || inputEl.ariaLabel || "Kolom Input Teks/Angka";
           setFocusedInputLabel(labelText);
 
-          // Force inputmode="none" on focus to immediately block native OS software keyboard
+          // Force inputmode="none" & readOnly on focus to immediately block native OS software keyboard
           if (showVirtualKeyboard) {
+            if (!inputEl.hasAttribute("data-orig-readonly")) {
+              inputEl.setAttribute("data-orig-readonly", inputEl.readOnly ? "true" : "false");
+            }
             inputEl.setAttribute("inputmode", "none");
+            if (inputEl.getAttribute("data-orig-readonly") !== "true") {
+              inputEl.readOnly = true;
+            }
 
             // Auto-unhide (if dismissed with X) & unminimize keyboard
             setKeyboardDismissedTemp(false);
