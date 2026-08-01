@@ -251,9 +251,27 @@ export default function App() {
   const [loginPassword, setLoginPassword] = useState("");
   const [showLoginPassword, setShowLoginPassword] = useState(false);
 
-  // Minimizable Sidebar & Display Orientation States
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(false);
-  const [displayOrientation, setDisplayOrientation] = useState<"auto" | "portrait" | "landscape">("auto");
+  // Minimizable Sidebar & Display Orientation States (persisted in localStorage across browser reloads)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("bastika_sidebar_collapsed");
+        if (saved !== null) return saved === "true";
+      } catch (e) {}
+    }
+    return false;
+  });
+  const [displayOrientation, setDisplayOrientation] = useState<"auto" | "portrait" | "landscape">((): "auto" | "portrait" | "landscape" => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("bastika_display_orientation");
+        if (saved === "auto" || saved === "portrait" || saved === "landscape") {
+          return saved;
+        }
+      } catch (e) {}
+    }
+    return "auto";
+  });
   const [isDevicePortrait, setIsDevicePortrait] = useState<boolean>(() => {
     if (typeof window !== "undefined") {
       return window.innerHeight > window.innerWidth;
@@ -1655,6 +1673,22 @@ export default function App() {
       } catch (e) {}
     }
   }, [adminActiveConsignmentTab]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && displayOrientation) {
+      try {
+        localStorage.setItem("bastika_display_orientation", displayOrientation);
+      } catch (e) {}
+    }
+  }, [displayOrientation]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem("bastika_sidebar_collapsed", String(isSidebarCollapsed));
+      } catch (e) {}
+    }
+  }, [isSidebarCollapsed]);
 
   // Validate activeTab against role permissions (e.g. client role cannot view admin-only tabs)
   useEffect(() => {
