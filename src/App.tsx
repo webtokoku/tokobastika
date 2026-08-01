@@ -274,7 +274,27 @@ export default function App() {
     : displayOrientation;
 
   // Virtual On-Screen Floating Keyboard States (Floating, Draggable, & Prevents Mobile Auto-Zoom)
-  const [showVirtualKeyboard, setShowVirtualKeyboard] = useState<boolean>(false);
+  const [showVirtualKeyboard, setShowVirtualKeyboard] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem("bastika_vk_enabled") === "true";
+    } catch {
+      return false;
+    }
+  });
+
+  const handleToggleVirtualKeyboard = (enabled?: boolean) => {
+    setShowVirtualKeyboard((prev) => {
+      const nextVal = enabled !== undefined ? enabled : !prev;
+      try {
+        localStorage.setItem("bastika_vk_enabled", String(nextVal));
+      } catch {}
+      if (nextVal && keyboardMinimized) {
+        setKeyboardMinimized(false);
+      }
+      return nextVal;
+    });
+  };
+
   const [keyboardType, setKeyboardType] = useState<"qwerty" | "numpad">("qwerty");
   const [keyboardCaps, setKeyboardCaps] = useState<boolean>(false);
   const [keyboardMinimized, setKeyboardMinimized] = useState<boolean>(false);
@@ -486,7 +506,66 @@ export default function App() {
     } else if (key === "SPACE") {
       newValue = currentValue.slice(0, start) + " " + currentValue.slice(end);
       newCursorPos = start + 1;
-    } else if (key === "ENTER" || key === "DONE" || key === "OK") {
+    } else if (key === "TAB") {
+      const focusableInputs = Array.from(
+        document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+          'input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([disabled]), textarea:not([disabled])'
+        )
+      ).filter((el) => {
+        const style = window.getComputedStyle(el);
+        return style.display !== "none" && style.visibility !== "hidden";
+      });
+
+      if (focusableInputs.length > 0) {
+        const currentIndex = focusableInputs.indexOf(targetInput);
+        const nextIndex = (currentIndex + 1) % focusableInputs.length;
+        const nextInput = focusableInputs[nextIndex];
+        if (nextInput) {
+          nextInput.focus();
+          try {
+            nextInput.select();
+          } catch {}
+          setFocusedInputElement(nextInput);
+          const labelText = nextInput.placeholder || nextInput.name || nextInput.id || nextInput.ariaLabel || "Kolom Input";
+          setFocusedInputLabel(labelText);
+        }
+      }
+      return;
+    } else if (key === "ENTER") {
+      if (targetInput.tagName === "TEXTAREA") {
+        newValue = currentValue.slice(0, start) + "\n" + currentValue.slice(end);
+        newCursorPos = start + 1;
+      } else {
+        const focusableInputs = Array.from(
+          document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>(
+            'input:not([type="hidden"]):not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([disabled]), textarea:not([disabled])'
+          )
+        ).filter((el) => {
+          const style = window.getComputedStyle(el);
+          return style.display !== "none" && style.visibility !== "hidden";
+        });
+
+        const currentIndex = focusableInputs.indexOf(targetInput);
+        if (currentIndex !== -1 && currentIndex < focusableInputs.length - 1) {
+          const nextInput = focusableInputs[currentIndex + 1];
+          nextInput.focus();
+          try {
+            nextInput.select();
+          } catch {}
+          setFocusedInputElement(nextInput);
+          const labelText = nextInput.placeholder || nextInput.name || nextInput.id || nextInput.ariaLabel || "Kolom Input";
+          setFocusedInputLabel(labelText);
+        } else {
+          targetInput.blur();
+          if (targetInput.form) {
+            try {
+              targetInput.form.requestSubmit?.();
+            } catch {}
+          }
+        }
+        return;
+      }
+    } else if (key === "DONE" || key === "OK") {
       targetInput.blur();
       return;
     } else if (key === "000") {
@@ -4836,7 +4915,7 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => setShowVirtualKeyboard(false)}
+                onClick={() => handleToggleVirtualKeyboard(false)}
                 className="p-1 text-slate-400 hover:text-white cursor-pointer"
                 title="Tutup Keyboard"
               >
@@ -4862,23 +4941,6 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
-                {/* Keyboard Size Control */}
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[9px]">
-                  {[1.0, 1.2, 1.4, 1.6].map((sc) => (
-                    <button
-                      key={sc}
-                      type="button"
-                      onClick={() => handleSetKeyboardScale(sc)}
-                      className={`px-1.5 py-0.2 rounded font-bold transition-all cursor-pointer ${
-                        keyboardScale === sc ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
-                      }`}
-                      title={`Ukuran Keyboard ${Math.round(sc * 100)}%`}
-                    >
-                      {sc === 1.0 ? "M" : sc === 1.2 ? "L" : sc === 1.4 ? "XL" : "XXL"}
-                    </button>
-                  ))}
-                </div>
-
                 {/* Reset Position Button */}
                 <button
                   type="button"
@@ -4937,7 +4999,7 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => setShowVirtualKeyboard(false)}
+                  onClick={() => handleToggleVirtualKeyboard(false)}
                   className="p-1 bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-rose-200 rounded-lg transition-all cursor-pointer"
                   title="Tutup Keyboard Virtual"
                 >
@@ -5042,21 +5104,30 @@ export default function App() {
                   </button>
                 </div>
 
-                {/* Row 5: Action Row */}
+                {/* Row 5: Action Row with TAB & ENTER */}
                 <div className="flex gap-1 justify-center pt-0.5">
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => setKeyboardType("numpad")}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-md sm:rounded-lg text-[11px]"
+                    onClick={() => handleVirtualKeyPress("TAB")}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-sky-400 font-bold rounded-md sm:rounded-lg text-[11px] cursor-pointer"
+                    title="Pindah ke input berikutnya"
                   >
-                    123 Numpad
+                    TAB ➔
+                  </button>
+                  <button
+                    type="button"
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => setKeyboardType("numpad")}
+                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold rounded-md sm:rounded-lg text-[11px] cursor-pointer"
+                  >
+                    123
                   </button>
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("CLEAR")}
-                    className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-md sm:rounded-lg text-[11px]"
+                    className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-bold rounded-md sm:rounded-lg text-[11px] cursor-pointer"
                   >
                     Hapus
                   </button>
@@ -5064,30 +5135,23 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("SPACE")}
-                    className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-bold rounded-md sm:rounded-lg text-center text-[11px]"
+                    className="flex-1 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-bold rounded-md sm:rounded-lg text-center text-[11px] cursor-pointer"
                   >
                     Spasi
                   </button>
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleVirtualKeyPress(".com")}
-                    className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-md sm:rounded-lg text-[10px]"
+                    onClick={() => handleVirtualKeyPress("ENTER")}
+                    className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-md sm:rounded-lg text-[11px] cursor-pointer shadow-sm"
+                    title="Enter / Pindah Input"
                   >
-                    .com
-                  </button>
-                  <button
-                    type="button"
-                    onMouseDown={(e) => e.preventDefault()}
-                    onClick={() => handleVirtualKeyPress("DONE")}
-                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-md sm:rounded-lg text-[11px] shadow-sm"
-                  >
-                    Selesai / OK
+                    ENTER ↵
                   </button>
                 </div>
               </div>
             ) : (
-              /* COMPACT NUMPAD LAYOUT */
+              /* COMPACT NUMPAD LAYOUT WITH TAB & ENTER */
               <div className="max-w-md mx-auto grid grid-cols-4 gap-1.5 select-none p-1">
                 <button
                   type="button"
@@ -5117,7 +5181,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("BACKSPACE")}
-                  className="py-2.5 bg-rose-950/80 hover:bg-rose-900 text-rose-200 font-extrabold text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
+                  className="py-2.5 bg-rose-950/80 hover:bg-rose-900 text-rose-200 font-extrabold text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer flex items-center justify-center"
                 >
                   ⌫ Hapus
                 </button>
@@ -5150,7 +5214,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("000")}
-                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold text-sm rounded-xl shadow-xs transition-all cursor-pointer"
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer"
                 >
                   +000
                 </button>
@@ -5182,10 +5246,11 @@ export default function App() {
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleVirtualKeyPress("CLEAR")}
-                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
+                  onClick={() => handleVirtualKeyPress("TAB")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-sky-400 font-extrabold text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer"
+                  title="Pindah ke input berikutnya"
                 >
-                  Reset All
+                  TAB ➔
                 </button>
 
                 <button
@@ -5207,18 +5272,19 @@ export default function App() {
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleVirtualKeyPress(",")}
-                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-base rounded-xl shadow-xs transition-all cursor-pointer"
+                  onClick={() => handleVirtualKeyPress("CLEAR")}
+                  className="py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer"
                 >
-                  ,
+                  Reset
                 </button>
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
-                  onClick={() => handleVirtualKeyPress("DONE")}
-                  className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-sm rounded-xl shadow-md transition-all cursor-pointer"
+                  onClick={() => handleVirtualKeyPress("ENTER")}
+                  className="py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer"
+                  title="Enter / Pindah Input"
                 >
-                  OK / Selesai
+                  ENTER ↵
                 </button>
               </div>
             )}
@@ -5471,10 +5537,7 @@ export default function App() {
 
               <button
                 type="button"
-                onClick={() => {
-                  setShowVirtualKeyboard(!showVirtualKeyboard);
-                  if (keyboardMinimized) setKeyboardMinimized(false);
-                }}
+                onClick={() => handleToggleVirtualKeyboard()}
                 className={`px-2.5 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer border ${
                   showVirtualKeyboard ? "bg-slate-800 text-emerald-400 border-slate-700" : "text-slate-400 hover:text-white hover:bg-slate-800 border-slate-800"
                 }`}
@@ -5794,10 +5857,7 @@ export default function App() {
             {/* Keyboard Virtual Toggle */}
             <button
               type="button"
-              onClick={() => {
-                setShowVirtualKeyboard(!showVirtualKeyboard);
-                if (keyboardMinimized) setKeyboardMinimized(false);
-              }}
+              onClick={() => handleToggleVirtualKeyboard()}
               className={`px-2 py-1 rounded-lg font-bold transition-all flex items-center gap-1 cursor-pointer text-[11px] border ${
                 showVirtualKeyboard
                   ? "bg-slate-900 text-emerald-400 border-slate-700 shadow-xs"
