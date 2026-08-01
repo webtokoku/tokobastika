@@ -425,18 +425,33 @@ export default function App() {
 
             // Always auto-position virtual keyboard centered horizontally on screen (equal left & right margins)
             const rect = inputEl.getBoundingClientRect();
-            const panelMaxWidth = window.innerWidth >= 640 ? 560 : 520;
-            const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95);
-            const kbWidth = targetKbWidth * keyboardScale;
-            const kbHeight = 320 * keyboardScale;
+            const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
+            const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
+            const kbHeight = 350 * keyboardScale;
             
             // Center horizontally on screen for 100% equal margin left and margin right
-            let posX = Math.max(16, (window.innerWidth - kbWidth) / 2);
+            let posX = Math.max(12, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 12));
             
+            // Determine vertical position: place ABOVE textbox if textbox is near bottom or in bottom half
             let posY = rect.bottom + 8;
-            if (posY + kbHeight > window.innerHeight - 16) {
-              posY = Math.max(16, rect.top - kbHeight - 8);
+            if (posY + kbHeight > window.innerHeight - 12 || rect.top > window.innerHeight * 0.5) {
+              const aboveY = rect.top - kbHeight - 8;
+              if (aboveY >= 12) {
+                posY = aboveY;
+              } else {
+                // If neither above nor below fits without overlap, scroll input box gently into center view
+                inputEl.scrollIntoView({ block: "center", behavior: "smooth" });
+                const newRect = inputEl.getBoundingClientRect();
+                if (newRect.top - kbHeight - 8 >= 12) {
+                  posY = newRect.top - kbHeight - 8;
+                } else {
+                  posY = Math.max(12, Math.min(newRect.bottom + 8, window.innerHeight - kbHeight - 12));
+                }
+              }
             }
+
+            // Strictly clamp posY so no part of the keyboard is ever cut off by screen boundaries
+            posY = Math.max(12, Math.min(posY, window.innerHeight - kbHeight - 12));
             setKeyboardPos({ x: posX, y: posY });
           }
         }
@@ -457,10 +472,11 @@ export default function App() {
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
-    const panelMaxWidth = window.innerWidth >= 640 ? 560 : 520;
+    const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
     const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
-    const currentX = keyboardPos?.x ?? Math.max(16, (window.innerWidth - targetKbWidth) / 2);
-    const currentY = keyboardPos?.y ?? Math.max(16, window.innerHeight - (320 * keyboardScale) - 20);
+    const kbHeight = 350 * keyboardScale;
+    const currentX = keyboardPos?.x ?? Math.max(12, (window.innerWidth - targetKbWidth) / 2);
+    const currentY = keyboardPos?.y ?? Math.max(12, window.innerHeight - kbHeight - 20);
 
     dragStartPosRef.current = {
       mouseX: clientX,
@@ -488,8 +504,12 @@ export default function App() {
       let newX = dragStartPosRef.current.initialX + deltaX;
       let newY = dragStartPosRef.current.initialY + deltaY;
 
-      const maxX = Math.max(12, window.innerWidth - 140);
-      const maxY = Math.max(12, window.innerHeight - 80);
+      const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
+      const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
+      const kbHeight = 350 * keyboardScale;
+
+      const maxX = Math.max(12, window.innerWidth - targetKbWidth - 12);
+      const maxY = Math.max(12, window.innerHeight - kbHeight - 12);
       newX = Math.max(12, Math.min(maxX, newX));
       newY = Math.max(12, Math.min(maxY, newY));
 
@@ -5022,10 +5042,18 @@ export default function App() {
 
     const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
     const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
-    const defaultX = Math.max(16, (window.innerWidth - targetKbWidth) / 2);
-    const defaultY = Math.max(16, window.innerHeight - (340 * keyboardScale) - 20);
-    const posX = keyboardPos?.x ?? defaultX;
-    const posY = keyboardPos?.y ?? defaultY;
+    const kbHeight = 350 * keyboardScale;
+
+    // Default centered position with 100% equal left/right margins and screen edge clamping
+    const defaultX = Math.max(12, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 12));
+    const defaultY = Math.max(12, window.innerHeight - kbHeight - 20);
+
+    let posX = keyboardPos?.x ?? defaultX;
+    let posY = keyboardPos?.y ?? defaultY;
+
+    // Guarantee no part of keyboard is cut off by screen boundaries
+    posX = Math.max(12, Math.min(posX, window.innerWidth - targetKbWidth - 12));
+    posY = Math.max(12, Math.min(posY, window.innerHeight - kbHeight - 12));
 
     const isCapsActive = keyboardCapsMode !== "off";
 
@@ -5111,20 +5139,21 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     isKeyboardUserMovedRef.current = false;
+                    const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
+                    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
+                    const kbHeight = 350 * keyboardScale;
+                    let pX = Math.max(12, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 12));
+
                     if (focusedInputElement) {
                       const rect = focusedInputElement.getBoundingClientRect();
-                      const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
-                      const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95);
-                      const kbWidth = targetKbWidth * keyboardScale;
-                      const kbHeight = 340 * keyboardScale;
-                      let pX = Math.max(16, (window.innerWidth - kbWidth) / 2);
                       let pY = rect.bottom + 8;
-                      if (pY + kbHeight > window.innerHeight - 16) {
-                        pY = Math.max(16, rect.top - kbHeight - 8);
+                      if (pY + kbHeight > window.innerHeight - 12 || rect.top > window.innerHeight * 0.5) {
+                        pY = rect.top - kbHeight - 8;
                       }
+                      pY = Math.max(12, Math.min(pY, window.innerHeight - kbHeight - 12));
                       setKeyboardPos({ x: pX, y: pY });
                     } else {
-                      setKeyboardPos(null);
+                      setKeyboardPos({ x: pX, y: Math.max(12, window.innerHeight - kbHeight - 20) });
                     }
                   }}
                   className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 rounded text-[11px] sm:text-xs font-bold cursor-pointer touch-manipulation"
