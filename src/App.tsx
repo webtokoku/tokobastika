@@ -281,6 +281,7 @@ export default function App() {
       return false;
     }
   });
+  const [keyboardDismissedTemp, setKeyboardDismissedTemp] = useState<boolean>(false);
 
   const handleToggleVirtualKeyboard = (enabled?: boolean) => {
     setShowVirtualKeyboard((prev) => {
@@ -288,7 +289,8 @@ export default function App() {
       try {
         localStorage.setItem("bastika_vk_enabled", String(nextVal));
       } catch {}
-      if (nextVal && keyboardMinimized) {
+      if (nextVal) {
+        setKeyboardDismissedTemp(false);
         setKeyboardMinimized(false);
       }
       return nextVal;
@@ -352,7 +354,7 @@ export default function App() {
 
   // Track focused input elements globally & auto-position floating keyboard near target input ONLY if Keyboard ON
   useEffect(() => {
-    const handleFocusIn = (e: FocusEvent) => {
+    const handleInputTargetEvent = (e: Event) => {
       const target = e.target as HTMLElement;
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
         const inputEl = target as HTMLInputElement | HTMLTextAreaElement;
@@ -364,31 +366,28 @@ export default function App() {
           // Force inputmode="none" on focus to immediately block native OS software keyboard
           if (showVirtualKeyboard) {
             inputEl.setAttribute("inputmode", "none");
-          }
 
-          // Auto-select numpad for numerical fields
-          if (
-            inputEl.type === "number" || 
-            inputEl.inputMode === "numeric" || 
-            inputEl.inputMode === "decimal" || 
-            inputEl.id?.includes("price") || 
-            inputEl.id?.includes("nominal") || 
-            inputEl.id?.includes("amount") || 
-            inputEl.id?.includes("qty") || 
-            inputEl.id?.includes("volume")
-          ) {
-            setKeyboardType("numpad");
-          } else {
-            setKeyboardType("qwerty");
-          }
-
-          // Unminimize keyboard on focus ONLY if user activated Virtual Keyboard switch ON
-          if (showVirtualKeyboard) {
+            // Auto-unhide (if dismissed with X) & unminimize keyboard
+            setKeyboardDismissedTemp(false);
             setKeyboardMinimized(false);
-          }
 
-          // Position virtual keyboard floating near target input if user hasn't manually moved it
-          if (showVirtualKeyboard && !isKeyboardUserMovedRef.current) {
+            // Auto-select numpad for numerical fields
+            if (
+              inputEl.type === "number" || 
+              inputEl.inputMode === "numeric" || 
+              inputEl.inputMode === "decimal" || 
+              inputEl.id?.includes("price") || 
+              inputEl.id?.includes("nominal") || 
+              inputEl.id?.includes("amount") || 
+              inputEl.id?.includes("qty") || 
+              inputEl.id?.includes("volume")
+            ) {
+              setKeyboardType("numpad");
+            } else {
+              setKeyboardType("qwerty");
+            }
+
+            // Always auto-position virtual keyboard near target input field
             const rect = inputEl.getBoundingClientRect();
             const kbWidth = Math.min(420, window.innerWidth - 20) * keyboardScale;
             const kbHeight = 240 * keyboardScale;
@@ -403,8 +402,12 @@ export default function App() {
       }
     };
 
-    document.addEventListener("focusin", handleFocusIn);
-    return () => document.removeEventListener("focusin", handleFocusIn);
+    document.addEventListener("focusin", handleInputTargetEvent);
+    document.addEventListener("click", handleInputTargetEvent);
+    return () => {
+      document.removeEventListener("focusin", handleInputTargetEvent);
+      document.removeEventListener("click", handleInputTargetEvent);
+    };
   }, [effectiveOrientation, showVirtualKeyboard, keyboardScale]);
 
   // Window-level Mouse & Touch listeners for High-Sensitivity Draggable Virtual Keyboard
@@ -4875,7 +4878,7 @@ export default function App() {
   // RENDER VIRTUAL KEYBOARD COMPONENT
   // ==========================================
   const renderVirtualKeyboard = () => {
-    if (!showVirtualKeyboard) return null;
+    if (!showVirtualKeyboard || keyboardDismissedTemp) return null;
 
     const defaultX = Math.max(10, (window.innerWidth - 440) / 2);
     const defaultY = Math.max(10, window.innerHeight - 290);
@@ -4915,9 +4918,9 @@ export default function App() {
               </button>
               <button
                 type="button"
-                onClick={() => handleToggleVirtualKeyboard(false)}
+                onClick={() => setKeyboardDismissedTemp(true)}
                 className="p-1 text-slate-400 hover:text-white cursor-pointer"
-                title="Tutup Keyboard"
+                title="Sembunyikan Keyboard Sementara"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -4999,9 +5002,9 @@ export default function App() {
 
                 <button
                   type="button"
-                  onClick={() => handleToggleVirtualKeyboard(false)}
+                  onClick={() => setKeyboardDismissedTemp(true)}
                   className="p-1 bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-rose-200 rounded-lg transition-all cursor-pointer"
-                  title="Tutup Keyboard Virtual"
+                  title="Tutup Keyboard Sementara"
                 >
                   <X className="h-3.5 w-3.5" />
                 </button>
