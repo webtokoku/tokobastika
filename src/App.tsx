@@ -404,14 +404,21 @@ export default function App() {
               setKeyboardType("qwerty");
             }
 
-            // Always auto-position virtual keyboard near target input field
+            // Always auto-position virtual keyboard near target input field with generous spacing from screen edges
             const rect = inputEl.getBoundingClientRect();
-            const kbWidth = Math.min(460, window.innerWidth - 32) * keyboardScale;
-            const kbHeight = 280 * keyboardScale;
-            let posX = Math.max(12, Math.min(window.innerWidth - kbWidth - 16, rect.left));
+            const targetKbWidth = Math.min(520, window.innerWidth - 48);
+            const kbWidth = targetKbWidth * keyboardScale;
+            const kbHeight = 310 * keyboardScale;
+            const safeLeft = 20;
+            const safeRight = 36;
+            
+            // Center keyboard relative to input field width for natural placement without hugging right screen edge
+            let idealX = rect.left + (rect.width / 2) - (kbWidth / 2);
+            let posX = Math.max(safeLeft, Math.min(window.innerWidth - kbWidth - safeRight, idealX));
+            
             let posY = rect.bottom + 8;
-            if (posY + kbHeight > window.innerHeight - 12) {
-              posY = Math.max(12, rect.top - kbHeight - 8);
+            if (posY + kbHeight > window.innerHeight - 16) {
+              posY = Math.max(16, rect.top - kbHeight - 8);
             }
             setKeyboardPos({ x: posX, y: posY });
           }
@@ -4961,22 +4968,22 @@ export default function App() {
           </div>
         ) : (
           /* FULL FLOATING DRAGGABLE VIRTUAL KEYBOARD PANEL */
-          <div className="bg-slate-950/95 text-slate-100 border-2 border-emerald-500 backdrop-blur-md shadow-2xl p-2.5 sm:p-3.5 w-[94vw] max-w-[460px] sm:max-w-[480px] rounded-2xl">
+          <div className="bg-slate-950/95 text-slate-100 border-2 border-emerald-500 backdrop-blur-md shadow-2xl p-3 sm:p-4 w-[95vw] max-w-[520px] sm:max-w-[560px] rounded-2xl">
             {/* Header Ribbon / Drag Bar */}
             <div
               onMouseDown={handleKeyboardDragStart}
               onTouchStart={handleKeyboardDragStart}
-              className="flex items-center justify-between gap-1.5 mb-2 pb-1.5 border-b border-slate-800 text-xs cursor-grab active:cursor-grabbing bg-slate-900/90 -mx-2.5 -mt-2.5 sm:-mx-3.5 sm:-mt-3.5 p-2 sm:p-2.5 rounded-t-xl hover:bg-slate-900 transition-colors touch-none select-none"
+              className="flex items-center justify-between gap-1.5 mb-2.5 pb-2 border-b border-slate-800 text-xs cursor-grab active:cursor-grabbing bg-slate-900/90 -mx-3 -mt-3 sm:-mx-4 sm:-mt-4 p-2.5 sm:p-3 rounded-t-xl hover:bg-slate-900 transition-colors touch-none select-none"
             >
               <div className="flex items-center gap-1.5 min-w-0">
-                <GripHorizontal className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span className="font-extrabold text-white text-[11px] sm:text-xs shrink-0">Keyboard Virtual</span>
-                <span className="text-[9px] text-emerald-400 bg-emerald-950 border border-emerald-800 px-1 py-0.2 rounded font-semibold hidden sm:inline">
+                <GripHorizontal className="h-4.5 w-4.5 text-emerald-400 shrink-0" />
+                <span className="font-extrabold text-white text-xs sm:text-sm shrink-0">Keyboard Virtual</span>
+                <span className="text-[9px] sm:text-[10px] text-emerald-400 bg-emerald-950 border border-emerald-800 px-1.5 py-0.5 rounded font-bold hidden sm:inline">
                   Geser
                 </span>
               </div>
 
-              <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-1.5 shrink-0">
                 {/* Reset Position Button */}
                 <button
                   type="button"
@@ -4984,30 +4991,34 @@ export default function App() {
                     isKeyboardUserMovedRef.current = false;
                     if (focusedInputElement) {
                       const rect = focusedInputElement.getBoundingClientRect();
-                      const kbWidth = Math.min(460, window.innerWidth - 32) * keyboardScale;
-                      const kbHeight = 280 * keyboardScale;
-                      let pX = Math.max(12, Math.min(window.innerWidth - kbWidth - 16, rect.left));
+                      const targetKbWidth = Math.min(520, window.innerWidth - 48);
+                      const kbWidth = targetKbWidth * keyboardScale;
+                      const kbHeight = 310 * keyboardScale;
+                      const safeLeft = 20;
+                      const safeRight = 36;
+                      let idealX = rect.left + (rect.width / 2) - (kbWidth / 2);
+                      let pX = Math.max(safeLeft, Math.min(window.innerWidth - kbWidth - safeRight, idealX));
                       let pY = rect.bottom + 8;
-                      if (pY + kbHeight > window.innerHeight - 12) {
-                        pY = Math.max(12, rect.top - kbHeight - 8);
+                      if (pY + kbHeight > window.innerHeight - 16) {
+                        pY = Math.max(16, rect.top - kbHeight - 8);
                       }
                       setKeyboardPos({ x: pX, y: pY });
                     } else {
                       setKeyboardPos(null);
                     }
                   }}
-                  className="px-2 py-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 rounded text-[10px] sm:text-[11px] font-bold cursor-pointer touch-manipulation"
+                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 rounded text-[11px] sm:text-xs font-bold cursor-pointer touch-manipulation"
                   title="Posisikan ulang di dekat input"
                 >
                   Dekat
                 </button>
 
                 {/* Layout Switcher */}
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[10px] sm:text-[11px]">
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px] sm:text-xs">
                   <button
                     type="button"
                     onClick={() => setKeyboardType("qwerty")}
-                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                    className={`px-2.5 py-0.5 rounded font-extrabold transition-all cursor-pointer ${
                       keyboardType === "qwerty" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
                     }`}
                   >
@@ -5016,7 +5027,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setKeyboardType("numpad")}
-                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                    className={`px-2.5 py-0.5 rounded font-extrabold transition-all cursor-pointer ${
                       keyboardType === "numpad" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
                     }`}
                   >
@@ -5045,23 +5056,23 @@ export default function App() {
             </div>
 
             {/* Target Input Indicator Ribbon */}
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-[11px] text-slate-300 mb-2 truncate">
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 mb-2.5 truncate">
               <span className="text-emerald-400 font-extrabold shrink-0">Target Input:</span>
-              <span className="truncate italic font-semibold text-slate-200">{focusedInputLabel || "Ketuk kolom input apa saja"}</span>
+              <span className="truncate italic font-semibold text-slate-100">{focusedInputLabel || "Ketuk kolom input apa saja"}</span>
             </div>
 
             {/* Keyboard Layout Content */}
             {keyboardType === "qwerty" ? (
-              <div className="space-y-1.5 select-none text-xs">
+              <div className="space-y-2 select-none text-xs">
                 {/* Row 1: Numbers & Symbols */}
-                <div className="flex gap-1 justify-center">
+                <div className="flex gap-1 sm:gap-1.5 justify-center">
                   {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "/", "@"].map((k) => (
                     <button
                       key={k}
                       type="button"
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleVirtualKeyPress(k)}
-                      className="flex-1 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-sm"
+                      className="flex-1 py-2.5 sm:py-3 min-h-[42px] sm:min-h-[48px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-base"
                     >
                       {k}
                     </button>
@@ -5069,7 +5080,7 @@ export default function App() {
                 </div>
 
                 {/* Row 2: QWERTY Top Row */}
-                <div className="flex gap-1 justify-center">
+                <div className="flex gap-1 sm:gap-1.5 justify-center">
                   {["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"].map((k) => {
                     const displayChar = keyboardCaps ? k.toUpperCase() : k;
                     return (
@@ -5078,7 +5089,7 @@ export default function App() {
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handleVirtualKeyPress(displayChar)}
-                        className="flex-1 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-sm"
+                        className="flex-1 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-lg"
                       >
                         {displayChar}
                       </button>
@@ -5087,7 +5098,7 @@ export default function App() {
                 </div>
 
                 {/* Row 3: QWERTY Middle Row */}
-                <div className="flex gap-1 justify-center px-1">
+                <div className="flex gap-1 sm:gap-1.5 justify-center px-1">
                   {["a", "s", "d", "f", "g", "h", "j", "k", "l"].map((k) => {
                     const displayChar = keyboardCaps ? k.toUpperCase() : k;
                     return (
@@ -5096,7 +5107,7 @@ export default function App() {
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handleVirtualKeyPress(displayChar)}
-                        className="flex-1 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-sm"
+                        className="flex-1 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-lg"
                       >
                         {displayChar}
                       </button>
@@ -5105,12 +5116,12 @@ export default function App() {
                 </div>
 
                 {/* Row 4: Caps, Bottom Row, Backspace */}
-                <div className="flex gap-1 justify-center">
+                <div className="flex gap-1 sm:gap-1.5 justify-center">
                   <button
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setKeyboardCaps(!keyboardCaps)}
-                    className={`px-2.5 py-2 sm:py-2.5 text-xs font-extrabold rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 ${
+                    className={`px-3 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] text-xs sm:text-sm font-extrabold rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 ${
                       keyboardCaps ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                     }`}
                   >
@@ -5124,7 +5135,7 @@ export default function App() {
                         type="button"
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => handleVirtualKeyPress(displayChar)}
-                        className="flex-1 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-sm"
+                        className="flex-1 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-lg"
                       >
                         {displayChar}
                       </button>
@@ -5134,7 +5145,7 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("BACKSPACE")}
-                    className="px-3 py-2 sm:py-2.5 bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-200 text-xs sm:text-sm font-extrabold rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95"
+                    className="px-3.5 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-200 text-sm sm:text-base font-extrabold rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95"
                   >
                     ⌫
                   </button>
@@ -5146,7 +5157,7 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("ESC")}
-                    className="px-2.5 py-2 sm:py-2.5 bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold rounded-lg text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-3 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
                     title="Tombol ESC / Tutup & Exit Input"
                   >
                     ESC
@@ -5155,7 +5166,7 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("TAB")}
-                    className="px-2.5 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 text-sky-400 font-extrabold rounded-lg text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-3 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-slate-800 hover:bg-slate-700 text-sky-400 font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
                     title="Pindah ke input berikutnya"
                   >
                     TAB ➔
@@ -5164,7 +5175,7 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => setKeyboardType("numpad")}
-                    className="px-2.5 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold rounded-lg text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-3 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
                   >
                     123
                   </button>
@@ -5172,7 +5183,7 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("CLEAR")}
-                    className="px-2.5 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold rounded-lg text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-3 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
                   >
                     Hapus
                   </button>
@@ -5180,7 +5191,7 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("SPACE")}
-                    className="flex-1 py-2 sm:py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold rounded-lg text-center text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="flex-1 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold rounded-lg text-center text-xs sm:text-base cursor-pointer active:scale-95 transition-all touch-manipulation"
                   >
                     Spasi
                   </button>
@@ -5188,7 +5199,7 @@ export default function App() {
                     type="button"
                     onMouseDown={(e) => e.preventDefault()}
                     onClick={() => handleVirtualKeyPress("ENTER")}
-                    className="px-3 py-2 sm:py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer shadow-md active:scale-95 transition-all touch-manipulation"
+                    className="px-3.5 py-2.5 sm:py-3 min-h-[44px] sm:min-h-[50px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg text-xs sm:text-base cursor-pointer shadow-md active:scale-95 transition-all touch-manipulation"
                     title="Enter / Pindah Input"
                   >
                     ENTER ↵
@@ -5197,12 +5208,12 @@ export default function App() {
               </div>
             ) : (
               /* COMPACT NUMPAD LAYOUT WITH ESC, TAB & ENTER */
-              <div className="max-w-md mx-auto grid grid-cols-4 gap-1.5 sm:gap-2 select-none p-1">
+              <div className="max-w-md mx-auto grid grid-cols-4 gap-2 sm:gap-2.5 select-none p-1">
                 <button
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("7")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   7
                 </button>
@@ -5210,7 +5221,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("8")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   8
                 </button>
@@ -5218,7 +5229,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("9")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   9
                 </button>
@@ -5226,7 +5237,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("BACKSPACE")}
-                  className="py-3 sm:py-3.5 bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-200 font-extrabold text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 touch-manipulation flex items-center justify-center"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-200 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 touch-manipulation flex items-center justify-center"
                 >
                   ⌫ Hapus
                 </button>
@@ -5235,7 +5246,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("4")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   4
                 </button>
@@ -5243,7 +5254,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("5")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   5
                 </button>
@@ -5251,7 +5262,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("6")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   6
                 </button>
@@ -5259,7 +5270,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("000")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-emerald-400 font-extrabold text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:scale-95 text-emerald-400 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   +000
                 </button>
@@ -5268,7 +5279,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("1")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   1
                 </button>
@@ -5276,7 +5287,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("2")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   2
                 </button>
@@ -5284,7 +5295,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("3")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   3
                 </button>
@@ -5292,7 +5303,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("TAB")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-sky-400 font-extrabold text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:scale-95 text-sky-400 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                   title="Pindah ke input berikutnya"
                 >
                   TAB ➔
@@ -5302,7 +5313,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("0")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   0
                 </button>
@@ -5310,7 +5321,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress(".")}
-                  className="py-3 sm:py-3.5 bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold text-base sm:text-lg rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
                 >
                   .
                 </button>
@@ -5318,7 +5329,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("ESC")}
-                  className="py-3 sm:py-3.5 bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold text-xs sm:text-sm rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 touch-manipulation"
                   title="Tombol ESC"
                 >
                   ESC
@@ -5327,7 +5338,7 @@ export default function App() {
                   type="button"
                   onMouseDown={(e) => e.preventDefault()}
                   onClick={() => handleVirtualKeyPress("ENTER")}
-                  className="py-3 sm:py-3.5 bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs sm:text-sm rounded-xl shadow-md transition-all cursor-pointer touch-manipulation"
+                  className="py-3.5 sm:py-4 min-h-[50px] sm:min-h-[56px] bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs sm:text-base rounded-xl shadow-md transition-all cursor-pointer touch-manipulation"
                   title="Enter / Pindah Input"
                 >
                   ENTER ↵
