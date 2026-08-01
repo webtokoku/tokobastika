@@ -347,6 +347,17 @@ export default function App() {
     initialY: 0,
   });
   const isKeyboardUserMovedRef = useRef<boolean>(false);
+  const [activePressedKey, setActivePressedKey] = useState<string | null>(null);
+  const keyTouchTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const triggerKeyTouch = (keyId: string, actionFn: () => void) => {
+    setActivePressedKey(keyId);
+    if (keyTouchTimerRef.current) clearTimeout(keyTouchTimerRef.current);
+    keyTouchTimerRef.current = setTimeout(() => {
+      setActivePressedKey(null);
+    }, 180);
+    actionFn();
+  };
 
   // Suppress native OS soft keyboard dynamically across all textboxes when Virtual Keyboard is ON
   useEffect(() => {
@@ -5169,36 +5180,54 @@ export default function App() {
               <div className="space-y-1 sm:space-y-1.5 select-none text-xs">
                 {/* Row 1: Numbers & Symbols */}
                 <div className="flex gap-1 justify-center">
-                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "/", "@"].map((k) => (
-                    <button
-                      key={k}
-                      type="button"
-                      onPointerDown={(e) => {
-                        e.preventDefault();
-                        handleVirtualKeyPress(k);
-                      }}
-                      onClick={(e) => e.preventDefault()}
-                      className="flex-1 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-sm"
-                    >
-                      {k}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Row 2: QWERTY Top Row */}
-                <div className="flex gap-1 justify-center">
-                  {["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"].map((k) => {
-                    const displayChar = isCapsActive ? k.toUpperCase() : k;
+                  {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "/", "@"].map((k) => {
+                    const keyId = `q_num_${k}`;
+                    const isPressed = activePressedKey === keyId;
                     return (
                       <button
                         key={k}
                         type="button"
                         onPointerDown={(e) => {
                           e.preventDefault();
-                          handleVirtualKeyPress(displayChar);
+                          triggerKeyTouch(keyId, () => handleVirtualKeyPress(k));
                         }}
+                        onPointerUp={() => setActivePressedKey(null)}
+                        onPointerLeave={() => setActivePressedKey(null)}
                         onClick={(e) => e.preventDefault()}
-                        className="flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base"
+                        className={`flex-1 py-1.5 min-h-[36px] sm:min-h-[40px] font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-sm ${
+                          isPressed
+                            ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/60 ring-2 ring-emerald-300 scale-95 z-10"
+                            : "bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white"
+                        }`}
+                      >
+                        {k}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Row 2: QWERTY Top Row */}
+                <div className="flex gap-1 justify-center">
+                  {["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"].map((k) => {
+                    const displayChar = isCapsActive ? k.toUpperCase() : k;
+                    const keyId = `q_row1_${k}`;
+                    const isPressed = activePressedKey === keyId;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          triggerKeyTouch(keyId, () => handleVirtualKeyPress(displayChar));
+                        }}
+                        onPointerUp={() => setActivePressedKey(null)}
+                        onPointerLeave={() => setActivePressedKey(null)}
+                        onClick={(e) => e.preventDefault()}
+                        className={`flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base ${
+                          isPressed
+                            ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/60 ring-2 ring-emerald-300 scale-95 z-10"
+                            : "bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white"
+                        }`}
                       >
                         {displayChar}
                       </button>
@@ -5210,16 +5239,24 @@ export default function App() {
                 <div className="flex gap-1 justify-center px-0.5">
                   {["a", "s", "d", "f", "g", "h", "j", "k", "l"].map((k) => {
                     const displayChar = isCapsActive ? k.toUpperCase() : k;
+                    const keyId = `q_row2_${k}`;
+                    const isPressed = activePressedKey === keyId;
                     return (
                       <button
                         key={k}
                         type="button"
                         onPointerDown={(e) => {
                           e.preventDefault();
-                          handleVirtualKeyPress(displayChar);
+                          triggerKeyTouch(keyId, () => handleVirtualKeyPress(displayChar));
                         }}
+                        onPointerUp={() => setActivePressedKey(null)}
+                        onPointerLeave={() => setActivePressedKey(null)}
                         onClick={(e) => e.preventDefault()}
-                        className="flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base"
+                        className={`flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base ${
+                          isPressed
+                            ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/60 ring-2 ring-emerald-300 scale-95 z-10"
+                            : "bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white"
+                        }`}
                       >
                         {displayChar}
                       </button>
@@ -5229,58 +5266,86 @@ export default function App() {
 
                 {/* Row 4: Caps (Smartphone Dual Mode), Bottom Row, Backspace */}
                 <div className="flex gap-1 justify-center">
-                  {/* Smartphone-style CAPS Button: Fixed Dimensions so toggle NEVER causes button/row width changes */}
-                  <button
-                    type="button"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      handleCapsPress();
-                    }}
-                    onClick={(e) => e.preventDefault()}
-                    className={`w-[66px] sm:w-[76px] shrink-0 py-1.5 min-h-[38px] sm:min-h-[42px] text-xs font-black rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 flex items-center justify-center gap-1 ${
-                      keyboardCapsMode === "capslock"
-                        ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30 border border-emerald-300"
-                        : keyboardCapsMode === "shift"
-                        ? "bg-sky-500 text-white shadow-md shadow-sky-500/30 border border-sky-300"
-                        : "bg-slate-800 text-slate-300 hover:bg-slate-700"
-                    }`}
-                    title="Ketuk 1x untuk Shift (1 huruf), Ketuk 2x Cepat untuk CAPS LOCK"
-                  >
-                    <span className="text-xs sm:text-sm font-extrabold leading-none">⇧</span>
-                    <span className="text-[10px] sm:text-xs font-bold leading-none">
-                      {keyboardCapsMode === "capslock" ? "CAPS" : "Shift"}
-                    </span>
-                  </button>
+                  {/* Smartphone-style CAPS Button */}
+                  {(() => {
+                    const isPressed = activePressedKey === "q_caps";
+                    return (
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          triggerKeyTouch("q_caps", handleCapsPress);
+                        }}
+                        onPointerUp={() => setActivePressedKey(null)}
+                        onPointerLeave={() => setActivePressedKey(null)}
+                        onClick={(e) => e.preventDefault()}
+                        className={`w-[66px] sm:w-[76px] shrink-0 py-1.5 min-h-[38px] sm:min-h-[42px] text-xs font-black rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation flex items-center justify-center gap-1 ${
+                          isPressed
+                            ? "bg-sky-400 text-white shadow-lg shadow-sky-400/60 ring-2 ring-sky-200 scale-95 z-10"
+                            : keyboardCapsMode === "capslock"
+                            ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30 border border-emerald-300"
+                            : keyboardCapsMode === "shift"
+                            ? "bg-sky-500 text-white shadow-md shadow-sky-500/30 border border-sky-300"
+                            : "bg-slate-800 text-slate-300 hover:bg-slate-700 active:bg-sky-500 active:scale-95"
+                        }`}
+                        title="Ketuk 1x untuk Shift (1 huruf), Ketuk 2x Cepat untuk CAPS LOCK"
+                      >
+                        <span className="text-xs sm:text-sm font-extrabold leading-none">⇧</span>
+                        <span className="text-[10px] sm:text-xs font-bold leading-none">
+                          {keyboardCapsMode === "capslock" ? "CAPS" : "Shift"}
+                        </span>
+                      </button>
+                    );
+                  })()}
 
                   {["z", "x", "c", "v", "b", "n", "m", ",", "."].map((k) => {
                     const displayChar = isCapsActive ? k.toUpperCase() : k;
+                    const keyId = `q_row3_${k}`;
+                    const isPressed = activePressedKey === keyId;
                     return (
                       <button
                         key={k}
                         type="button"
                         onPointerDown={(e) => {
                           e.preventDefault();
-                          handleVirtualKeyPress(displayChar);
+                          triggerKeyTouch(keyId, () => handleVirtualKeyPress(displayChar));
                         }}
+                        onPointerUp={() => setActivePressedKey(null)}
+                        onPointerLeave={() => setActivePressedKey(null)}
                         onClick={(e) => e.preventDefault()}
-                        className="flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base"
+                        className={`flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base ${
+                          isPressed
+                            ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/60 ring-2 ring-emerald-300 scale-95 z-10"
+                            : "bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white"
+                        }`}
                       >
                         {displayChar}
                       </button>
                     );
                   })}
 
-                  <button
-                    type="button"
-                    onPointerDown={(e) => {
-                      e.preventDefault();
-                      handleVirtualKeyPress("BACKSPACE");
-                    }}
-                    onClick={(e) => e.preventDefault()}
-                    className="w-[44px] sm:w-[52px] shrink-0 py-1.5 min-h-[38px] sm:min-h-[42px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-200 text-sm sm:text-base font-extrabold rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 flex items-center justify-center"
-                  >
-                    ⌫
-                  </button>
+                  {(() => {
+                    const isPressed = activePressedKey === "q_backspace";
+                    return (
+                      <button
+                        type="button"
+                        onPointerDown={(e) => {
+                          e.preventDefault();
+                          triggerKeyTouch("q_backspace", () => handleVirtualKeyPress("BACKSPACE"));
+                        }}
+                        onPointerUp={() => setActivePressedKey(null)}
+                        onPointerLeave={() => setActivePressedKey(null)}
+                        onClick={(e) => e.preventDefault()}
+                        className={`w-[44px] sm:w-[52px] shrink-0 py-1.5 min-h-[38px] sm:min-h-[42px] text-sm sm:text-base font-extrabold rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation flex items-center justify-center ${
+                          isPressed
+                            ? "bg-rose-500 text-white shadow-lg shadow-rose-500/60 ring-2 ring-rose-300 scale-95 z-10"
+                            : "bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-200 active:bg-rose-500 active:scale-95"
+                        }`}
+                      >
+                        ⌫
+                      </button>
+                    );
+                  })()}
                 </div>
 
                 {/* Row 5: Action Row with ESC, TAB, 123, CLEAR, SPACE, ENTER */}
@@ -5289,10 +5354,16 @@ export default function App() {
                     type="button"
                     onPointerDown={(e) => {
                       e.preventDefault();
-                      handleVirtualKeyPress("ESC");
+                      triggerKeyTouch("q_esc", () => handleVirtualKeyPress("ESC"));
                     }}
+                    onPointerUp={() => setActivePressedKey(null)}
+                    onPointerLeave={() => setActivePressedKey(null)}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className={`px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer transition-all touch-manipulation ${
+                      activePressedKey === "q_esc"
+                        ? "bg-rose-500 text-white shadow-lg shadow-rose-500/60 ring-2 ring-rose-300 scale-95 z-10"
+                        : "bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 active:bg-rose-500 active:scale-95"
+                    }`}
                     title="Tombol ESC / Tutup & Exit Input"
                   >
                     ESC
@@ -5301,10 +5372,16 @@ export default function App() {
                     type="button"
                     onPointerDown={(e) => {
                       e.preventDefault();
-                      handleVirtualKeyPress("TAB");
+                      triggerKeyTouch("q_tab", () => handleVirtualKeyPress("TAB"));
                     }}
+                    onPointerUp={() => setActivePressedKey(null)}
+                    onPointerLeave={() => setActivePressedKey(null)}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 text-sky-400 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className={`px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer transition-all touch-manipulation ${
+                      activePressedKey === "q_tab"
+                        ? "bg-sky-500 text-white shadow-lg shadow-sky-500/60 ring-2 ring-sky-300 scale-95 z-10"
+                        : "bg-slate-800 hover:bg-slate-700 text-sky-400 active:bg-sky-500 active:text-white active:scale-95"
+                    }`}
                     title="Pindah ke input berikutnya"
                   >
                     TAB ➔
@@ -5313,10 +5390,16 @@ export default function App() {
                     type="button"
                     onPointerDown={(e) => {
                       e.preventDefault();
-                      setKeyboardType("numpad");
+                      triggerKeyTouch("q_123", () => setKeyboardType("numpad"));
                     }}
+                    onPointerUp={() => setActivePressedKey(null)}
+                    onPointerLeave={() => setActivePressedKey(null)}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className={`px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer transition-all touch-manipulation ${
+                      activePressedKey === "q_123"
+                        ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/60 ring-2 ring-emerald-300 scale-95 z-10"
+                        : "bg-slate-800 hover:bg-slate-700 text-emerald-400 active:bg-emerald-500 active:text-white active:scale-95"
+                    }`}
                   >
                     123
                   </button>
@@ -5324,10 +5407,16 @@ export default function App() {
                     type="button"
                     onPointerDown={(e) => {
                       e.preventDefault();
-                      handleVirtualKeyPress("CLEAR");
+                      triggerKeyTouch("q_clear", () => handleVirtualKeyPress("CLEAR"));
                     }}
+                    onPointerUp={() => setActivePressedKey(null)}
+                    onPointerLeave={() => setActivePressedKey(null)}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className={`px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer transition-all touch-manipulation ${
+                      activePressedKey === "q_clear"
+                        ? "bg-amber-500 text-slate-950 shadow-lg shadow-amber-500/60 ring-2 ring-amber-300 scale-95 z-10"
+                        : "bg-slate-800 hover:bg-slate-700 text-amber-400 active:bg-amber-500 active:text-slate-950 active:scale-95"
+                    }`}
                   >
                     Hapus
                   </button>
@@ -5335,10 +5424,16 @@ export default function App() {
                     type="button"
                     onPointerDown={(e) => {
                       e.preventDefault();
-                      handleVirtualKeyPress("SPACE");
+                      triggerKeyTouch("q_space", () => handleVirtualKeyPress("SPACE"));
                     }}
+                    onPointerUp={() => setActivePressedKey(null)}
+                    onPointerLeave={() => setActivePressedKey(null)}
                     onClick={(e) => e.preventDefault()}
-                    className="flex-1 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold rounded-lg text-center text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className={`flex-1 py-1.5 min-h-[36px] sm:min-h-[40px] font-extrabold rounded-lg text-center text-xs sm:text-sm cursor-pointer transition-all touch-manipulation ${
+                      activePressedKey === "q_space"
+                        ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/60 ring-2 ring-emerald-300 scale-95 z-10"
+                        : "bg-slate-800 hover:bg-slate-700 text-white active:bg-emerald-500 active:scale-95"
+                    }`}
                   >
                     Spasi
                   </button>
@@ -5346,10 +5441,16 @@ export default function App() {
                     type="button"
                     onPointerDown={(e) => {
                       e.preventDefault();
-                      handleVirtualKeyPress("ENTER");
+                      triggerKeyTouch("q_enter", () => handleVirtualKeyPress("ENTER"));
                     }}
+                    onPointerUp={() => setActivePressedKey(null)}
+                    onPointerLeave={() => setActivePressedKey(null)}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2.5 sm:px-3 py-1.5 min-h-[36px] sm:min-h-[40px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer shadow-md active:scale-95 transition-all touch-manipulation"
+                    className={`px-2.5 sm:px-3 py-1.5 min-h-[36px] sm:min-h-[40px] font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer shadow-md transition-all touch-manipulation ${
+                      activePressedKey === "q_enter"
+                        ? "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/60 ring-2 ring-emerald-200 scale-95 z-10"
+                        : "bg-emerald-600 hover:bg-emerald-500 text-white active:bg-emerald-400 active:text-slate-950 active:scale-95"
+                    }`}
                     title="Enter / Pindah Input"
                   >
                     ENTER ↵
@@ -5359,188 +5460,63 @@ export default function App() {
             ) : (
               /* COMPACT NUMPAD LAYOUT WITH ESC, TAB & ENTER */
               <div className="max-w-md mx-auto grid grid-cols-4 gap-2 sm:gap-2.5 select-none p-1">
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("7");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  7
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("8");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  8
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("9");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  9
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("BACKSPACE");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 text-rose-200 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 touch-manipulation flex items-center justify-center"
-                >
-                  ⌫ Hapus
-                </button>
+                {[
+                  { key: "7", type: "num" },
+                  { key: "8", type: "num" },
+                  { key: "9", type: "num" },
+                  { key: "BACKSPACE", label: "⌫ Hapus", type: "delete" },
+                  { key: "4", type: "num" },
+                  { key: "5", type: "num" },
+                  { key: "6", type: "num" },
+                  { key: "000", label: "+000", type: "plus" },
+                  { key: "1", type: "num" },
+                  { key: "2", type: "num" },
+                  { key: "3", type: "num" },
+                  { key: "TAB", label: "TAB ➔", type: "tab" },
+                  { key: "0", type: "num" },
+                  { key: ".", type: "num" },
+                  { key: "ESC", label: "ESC", type: "esc" },
+                  { key: "ENTER", label: "ENTER ↵", type: "enter" },
+                ].map((item) => {
+                  const keyId = `num_${item.key}`;
+                  const isPressed = activePressedKey === keyId;
+                  const label = item.label || item.key;
 
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("4");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  4
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("5");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  5
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("6");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  6
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("000");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:scale-95 text-emerald-400 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  +000
-                </button>
+                  let activeStyle = "bg-emerald-500 text-white shadow-lg shadow-emerald-500/60 ring-2 ring-emerald-300 scale-95 z-10";
+                  let baseStyle = "bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl";
 
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("1");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  1
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("2");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  2
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("3");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  3
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("TAB");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:scale-95 text-sky-400 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                  title="Pindah ke input berikutnya"
-                >
-                  TAB ➔
-                </button>
+                  if (item.type === "delete" || item.type === "esc") {
+                    activeStyle = "bg-rose-500 text-white shadow-lg shadow-rose-500/60 ring-2 ring-rose-300 scale-95 z-10";
+                    baseStyle = "bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-200 active:bg-rose-500 active:text-white active:scale-95 font-extrabold text-xs sm:text-base";
+                  } else if (item.type === "tab") {
+                    activeStyle = "bg-sky-500 text-white shadow-lg shadow-sky-500/60 ring-2 ring-sky-300 scale-95 z-10";
+                    baseStyle = "bg-slate-800 hover:bg-slate-700 text-sky-400 active:bg-sky-500 active:text-white active:scale-95 font-extrabold text-xs sm:text-base";
+                  } else if (item.type === "plus" || item.type === "enter") {
+                    activeStyle = "bg-emerald-400 text-slate-950 shadow-lg shadow-emerald-400/60 ring-2 ring-emerald-200 scale-95 z-10";
+                    baseStyle = item.type === "enter"
+                      ? "bg-emerald-600 hover:bg-emerald-500 text-white active:bg-emerald-400 active:text-slate-950 active:scale-95 font-extrabold text-xs sm:text-base shadow-md"
+                      : "bg-slate-800 hover:bg-slate-700 text-emerald-400 active:bg-emerald-400 active:text-slate-950 active:scale-95 font-extrabold text-xs sm:text-base";
+                  }
 
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("0");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  0
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress(".");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black text-lg sm:text-xl rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation"
-                >
-                  .
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("ESC");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold text-xs sm:text-base rounded-xl shadow-xs transition-all cursor-pointer active:scale-95 touch-manipulation"
-                  title="Tombol ESC"
-                >
-                  ESC
-                </button>
-                <button
-                  type="button"
-                  onPointerDown={(e) => {
-                    e.preventDefault();
-                    handleVirtualKeyPress("ENTER");
-                  }}
-                  onClick={(e) => e.preventDefault()}
-                  className="py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] bg-emerald-600 hover:bg-emerald-500 active:scale-95 text-white font-extrabold text-xs sm:text-base rounded-xl shadow-md transition-all cursor-pointer touch-manipulation"
-                  title="Enter / Pindah Input"
-                >
-                  ENTER ↵
-                </button>
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      onPointerDown={(e) => {
+                        e.preventDefault();
+                        triggerKeyTouch(keyId, () => handleVirtualKeyPress(item.key));
+                      }}
+                      onPointerUp={() => setActivePressedKey(null)}
+                      onPointerLeave={() => setActivePressedKey(null)}
+                      onClick={(e) => e.preventDefault()}
+                      className={`py-3.5 sm:py-4 min-h-[52px] sm:min-h-[58px] rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation flex items-center justify-center ${
+                        isPressed ? activeStyle : baseStyle
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
