@@ -1384,8 +1384,24 @@ export default function App() {
     scentName: "",
     quantity: 1
   });
-  const [resellerActiveTab, setResellerActiveTab] = useState<"setoran" | "penjualan">("penjualan");
-  const [adminActiveConsignmentTab, setAdminActiveConsignmentTab] = useState<"dashboard" | "packages" | "transfers" | "piutang">("dashboard");
+  const [resellerActiveTab, setResellerActiveTab] = useState<"setoran" | "penjualan">((): "setoran" | "penjualan" => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("bastika_reseller_active_tab");
+        if (saved === "setoran" || saved === "penjualan") return saved;
+      } catch (e) {}
+    }
+    return "penjualan";
+  });
+  const [adminActiveConsignmentTab, setAdminActiveConsignmentTab] = useState<"dashboard" | "packages" | "transfers" | "piutang">((): "dashboard" | "packages" | "transfers" | "piutang" => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("bastika_consignment_active_tab");
+        if (saved === "dashboard" || saved === "packages" || saved === "transfers" || saved === "piutang") return saved;
+      } catch (e) {}
+    }
+    return "dashboard";
+  });
 
   // Invoice settings & Print state
   const [invoiceSettings, setInvoiceSettings] = useState<InvoiceSettings>({
@@ -1416,8 +1432,16 @@ export default function App() {
   const [saleBottleType, setSaleBottleType] = useState<"Kaca" | "Plastik">("Kaca");
   const [purchaseBottleType, setPurchaseBottleType] = useState<"Kaca" | "Plastik">("Kaca");
 
-  // Navigation / UI State
-  const [activeTab, setActiveTab] = useState<string>("dashboard"); // 'dashboard', 'shelves', 'stocks', 'sales', 'purchases', 'accounting', 'users', 'history'
+  // Navigation / UI State (with persistent active table view across reloads)
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem("bastika_active_tab");
+        if (saved) return saved;
+      } catch (e) {}
+    }
+    return "dashboard";
+  });
   const [searchTerm, setSearchTerm] = useState("");
   const [searchCaseSensitive, setSearchCaseSensitive] = useState(false);
   const [searchColumn, setSearchColumn] = useState("all");
@@ -1606,6 +1630,41 @@ export default function App() {
     setSearchColumn("all");
     setSearchTerm("");
   }, [activeTab]);
+
+  // Persist active table/view states across browser reloads
+  useEffect(() => {
+    if (typeof window !== "undefined" && activeTab) {
+      try {
+        localStorage.setItem("bastika_active_tab", activeTab);
+      } catch (e) {}
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && resellerActiveTab) {
+      try {
+        localStorage.setItem("bastika_reseller_active_tab", resellerActiveTab);
+      } catch (e) {}
+    }
+  }, [resellerActiveTab]);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && adminActiveConsignmentTab) {
+      try {
+        localStorage.setItem("bastika_consignment_active_tab", adminActiveConsignmentTab);
+      } catch (e) {}
+    }
+  }, [adminActiveConsignmentTab]);
+
+  // Validate activeTab against role permissions (e.g. client role cannot view admin-only tabs)
+  useEffect(() => {
+    if (userRole === "client") {
+      const clientAllowedTabs = ["shelves", "stocks", "sales", "customers", "printer_settings"];
+      if (!clientAllowedTabs.includes(activeTab)) {
+        setActiveTab("sales");
+      }
+    }
+  }, [userRole, activeTab]);
 
   // Monitor Network connection for Offline Indicator
   useEffect(() => {
