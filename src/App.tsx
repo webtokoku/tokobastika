@@ -425,33 +425,46 @@ export default function App() {
 
             // Always auto-position virtual keyboard centered horizontally on screen (equal left & right margins)
             const rect = inputEl.getBoundingClientRect();
-            const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
-            const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
-            const kbHeight = 350 * keyboardScale;
+            const panelMaxWidth = window.innerWidth >= 640 ? 500 : 460;
+            const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.94) * keyboardScale;
+            const kbHeight = 280 * keyboardScale;
             
             // Center horizontally on screen for 100% equal margin left and margin right
-            let posX = Math.max(12, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 12));
+            let posX = Math.max(10, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 10));
             
-            // Determine vertical position: place ABOVE textbox if textbox is near bottom or in bottom half
-            let posY = rect.bottom + 8;
-            if (posY + kbHeight > window.innerHeight - 12 || rect.top > window.innerHeight * 0.5) {
-              const aboveY = rect.top - kbHeight - 8;
-              if (aboveY >= 12) {
-                posY = aboveY;
+            // Determine vertical position safely avoiding target textbox
+            let posY: number;
+            const spaceAbove = rect.top - 10;
+            const spaceBelow = window.innerHeight - rect.bottom - 10;
+
+            if (spaceAbove >= kbHeight && rect.top > window.innerHeight * 0.4) {
+              // Plenty room above & textbox is in middle/lower area -> place ABOVE
+              posY = rect.top - kbHeight - 10;
+            } else if (spaceBelow >= kbHeight) {
+              // Plenty room below -> place BELOW
+              posY = rect.bottom + 10;
+            } else {
+              // Tight space -> scroll target input box into comfortable view
+              inputEl.scrollIntoView({ block: "center", behavior: "smooth" });
+              const updatedRect = inputEl.getBoundingClientRect();
+              if (updatedRect.top >= kbHeight + 10) {
+                posY = updatedRect.top - kbHeight - 10;
               } else {
-                // If neither above nor below fits without overlap, scroll input box gently into center view
-                inputEl.scrollIntoView({ block: "center", behavior: "smooth" });
-                const newRect = inputEl.getBoundingClientRect();
-                if (newRect.top - kbHeight - 8 >= 12) {
-                  posY = newRect.top - kbHeight - 8;
-                } else {
-                  posY = Math.max(12, Math.min(newRect.bottom + 8, window.innerHeight - kbHeight - 12));
-                }
+                posY = Math.min(window.innerHeight - kbHeight - 10, updatedRect.bottom + 10);
               }
             }
 
-            // Strictly clamp posY so no part of the keyboard is ever cut off by screen boundaries
-            posY = Math.max(12, Math.min(posY, window.innerHeight - kbHeight - 12));
+            // Strictly guard against covering target textbox rect
+            if (posY < rect.bottom + 4 && posY + kbHeight > rect.top - 4) {
+              if (rect.top > window.innerHeight * 0.5) {
+                posY = Math.max(10, rect.top - kbHeight - 10);
+              } else {
+                posY = Math.min(window.innerHeight - kbHeight - 10, rect.bottom + 10);
+              }
+            }
+
+            // Strictly clamp posY so no part of the keyboard is cut off by screen boundaries
+            posY = Math.max(10, Math.min(posY, window.innerHeight - kbHeight - 10));
             setKeyboardPos({ x: posX, y: posY });
           }
         }
@@ -472,11 +485,11 @@ export default function App() {
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
-    const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
-    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
-    const kbHeight = 350 * keyboardScale;
-    const currentX = keyboardPos?.x ?? Math.max(12, (window.innerWidth - targetKbWidth) / 2);
-    const currentY = keyboardPos?.y ?? Math.max(12, window.innerHeight - kbHeight - 20);
+    const panelMaxWidth = window.innerWidth >= 640 ? 500 : 460;
+    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.94) * keyboardScale;
+    const kbHeight = 280 * keyboardScale;
+    const currentX = keyboardPos?.x ?? Math.max(10, (window.innerWidth - targetKbWidth) / 2);
+    const currentY = keyboardPos?.y ?? Math.max(10, window.innerHeight - kbHeight - 15);
 
     dragStartPosRef.current = {
       mouseX: clientX,
@@ -504,14 +517,14 @@ export default function App() {
       let newX = dragStartPosRef.current.initialX + deltaX;
       let newY = dragStartPosRef.current.initialY + deltaY;
 
-      const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
-      const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
-      const kbHeight = 350 * keyboardScale;
+      const panelMaxWidth = window.innerWidth >= 640 ? 500 : 460;
+      const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.94) * keyboardScale;
+      const kbHeight = 280 * keyboardScale;
 
-      const maxX = Math.max(12, window.innerWidth - targetKbWidth - 12);
-      const maxY = Math.max(12, window.innerHeight - kbHeight - 12);
-      newX = Math.max(12, Math.min(maxX, newX));
-      newY = Math.max(12, Math.min(maxY, newY));
+      const maxX = Math.max(10, window.innerWidth - targetKbWidth - 10);
+      const maxY = Math.max(10, window.innerHeight - kbHeight - 10);
+      newX = Math.max(10, Math.min(maxX, newX));
+      newY = Math.max(10, Math.min(maxY, newY));
 
       cancelAnimationFrame(animFrameId);
       animFrameId = requestAnimationFrame(() => {
@@ -5040,20 +5053,20 @@ export default function App() {
   const renderVirtualKeyboard = () => {
     if (!showVirtualKeyboard || keyboardDismissedTemp) return null;
 
-    const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
-    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
-    const kbHeight = 350 * keyboardScale;
+    const panelMaxWidth = window.innerWidth >= 640 ? 500 : 460;
+    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.94) * keyboardScale;
+    const kbHeight = 280 * keyboardScale;
 
     // Default centered position with 100% equal left/right margins and screen edge clamping
-    const defaultX = Math.max(12, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 12));
-    const defaultY = Math.max(12, window.innerHeight - kbHeight - 20);
+    const defaultX = Math.max(10, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 10));
+    const defaultY = Math.max(10, window.innerHeight - kbHeight - 15);
 
     let posX = keyboardPos?.x ?? defaultX;
     let posY = keyboardPos?.y ?? defaultY;
 
     // Guarantee no part of keyboard is cut off by screen boundaries
-    posX = Math.max(12, Math.min(posX, window.innerWidth - targetKbWidth - 12));
-    posY = Math.max(12, Math.min(posY, window.innerHeight - kbHeight - 12));
+    posX = Math.max(10, Math.min(posX, window.innerWidth - targetKbWidth - 10));
+    posY = Math.max(10, Math.min(posY, window.innerHeight - kbHeight - 10));
 
     const isCapsActive = keyboardCapsMode !== "off";
 
@@ -5092,7 +5105,7 @@ export default function App() {
           <div
             onMouseDown={handleKeyboardDragStart}
             onTouchStart={handleKeyboardDragStart}
-            className="w-[280px] px-3 py-2 bg-slate-900/95 text-white backdrop-blur-md border-2 border-emerald-500 rounded-2xl shadow-2xl flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing hover:bg-slate-900 touch-none select-none"
+            className="w-[260px] px-3 py-1.5 bg-slate-900/95 text-white backdrop-blur-md border-2 border-emerald-500 rounded-xl shadow-2xl flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing hover:bg-slate-900 touch-none select-none"
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <GripHorizontal className="h-4 w-4 text-emerald-400 shrink-0" />
@@ -5118,15 +5131,15 @@ export default function App() {
           </div>
         ) : (
           /* FULL FLOATING DRAGGABLE VIRTUAL KEYBOARD PANEL */
-          <div className="bg-slate-950/95 text-slate-100 border-2 border-emerald-500 backdrop-blur-md shadow-2xl p-3 sm:p-4 w-[95vw] max-w-[560px] sm:max-w-[620px] rounded-2xl">
+          <div className="bg-slate-950/95 text-slate-100 border-2 border-emerald-500 backdrop-blur-md shadow-2xl p-2.5 sm:p-3 w-[94vw] max-w-[460px] sm:max-w-[500px] rounded-2xl">
             {/* Header Ribbon / Drag Bar */}
             <div
               onMouseDown={handleKeyboardDragStart}
               onTouchStart={handleKeyboardDragStart}
-              className="flex items-center justify-between gap-1.5 mb-2.5 pb-2 border-b border-slate-800 text-xs cursor-grab active:cursor-grabbing bg-slate-900/90 -mx-3 -mt-3 sm:-mx-4 sm:-mt-4 p-2.5 sm:p-3 rounded-t-xl hover:bg-slate-900 transition-colors touch-none select-none"
+              className="flex items-center justify-between gap-1.5 mb-2 pb-1.5 border-b border-slate-800 text-xs cursor-grab active:cursor-grabbing bg-slate-900/90 -mx-2.5 -mt-2.5 sm:-mx-3 sm:-mt-3 p-2 sm:p-2.5 rounded-t-xl hover:bg-slate-900 transition-colors touch-none select-none"
             >
               <div className="flex items-center gap-1.5 min-w-0">
-                <GripHorizontal className="h-4.5 w-4.5 text-emerald-400 shrink-0" />
+                <GripHorizontal className="h-4 w-4 text-emerald-400 shrink-0" />
                 <span className="font-extrabold text-white text-xs sm:text-sm shrink-0">Keyboard Virtual</span>
                 <span className="text-[9px] sm:text-[10px] text-emerald-400 bg-emerald-950 border border-emerald-800 px-1.5 py-0.5 rounded font-bold hidden sm:inline">
                   Geser
@@ -5139,35 +5152,35 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     isKeyboardUserMovedRef.current = false;
-                    const panelMaxWidth = window.innerWidth >= 640 ? 620 : 560;
-                    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
-                    const kbHeight = 350 * keyboardScale;
-                    let pX = Math.max(12, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 12));
+                    const panelMaxWidth = window.innerWidth >= 640 ? 500 : 460;
+                    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.94) * keyboardScale;
+                    const kbHeight = 280 * keyboardScale;
+                    let pX = Math.max(10, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 10));
 
                     if (focusedInputElement) {
                       const rect = focusedInputElement.getBoundingClientRect();
-                      let pY = rect.bottom + 8;
-                      if (pY + kbHeight > window.innerHeight - 12 || rect.top > window.innerHeight * 0.5) {
-                        pY = rect.top - kbHeight - 8;
+                      let pY = rect.bottom + 10;
+                      if (pY + kbHeight > window.innerHeight - 10 || rect.top > window.innerHeight * 0.4) {
+                        pY = rect.top - kbHeight - 10;
                       }
-                      pY = Math.max(12, Math.min(pY, window.innerHeight - kbHeight - 12));
+                      pY = Math.max(10, Math.min(pY, window.innerHeight - kbHeight - 10));
                       setKeyboardPos({ x: pX, y: pY });
                     } else {
-                      setKeyboardPos({ x: pX, y: Math.max(12, window.innerHeight - kbHeight - 20) });
+                      setKeyboardPos({ x: pX, y: Math.max(10, window.innerHeight - kbHeight - 15) });
                     }
                   }}
-                  className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 rounded text-[11px] sm:text-xs font-bold cursor-pointer touch-manipulation"
+                  className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 rounded text-[10px] sm:text-xs font-bold cursor-pointer touch-manipulation"
                   title="Posisikan ulang di dekat input"
                 >
                   Dekat
                 </button>
 
                 {/* Layout Switcher */}
-                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[11px] sm:text-xs">
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[10px] sm:text-xs">
                   <button
                     type="button"
                     onClick={() => setKeyboardType("qwerty")}
-                    className={`px-2.5 py-0.5 rounded font-extrabold transition-all cursor-pointer ${
+                    className={`px-2 py-0.5 rounded font-extrabold transition-all cursor-pointer ${
                       keyboardType === "qwerty" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
                     }`}
                   >
@@ -5176,7 +5189,7 @@ export default function App() {
                   <button
                     type="button"
                     onClick={() => setKeyboardType("numpad")}
-                    className={`px-2.5 py-0.5 rounded font-extrabold transition-all cursor-pointer ${
+                    className={`px-2 py-0.5 rounded font-extrabold transition-all cursor-pointer ${
                       keyboardType === "numpad" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
                     }`}
                   >
@@ -5190,7 +5203,7 @@ export default function App() {
                   className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg transition-all cursor-pointer touch-manipulation"
                   title="Sembunyikan Keyboard"
                 >
-                  <ChevronDown className="h-4 w-4" />
+                  <ChevronDown className="h-3.5 w-3.5" />
                 </button>
 
                 <button
@@ -5199,22 +5212,22 @@ export default function App() {
                   className="p-1 bg-slate-800 hover:bg-rose-900 text-slate-300 hover:text-rose-200 rounded-lg transition-all cursor-pointer touch-manipulation"
                   title="Tutup Keyboard Sementara"
                 >
-                  <X className="h-4 w-4" />
+                  <X className="h-3.5 w-3.5" />
                 </button>
               </div>
             </div>
 
             {/* Target Input Indicator Ribbon */}
-            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300 mb-2.5 truncate">
-              <span className="text-emerald-400 font-extrabold shrink-0">Target Input:</span>
+            <div className="flex items-center gap-1.5 bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1 text-xs text-slate-300 mb-2 truncate">
+              <span className="text-emerald-400 font-extrabold shrink-0">Target:</span>
               <span className="truncate italic font-semibold text-slate-100">{focusedInputLabel || "Ketuk kolom input apa saja"}</span>
             </div>
 
             {/* Keyboard Layout Content */}
             {keyboardType === "qwerty" ? (
-              <div className="space-y-1.5 sm:space-y-2 select-none text-xs">
+              <div className="space-y-1 sm:space-y-1.5 select-none text-xs">
                 {/* Row 1: Numbers & Symbols */}
-                <div className="flex gap-1 sm:gap-1.5 justify-center">
+                <div className="flex gap-1 justify-center">
                   {["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", "-", "/", "@"].map((k) => (
                     <button
                       key={k}
@@ -5224,7 +5237,7 @@ export default function App() {
                         handleVirtualKeyPress(k);
                       }}
                       onClick={(e) => e.preventDefault()}
-                      className="flex-1 py-2 sm:py-2.5 min-h-[42px] sm:min-h-[48px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-base"
+                      className="flex-1 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-extrabold rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-xs sm:text-sm"
                     >
                       {k}
                     </button>
@@ -5232,7 +5245,7 @@ export default function App() {
                 </div>
 
                 {/* Row 2: QWERTY Top Row */}
-                <div className="flex gap-1 sm:gap-1.5 justify-center">
+                <div className="flex gap-1 justify-center">
                   {["q", "w", "e", "r", "t", "y", "u", "i", "o", "p"].map((k) => {
                     const displayChar = isCapsActive ? k.toUpperCase() : k;
                     return (
@@ -5244,7 +5257,7 @@ export default function App() {
                           handleVirtualKeyPress(displayChar);
                         }}
                         onClick={(e) => e.preventDefault()}
-                        className="flex-1 py-2.5 sm:py-3.5 min-h-[48px] sm:min-h-[54px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-xl text-center shadow-xs transition-all cursor-pointer touch-manipulation text-base sm:text-xl"
+                        className="flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base"
                       >
                         {displayChar}
                       </button>
@@ -5253,7 +5266,7 @@ export default function App() {
                 </div>
 
                 {/* Row 3: QWERTY Middle Row */}
-                <div className="flex gap-1 sm:gap-1.5 justify-center px-1">
+                <div className="flex gap-1 justify-center px-0.5">
                   {["a", "s", "d", "f", "g", "h", "j", "k", "l"].map((k) => {
                     const displayChar = isCapsActive ? k.toUpperCase() : k;
                     return (
@@ -5265,7 +5278,7 @@ export default function App() {
                           handleVirtualKeyPress(displayChar);
                         }}
                         onClick={(e) => e.preventDefault()}
-                        className="flex-1 py-2.5 sm:py-3.5 min-h-[48px] sm:min-h-[54px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-xl text-center shadow-xs transition-all cursor-pointer touch-manipulation text-base sm:text-xl"
+                        className="flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base"
                       >
                         {displayChar}
                       </button>
@@ -5274,8 +5287,8 @@ export default function App() {
                 </div>
 
                 {/* Row 4: Caps (Smartphone Dual Mode), Bottom Row, Backspace */}
-                <div className="flex gap-1 sm:gap-1.5 justify-center">
-                  {/* Smartphone-style CAPS Button: Single tap = Shift 1 char, Double tap = CAPS LOCK */}
+                <div className="flex gap-1 justify-center">
+                  {/* Smartphone-style CAPS Button: Fixed Dimensions so toggle NEVER causes button/row width changes */}
                   <button
                     type="button"
                     onPointerDown={(e) => {
@@ -5283,28 +5296,19 @@ export default function App() {
                       handleCapsPress();
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className={`px-2.5 sm:px-3.5 py-2.5 sm:py-3.5 min-h-[48px] sm:min-h-[54px] text-xs sm:text-sm font-black rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 flex items-center justify-center gap-1 shrink-0 ${
+                    className={`w-[66px] sm:w-[76px] shrink-0 py-1.5 min-h-[38px] sm:min-h-[42px] text-xs font-black rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 flex items-center justify-center gap-1 ${
                       keyboardCapsMode === "capslock"
-                        ? "bg-emerald-500 text-white shadow-lg shadow-emerald-500/40 border-2 border-emerald-300 ring-2 ring-emerald-400"
+                        ? "bg-emerald-500 text-white shadow-md shadow-emerald-500/30 border border-emerald-300"
                         : keyboardCapsMode === "shift"
-                        ? "bg-sky-500 text-white shadow-md shadow-sky-500/40 border-2 border-sky-300"
+                        ? "bg-sky-500 text-white shadow-md shadow-sky-500/30 border border-sky-300"
                         : "bg-slate-800 text-slate-300 hover:bg-slate-700"
                     }`}
-                    title="Ketuk 1x untuk 1 Huruf Kapital (Shift), Ketuk 2x Cepat untuk CAPS LOCK Penuh"
+                    title="Ketuk 1x untuk Shift (1 huruf), Ketuk 2x Cepat untuk CAPS LOCK"
                   >
-                    {keyboardCapsMode === "capslock" ? (
-                      <>
-                        <span className="w-2 h-2 rounded-full bg-white animate-pulse shrink-0" />
-                        <span>🔒 CAPS</span>
-                      </>
-                    ) : keyboardCapsMode === "shift" ? (
-                      <>
-                        <span className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
-                        <span>⇧ Shift</span>
-                      </>
-                    ) : (
-                      <span>⇧ Shift</span>
-                    )}
+                    <span className="text-xs sm:text-sm font-extrabold leading-none">⇧</span>
+                    <span className="text-[10px] sm:text-xs font-bold leading-none">
+                      {keyboardCapsMode === "capslock" ? "CAPS" : "Shift"}
+                    </span>
                   </button>
 
                   {["z", "x", "c", "v", "b", "n", "m", ",", "."].map((k) => {
@@ -5318,7 +5322,7 @@ export default function App() {
                           handleVirtualKeyPress(displayChar);
                         }}
                         onClick={(e) => e.preventDefault()}
-                        className="flex-1 py-2.5 sm:py-3.5 min-h-[48px] sm:min-h-[54px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-xl text-center shadow-xs transition-all cursor-pointer touch-manipulation text-base sm:text-xl"
+                        className="flex-1 py-1.5 min-h-[38px] sm:min-h-[42px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-500 active:scale-95 text-white font-black rounded-lg text-center shadow-xs transition-all cursor-pointer touch-manipulation text-sm sm:text-base"
                       >
                         {displayChar}
                       </button>
@@ -5332,14 +5336,14 @@ export default function App() {
                       handleVirtualKeyPress("BACKSPACE");
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className="px-3 sm:px-4 py-2.5 sm:py-3.5 min-h-[48px] sm:min-h-[54px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-200 text-base sm:text-lg font-extrabold rounded-xl shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 shrink-0 flex items-center justify-center"
+                    className="w-[44px] sm:w-[52px] shrink-0 py-1.5 min-h-[38px] sm:min-h-[42px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-200 text-sm sm:text-base font-extrabold rounded-lg shadow-xs transition-all cursor-pointer touch-manipulation active:scale-95 flex items-center justify-center"
                   >
                     ⌫
                   </button>
                 </div>
 
                 {/* Row 5: Action Row with ESC, TAB, 123, CLEAR, SPACE, ENTER */}
-                <div className="flex gap-1 sm:gap-1.5 justify-center pt-1">
+                <div className="flex gap-1 justify-center pt-0.5">
                   <button
                     type="button"
                     onPointerDown={(e) => {
@@ -5347,7 +5351,7 @@ export default function App() {
                       handleVirtualKeyPress("ESC");
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2.5 sm:px-3.5 py-2.5 sm:py-3.5 min-h-[46px] sm:min-h-[52px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold rounded-xl text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-rose-950/90 hover:bg-rose-900 border border-rose-800/80 text-rose-300 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
                     title="Tombol ESC / Tutup & Exit Input"
                   >
                     ESC
@@ -5359,7 +5363,7 @@ export default function App() {
                       handleVirtualKeyPress("TAB");
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2.5 sm:px-3.5 py-2.5 sm:py-3.5 min-h-[46px] sm:min-h-[52px] bg-slate-800 hover:bg-slate-700 text-sky-400 font-extrabold rounded-xl text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 text-sky-400 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
                     title="Pindah ke input berikutnya"
                   >
                     TAB ➔
@@ -5371,7 +5375,7 @@ export default function App() {
                       setKeyboardType("numpad");
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2.5 sm:px-3.5 py-2.5 sm:py-3.5 min-h-[46px] sm:min-h-[52px] bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold rounded-xl text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 text-emerald-400 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
                   >
                     123
                   </button>
@@ -5382,7 +5386,7 @@ export default function App() {
                       handleVirtualKeyPress("CLEAR");
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className="px-2.5 sm:px-3.5 py-2.5 sm:py-3.5 min-h-[46px] sm:min-h-[52px] bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold rounded-xl text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="px-2 sm:px-2.5 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 text-amber-400 font-extrabold rounded-lg text-[11px] sm:text-xs cursor-pointer active:scale-95 transition-all touch-manipulation"
                   >
                     Hapus
                   </button>
@@ -5393,7 +5397,7 @@ export default function App() {
                       handleVirtualKeyPress("SPACE");
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className="flex-1 py-2.5 sm:py-3.5 min-h-[46px] sm:min-h-[52px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold rounded-xl text-center text-xs sm:text-base cursor-pointer active:scale-95 transition-all touch-manipulation"
+                    className="flex-1 py-1.5 min-h-[36px] sm:min-h-[40px] bg-slate-800 hover:bg-slate-700 active:bg-emerald-600 text-white font-extrabold rounded-lg text-center text-xs sm:text-sm cursor-pointer active:scale-95 transition-all touch-manipulation"
                   >
                     Spasi
                   </button>
@@ -5404,7 +5408,7 @@ export default function App() {
                       handleVirtualKeyPress("ENTER");
                     }}
                     onClick={(e) => e.preventDefault()}
-                    className="px-3 sm:px-4 py-2.5 sm:py-3.5 min-h-[46px] sm:min-h-[52px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl text-xs sm:text-base cursor-pointer shadow-md active:scale-95 transition-all touch-manipulation"
+                    className="px-2.5 sm:px-3 py-1.5 min-h-[36px] sm:min-h-[40px] bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-lg text-xs sm:text-sm cursor-pointer shadow-md active:scale-95 transition-all touch-manipulation"
                     title="Enter / Pindah Input"
                   >
                     ENTER ↵
