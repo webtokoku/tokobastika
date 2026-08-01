@@ -149,7 +149,9 @@ import {
   Menu,
   ChevronUp,
   ChevronDown,
-  Keyboard
+  Keyboard,
+  GripHorizontal,
+  Move
 } from "lucide-react";
 
 export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
@@ -271,15 +273,48 @@ export default function App() {
     ? (isDevicePortrait ? "portrait" : "landscape") 
     : displayOrientation;
 
-  // Virtual On-Screen Keyboard States (Prevents Mobile Browser Auto-Zoom in Desktop View)
+  // Virtual On-Screen Floating Keyboard States (Floating, Draggable, & Prevents Mobile Auto-Zoom)
   const [showVirtualKeyboard, setShowVirtualKeyboard] = useState<boolean>(false);
   const [keyboardType, setKeyboardType] = useState<"qwerty" | "numpad">("qwerty");
   const [keyboardCaps, setKeyboardCaps] = useState<boolean>(false);
   const [keyboardMinimized, setKeyboardMinimized] = useState<boolean>(false);
   const [focusedInputElement, setFocusedInputElement] = useState<HTMLInputElement | HTMLTextAreaElement | null>(null);
   const [focusedInputLabel, setFocusedInputLabel] = useState<string>("");
+  const [keyboardPos, setKeyboardPos] = useState<{ x: number; y: number } | null>(null);
+  const [isDraggingKeyboard, setIsDraggingKeyboard] = useState<boolean>(false);
 
-  // Track focused input elements globally for virtual keyboard binding
+  const dragStartPosRef = useRef<{ mouseX: number; mouseY: number; initialX: number; initialY: number }>({
+    mouseX: 0,
+    mouseY: 0,
+    initialX: 0,
+    initialY: 0,
+  });
+  const isKeyboardUserMovedRef = useRef<boolean>(false);
+
+  // Suppress native OS soft keyboard dynamically across all textboxes when Virtual Keyboard is ON
+  useEffect(() => {
+    const applyInputMode = () => {
+      const inputs = document.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+      inputs.forEach((input) => {
+        if (showVirtualKeyboard) {
+          input.setAttribute("inputmode", "none");
+        } else {
+          if (input.type === "number") {
+            input.setAttribute("inputmode", "numeric");
+          } else {
+            input.removeAttribute("inputmode");
+          }
+        }
+      });
+    };
+
+    applyInputMode();
+    const observer = new MutationObserver(applyInputMode);
+    observer.observe(document.body, { childList: true, subtree: true });
+    return () => observer.disconnect();
+  }, [showVirtualKeyboard]);
+
+  // Track focused input elements globally & auto-position floating keyboard near target input
   useEffect(() => {
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
@@ -289,6 +324,11 @@ export default function App() {
           setFocusedInputElement(inputEl);
           const labelText = inputEl.placeholder || inputEl.name || inputEl.id || inputEl.ariaLabel || "Kolom Input Teks/Angka";
           setFocusedInputLabel(labelText);
+
+          // Force inputmode="none" on focus to immediately block native OS software keyboard
+          if (showVirtualKeyboard) {
+            inputEl.setAttribute("inputmode", "none");
+          }
 
           // Auto-select numpad for numerical fields
           if (
@@ -311,13 +351,82 @@ export default function App() {
             setShowVirtualKeyboard(true);
             setKeyboardMinimized(false);
           }
+
+          // Position virtual keyboard floating near target input if user hasn't manually moved it
+          if (!isKeyboardUserMovedRef.current) {
+            const rect = inputEl.getBoundingClientRect();
+            const kbWidth = Math.min(420, window.innerWidth - 20);
+            const kbHeight = 240;
+            let posX = Math.max(10, Math.min(window.innerWidth - kbWidth - 10, rect.left));
+            let posY = rect.bottom + 8;
+            if (posY + kbHeight > window.innerHeight - 10) {
+              posY = Math.max(10, rect.top - kbHeight - 8);
+            }
+            setKeyboardPos({ x: posX, y: posY });
+          }
         }
       }
     };
 
     document.addEventListener("focusin", handleFocusIn);
     return () => document.removeEventListener("focusin", handleFocusIn);
-  }, [effectiveOrientation]);
+  }, [effectiveOrientation, showVirtualKeyboard]);
+
+  // Window-level Mouse & Touch listeners for Draggable Virtual Keyboard
+  const handleKeyboardDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+    const currentX = keyboardPos?.x ?? Math.max(10, (window.innerWidth - 420) / 2);
+    const currentY = keyboardPos?.y ?? Math.max(10, window.innerHeight - 280);
+
+    dragStartPosRef.current = {
+      mouseX: clientX,
+      mouseY: clientY,
+      initialX: currentX,
+      initialY: currentY,
+    };
+    isKeyboardUserMovedRef.current = true;
+    setIsDraggingKeyboard(true);
+  };
+
+  useEffect(() => {
+    if (!isDraggingKeyboard) return;
+
+    const handleDragMove = (e: MouseEvent | TouchEvent) => {
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+      const deltaX = clientX - dragStartPosRef.current.mouseX;
+      const deltaY = clientY - dragStartPosRef.current.mouseY;
+
+      let newX = dragStartPosRef.current.initialX + deltaX;
+      let newY = dragStartPosRef.current.initialY + deltaY;
+
+      const maxX = Math.max(10, window.innerWidth - 280);
+      const maxY = Math.max(10, window.innerHeight - 80);
+      newX = Math.max(0, Math.min(maxX, newX));
+      newY = Math.max(0, Math.min(maxY, newY));
+
+      setKeyboardPos({ x: newX, y: newY });
+    };
+
+    const handleDragEnd = () => {
+      setIsDraggingKeyboard(false);
+    };
+
+    window.addEventListener("mousemove", handleDragMove);
+    window.addEventListener("mouseup", handleDragEnd);
+    window.addEventListener("touchmove", handleDragMove, { passive: false });
+    window.addEventListener("touchend", handleDragEnd);
+
+    return () => {
+      window.removeEventListener("mousemove", handleDragMove);
+      window.removeEventListener("mouseup", handleDragEnd);
+      window.removeEventListener("touchmove", handleDragMove);
+      window.removeEventListener("touchend", handleDragEnd);
+    };
+  }, [isDraggingKeyboard]);
 
   // Virtual Keyboard Key Press Handler (Dispatches native events for React state compatibility)
   const handleVirtualKeyPress = (key: string) => {
@@ -4611,22 +4720,39 @@ export default function App() {
   const renderVirtualKeyboard = () => {
     if (!showVirtualKeyboard) return null;
 
+    const defaultX = Math.max(10, (window.innerWidth - 440) / 2);
+    const defaultY = Math.max(10, window.innerHeight - 290);
+    const posX = keyboardPos?.x ?? defaultX;
+    const posY = keyboardPos?.y ?? defaultY;
+
     return (
-      <div className="fixed bottom-0 left-0 right-0 z-[200] print:hidden animate-in slide-in-from-bottom-5 duration-200">
+      <div
+        style={{
+          position: "fixed",
+          left: `${posX}px`,
+          top: `${posY}px`,
+          zIndex: 9999,
+        }}
+        className="print:hidden animate-in fade-in-50 duration-150 select-none shadow-2xl"
+      >
         {keyboardMinimized ? (
           /* MINIMIZED FLOATING BAR */
-          <div className="max-w-md mx-auto mb-2 px-4 py-2 bg-slate-900/95 text-white backdrop-blur-md border border-slate-700 rounded-2xl shadow-2xl flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2 min-w-0">
-              <Keyboard className="h-4 w-4 text-emerald-400 shrink-0" />
-              <span className="text-xs font-bold truncate">Keyboard Virtual</span>
+          <div
+            onMouseDown={handleKeyboardDragStart}
+            onTouchStart={handleKeyboardDragStart}
+            className="w-[280px] px-3 py-2 bg-slate-900/95 text-white backdrop-blur-md border-2 border-emerald-500 rounded-2xl shadow-2xl flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing hover:bg-slate-900"
+          >
+            <div className="flex items-center gap-1.5 min-w-0">
+              <GripHorizontal className="h-4 w-4 text-emerald-400 shrink-0" />
+              <span className="text-xs font-bold truncate">Keyboard (Geser)</span>
             </div>
-            <div className="flex items-center gap-1.5 shrink-0">
+            <div className="flex items-center gap-1 shrink-0">
               <button
                 type="button"
                 onClick={() => setKeyboardMinimized(false)}
-                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg shadow-sm transition-all cursor-pointer"
+                className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-lg shadow-sm transition-all cursor-pointer"
               >
-                Tampilkan
+                Buka
               </button>
               <button
                 type="button"
@@ -4639,39 +4765,67 @@ export default function App() {
             </div>
           </div>
         ) : (
-          /* FULL COMPACT VIRTUAL KEYBOARD PANEL */
-          <div className="bg-slate-950/95 text-slate-100 border-t-2 border-emerald-500 backdrop-blur-md shadow-2xl p-2 sm:p-3 max-w-4xl mx-auto rounded-t-2xl">
-            {/* Header Ribbon */}
-            <div className="flex items-center justify-between gap-2 mb-2 pb-1.5 border-b border-slate-800 text-xs">
-              <div className="flex items-center gap-2 min-w-0">
-                <Keyboard className="h-4 w-4 text-emerald-400 shrink-0" />
-                <span className="font-bold text-white text-[11px] sm:text-xs shrink-0">Keyboard Virtual</span>
-                <div className="hidden sm:flex items-center gap-1 bg-slate-800/80 border border-slate-700 rounded-lg px-2 py-0.5 text-[10px] text-slate-300 truncate max-w-[280px]">
-                  <span className="text-emerald-400 font-semibold">Target Input:</span>
-                  <span className="truncate">{focusedInputLabel || "Ketuk kolom mana saja untuk mengetik"}</span>
-                </div>
+          /* FULL FLOATING DRAGGABLE VIRTUAL KEYBOARD PANEL */
+          <div className="bg-slate-950/95 text-slate-100 border-2 border-emerald-500 backdrop-blur-md shadow-2xl p-2 sm:p-3 w-[92vw] max-w-[440px] rounded-2xl">
+            {/* Header Ribbon / Drag Bar */}
+            <div
+              onMouseDown={handleKeyboardDragStart}
+              onTouchStart={handleKeyboardDragStart}
+              className="flex items-center justify-between gap-1.5 mb-2 pb-1.5 border-b border-slate-800 text-xs cursor-grab active:cursor-grabbing bg-slate-900/90 -mx-2 -mt-2 p-2 rounded-t-xl hover:bg-slate-900 transition-colors"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <GripHorizontal className="h-4 w-4 text-emerald-400 shrink-0" />
+                <span className="font-extrabold text-white text-[11px] shrink-0">Keyboard Virtual</span>
+                <span className="text-[9px] text-emerald-400 bg-emerald-950 border border-emerald-800 px-1 py-0.2 rounded font-semibold hidden sm:inline">
+                  Tahan & Geser
+                </span>
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
+                {/* Reset Position Button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    isKeyboardUserMovedRef.current = false;
+                    if (focusedInputElement) {
+                      const rect = focusedInputElement.getBoundingClientRect();
+                      const kbWidth = Math.min(420, window.innerWidth - 20);
+                      const kbHeight = 240;
+                      let pX = Math.max(10, Math.min(window.innerWidth - kbWidth - 10, rect.left));
+                      let pY = rect.bottom + 8;
+                      if (pY + kbHeight > window.innerHeight - 10) {
+                        pY = Math.max(10, rect.top - kbHeight - 8);
+                      }
+                      setKeyboardPos({ x: pX, y: pY });
+                    } else {
+                      setKeyboardPos(null);
+                    }
+                  }}
+                  className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-semibold cursor-pointer"
+                  title="Posisikan ulang di dekat input"
+                >
+                  Dekat Input
+                </button>
+
                 {/* Layout Switcher */}
-                <div className="flex items-center bg-slate-900 border border-slate-700 rounded-lg p-0.5 text-[10px]">
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[10px]">
                   <button
                     type="button"
                     onClick={() => setKeyboardType("qwerty")}
-                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                    className={`px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer ${
                       keyboardType === "qwerty" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    ABC Teks
+                    ABC
                   </button>
                   <button
                     type="button"
                     onClick={() => setKeyboardType("numpad")}
-                    className={`px-2 py-0.5 rounded font-bold transition-all cursor-pointer ${
+                    className={`px-1.5 py-0.5 rounded font-bold transition-all cursor-pointer ${
                       keyboardType === "numpad" ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
                     }`}
                   >
-                    123 Angka
+                    123
                   </button>
                 </div>
 
@@ -4693,6 +4847,12 @@ export default function App() {
                   <X className="h-3.5 w-3.5" />
                 </button>
               </div>
+            </div>
+
+            {/* Target Input Indicator Ribbon */}
+            <div className="flex items-center gap-1 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-[10px] text-slate-300 mb-2 truncate">
+              <span className="text-emerald-400 font-bold shrink-0">Target Input:</span>
+              <span className="truncate italic font-medium">{focusedInputLabel || "Ketuk kolom input apa saja"}</span>
             </div>
 
             {/* Keyboard Layout Content */}
