@@ -382,109 +382,7 @@ export default function App() {
     return () => observer.disconnect();
   }, [showVirtualKeyboard]);
 
-  // Helper to compute optimal virtual keyboard position avoiding target input with 3x clearance
-  const computeOptimalKeyboardPos = (inputEl: HTMLElement | null, scale: number = keyboardScale) => {
-    const panelMaxWidth = window.innerWidth >= 640 ? 580 : 480;
-    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * scale;
-    const kbHeight = 310 * scale;
-
-    // Center horizontally on screen for 100% equal left & right margins
-    const pX = Math.max(10, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 10));
-
-    if (!inputEl) {
-      return { x: pX, y: Math.max(10, window.innerHeight - kbHeight - 15) };
-    }
-
-    let rect = inputEl.getBoundingClientRect();
-
-    // 1. Clearance gap = exactly 3x height of target textbox
-    const boxHeight = Math.max(28, Math.min(60, inputEl.offsetHeight || rect.height || 38));
-    const gap = boxHeight * 3; // 3x textbox size clearance
-
-    // 2. Determine whether to place ABOVE or BELOW target input
-    // Default to placing ABOVE unless input is near top of viewport (< 180px)
-    const placeAbove = rect.top >= 180 || (rect.top > window.innerHeight * 0.22);
-
-    let pY: number;
-
-    if (placeAbove) {
-      // Position Keyboard BOTTOM edge = rect.top - gap
-      // Therefore Keyboard TOP edge pY = rect.top - gap - kbHeight
-      pY = rect.top - gap - kbHeight;
-
-      // If pY goes off top of viewport (< 15px), scroll window/container so target input moves down!
-      if (pY < 15) {
-        // Scroll target input down into lower view so keyboard fits above without overlap
-        inputEl.scrollIntoView({ block: "end", behavior: "instant" });
-        rect = inputEl.getBoundingClientRect();
-        
-        // Recalculate pY after scrolling
-        pY = rect.top - gap - kbHeight;
-
-        // If still < 15, scroll further down by delta
-        if (pY < 15) {
-          const delta = 15 - pY;
-          window.scrollBy({ top: -delta, behavior: "instant" });
-          rect = inputEl.getBoundingClientRect();
-          pY = rect.top - gap - kbHeight;
-        }
-      }
-    } else {
-      // Position Keyboard TOP edge pY = rect.bottom + gap (below target input)
-      pY = rect.bottom + gap;
-
-      // If pY + kbHeight goes off bottom of viewport, scroll target input up
-      if (pY + kbHeight > window.innerHeight - 15) {
-        inputEl.scrollIntoView({ block: "start", behavior: "instant" });
-        rect = inputEl.getBoundingClientRect();
-        pY = rect.bottom + gap;
-
-        if (pY + kbHeight > window.innerHeight - 15) {
-          const overflow = (pY + kbHeight) - (window.innerHeight - 15);
-          window.scrollBy({ top: overflow, behavior: "instant" });
-          rect = inputEl.getBoundingClientRect();
-          pY = rect.bottom + gap;
-        }
-      }
-    }
-
-    // 3. ABSOLUTE STRICT OVERLAP PROTECTION
-    // Check if [pY, pY + kbHeight] intersects [rect.top - 8, rect.bottom + 8]
-    const isOverlapping = (pY < rect.bottom + 8) && (pY + kbHeight > rect.top - 8);
-
-    if (isOverlapping) {
-      if (rect.top > window.innerHeight * 0.35) {
-        // Place ABOVE
-        inputEl.scrollIntoView({ block: "end", behavior: "instant" });
-        rect = inputEl.getBoundingClientRect();
-        pY = rect.top - gap - kbHeight;
-      } else {
-        // Place BELOW
-        inputEl.scrollIntoView({ block: "start", behavior: "instant" });
-        rect = inputEl.getBoundingClientRect();
-        pY = rect.bottom + gap;
-      }
-    }
-
-    // Double-check overlap after clamping; if clamped position overlaps target input, shift viewport!
-    pY = Math.max(10, Math.min(pY, window.innerHeight - kbHeight - 10));
-    const postClampOverlap = (pY < rect.bottom + 4) && (pY + kbHeight > rect.top - 4);
-    if (postClampOverlap) {
-      if (rect.top > window.innerHeight * 0.4) {
-        window.scrollBy({ top: -180, behavior: "instant" });
-        rect = inputEl.getBoundingClientRect();
-        pY = rect.top - gap - kbHeight;
-      } else {
-        window.scrollBy({ top: 180, behavior: "instant" });
-        rect = inputEl.getBoundingClientRect();
-        pY = rect.bottom + gap;
-      }
-    }
-
-    return { x: pX, y: Math.max(10, pY) };
-  };
-
-  // Track focused input elements globally & auto-position floating keyboard near target input ONLY if Keyboard ON
+  // Track focused input elements globally without auto-moving virtual keyboard position
   useEffect(() => {
     const handleInputTargetEvent = (e: Event) => {
       const target = e.target as HTMLElement;
@@ -524,11 +422,6 @@ export default function App() {
             } else {
               setKeyboardType("qwerty");
             }
-
-            isKeyboardUserMovedRef.current = false;
-            // Compute optimal keyboard position avoiding target textbox
-            const newPos = computeOptimalKeyboardPos(inputEl, keyboardScale);
-            setKeyboardPos(newPos);
           }
         }
       }
@@ -540,7 +433,7 @@ export default function App() {
       document.removeEventListener("focusin", handleInputTargetEvent);
       document.removeEventListener("click", handleInputTargetEvent);
     };
-  }, [effectiveOrientation, showVirtualKeyboard, keyboardScale]);
+  }, [showVirtualKeyboard]);
 
   // Window-level Mouse & Touch listeners for High-Sensitivity Draggable Virtual Keyboard
   const handleKeyboardDragStart = (e: React.MouseEvent | React.TouchEvent) => {
@@ -5116,28 +5009,16 @@ export default function App() {
   const renderVirtualKeyboard = () => {
     if (!showVirtualKeyboard || keyboardDismissedTemp) return null;
 
-    const defaultPos = computeOptimalKeyboardPos(focusedInputElement, keyboardScale);
-
     const panelMaxWidth = window.innerWidth >= 640 ? 580 : 480;
     const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
     const kbHeight = 310 * keyboardScale;
 
-    let posX = defaultPos.x;
-    let posY = defaultPos.y;
+    // Default centered position near bottom of screen
+    const defaultX = Math.max(10, Math.min((window.innerWidth - targetKbWidth) / 2, window.innerWidth - targetKbWidth - 10));
+    const defaultY = Math.max(10, window.innerHeight - kbHeight - 20);
 
-    if (isKeyboardUserMovedRef.current && keyboardPos) {
-      if (focusedInputElement) {
-        const rect = focusedInputElement.getBoundingClientRect();
-        const overlaps = (keyboardPos.y < rect.bottom + 8) && (keyboardPos.y + kbHeight > rect.top - 8);
-        if (!overlaps) {
-          posX = keyboardPos.x;
-          posY = keyboardPos.y;
-        }
-      } else {
-        posX = keyboardPos.x;
-        posY = keyboardPos.y;
-      }
-    }
+    let posX = keyboardPos?.x ?? defaultX;
+    let posY = keyboardPos?.y ?? defaultY;
 
     // Guarantee no part of keyboard is cut off by screen boundaries
     posX = Math.max(10, Math.min(posX, window.innerWidth - targetKbWidth - 10));
@@ -5227,13 +5108,12 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     isKeyboardUserMovedRef.current = false;
-                    const newPos = computeOptimalKeyboardPos(focusedInputElement, keyboardScale);
-                    setKeyboardPos(newPos);
+                    setKeyboardPos(null);
                   }}
                   className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 rounded text-[10px] sm:text-xs font-bold cursor-pointer touch-manipulation"
-                  title="Posisikan ulang di dekat input"
+                  title="Kembalikan posisi keyboard ke tengah bawah"
                 >
-                  Dekat
+                  Reset
                 </button>
 
                 {/* Layout Switcher */}
