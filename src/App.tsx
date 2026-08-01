@@ -404,17 +404,15 @@ export default function App() {
               setKeyboardType("qwerty");
             }
 
-            // Always auto-position virtual keyboard near target input field with generous spacing from screen edges
+            // Always auto-position virtual keyboard centered horizontally on screen (equal left & right margins)
             const rect = inputEl.getBoundingClientRect();
-            const targetKbWidth = Math.min(520, window.innerWidth - 48);
+            const panelMaxWidth = window.innerWidth >= 640 ? 560 : 520;
+            const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95);
             const kbWidth = targetKbWidth * keyboardScale;
-            const kbHeight = 310 * keyboardScale;
-            const safeLeft = 20;
-            const safeRight = 36;
+            const kbHeight = 320 * keyboardScale;
             
-            // Center keyboard relative to input field width for natural placement without hugging right screen edge
-            let idealX = rect.left + (rect.width / 2) - (kbWidth / 2);
-            let posX = Math.max(safeLeft, Math.min(window.innerWidth - kbWidth - safeRight, idealX));
+            // Center horizontally on screen for 100% equal margin left and margin right
+            let posX = Math.max(16, (window.innerWidth - kbWidth) / 2);
             
             let posY = rect.bottom + 8;
             if (posY + kbHeight > window.innerHeight - 16) {
@@ -440,8 +438,10 @@ export default function App() {
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
-    const currentX = keyboardPos?.x ?? Math.max(12, (window.innerWidth - 460) / 2);
-    const currentY = keyboardPos?.y ?? Math.max(12, window.innerHeight - 300);
+    const panelMaxWidth = window.innerWidth >= 640 ? 560 : 520;
+    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
+    const currentX = keyboardPos?.x ?? Math.max(16, (window.innerWidth - targetKbWidth) / 2);
+    const currentY = keyboardPos?.y ?? Math.max(16, window.innerHeight - (320 * keyboardScale) - 20);
 
     dragStartPosRef.current = {
       mouseX: clientX,
@@ -4920,8 +4920,10 @@ export default function App() {
   const renderVirtualKeyboard = () => {
     if (!showVirtualKeyboard || keyboardDismissedTemp) return null;
 
-    const defaultX = Math.max(10, (window.innerWidth - 440) / 2);
-    const defaultY = Math.max(10, window.innerHeight - 290);
+    const panelMaxWidth = window.innerWidth >= 640 ? 560 : 520;
+    const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95) * keyboardScale;
+    const defaultX = Math.max(16, (window.innerWidth - targetKbWidth) / 2);
+    const defaultY = Math.max(16, window.innerHeight - (320 * keyboardScale) - 20);
     const posX = keyboardPos?.x ?? defaultX;
     const posY = keyboardPos?.y ?? defaultY;
 
@@ -4991,13 +4993,11 @@ export default function App() {
                     isKeyboardUserMovedRef.current = false;
                     if (focusedInputElement) {
                       const rect = focusedInputElement.getBoundingClientRect();
-                      const targetKbWidth = Math.min(520, window.innerWidth - 48);
+                      const panelMaxWidth = window.innerWidth >= 640 ? 560 : 520;
+                      const targetKbWidth = Math.min(panelMaxWidth, window.innerWidth * 0.95);
                       const kbWidth = targetKbWidth * keyboardScale;
-                      const kbHeight = 310 * keyboardScale;
-                      const safeLeft = 20;
-                      const safeRight = 36;
-                      let idealX = rect.left + (rect.width / 2) - (kbWidth / 2);
-                      let pX = Math.max(safeLeft, Math.min(window.innerWidth - kbWidth - safeRight, idealX));
+                      const kbHeight = 320 * keyboardScale;
+                      let pX = Math.max(16, (window.innerWidth - kbWidth) / 2);
                       let pY = rect.bottom + 8;
                       if (pY + kbHeight > window.innerHeight - 16) {
                         pY = Math.max(16, rect.top - kbHeight - 8);
