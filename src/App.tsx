@@ -285,7 +285,8 @@ export default function App() {
   const [keyboardScale, setKeyboardScale] = useState<number>(() => {
     try {
       const saved = localStorage.getItem("bastika_vk_scale");
-      return saved ? parseFloat(saved) : 1;
+      const parsed = saved ? parseFloat(saved) : 1;
+      return parsed < 1 ? 1 : parsed;
     } catch {
       return 1;
     }
@@ -801,6 +802,7 @@ export default function App() {
   const formatReceiptToEscPos = (tx: any, settings: InvoiceSettings): Uint8Array => {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
+    const maxCols = settings.paperWidth === "80mm" ? 48 : 32;
 
     const addBytes = (bytes: number[]) => {
       chunks.push(new Uint8Array(bytes));
@@ -821,7 +823,7 @@ export default function App() {
     
     if (settings.address) addLine(settings.address);
     if (settings.phone) addLine(`HP: ${settings.phone}`);
-    addLine("-".repeat(32));
+    addLine("-".repeat(maxCols));
 
     // Left align for body
     addBytes([0x1B, 0x61, 0x00]);
@@ -829,7 +831,7 @@ export default function App() {
     addLine(`Tanggal  : ${new Date(tx.createdAt || tx.date || Date.now()).toLocaleString("id-ID")}`);
     addLine(`Kasir    : ${tx.operatorEmail || tx.createdByName || "Kasir"}`);
     if (tx.customerName) addLine(`Pelanggan: ${tx.customerName}`);
-    addLine("-".repeat(32));
+    addLine("-".repeat(maxCols));
 
     // Items
     let calcSubtotal = 0;
@@ -846,7 +848,7 @@ export default function App() {
           }
           const bLabel = `  ${item.bottleCount || 1}x unit`;
           const bVal = `Rp ${itemTotal.toLocaleString("id-ID")}`;
-          const bSpaces = 32 - bLabel.length - bVal.length;
+          const bSpaces = maxCols - bLabel.length - bVal.length;
           addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
           return;
         }
@@ -863,7 +865,7 @@ export default function App() {
           addLine(`${item.scentName} (${item.volumeMl}ml)`);
           const lineText = `${item.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml x ${item.bottleCount}x`;
           const valText = `Rp ${scentCost.toLocaleString("id-ID")}`;
-          const spaces = 32 - lineText.length - valText.length;
+          const spaces = maxCols - lineText.length - valText.length;
           addLine(lineText + " ".repeat(Math.max(1, spaces)) + valText);
         }
 
@@ -872,7 +874,7 @@ export default function App() {
             ? `Botol ${item.bottleSize} (${item.bottleCount}x) - Bawa Sendiri`
             : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
           const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
-          const bSpaces = 32 - bLabel.length - bVal.length;
+          const bSpaces = maxCols - bLabel.length - bVal.length;
           addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
         }
       });
@@ -888,7 +890,7 @@ export default function App() {
         addLine(`${tx.scentName} (${tx.volumeMl}ml)`);
         const lineText = `${tx.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml`;
         const valText = `Rp ${scentCost.toLocaleString("id-ID")}`;
-        const spaces = 32 - lineText.length - valText.length;
+        const spaces = maxCols - lineText.length - valText.length;
         addLine(lineText + " ".repeat(Math.max(1, spaces)) + valText);
       }
 
@@ -897,7 +899,7 @@ export default function App() {
           ? `Botol ${tx.bottleSize} (${tx.bottleCount || 1}x) - Bawa Sendiri`
           : `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
         const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
-        const bSpaces = 32 - bLabel.length - bVal.length;
+        const bSpaces = maxCols - bLabel.length - bVal.length;
         addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
       }
     } else if (tx.packageName) {
@@ -908,27 +910,27 @@ export default function App() {
       addLine(`Klaim Promo Diskon Pelanggan`);
     }
 
-    addLine("-".repeat(32));
+    addLine("-".repeat(maxCols));
 
     // Totals
     const subLabel = "SUBTOTAL:";
     const subVal = `Rp ${calcSubtotal.toLocaleString("id-ID")}`;
-    addLine(subLabel + " ".repeat(Math.max(1, 32 - subLabel.length - subVal.length)) + subVal);
+    addLine(subLabel + " ".repeat(Math.max(1, maxCols - subLabel.length - subVal.length)) + subVal);
 
     if (tx.discountNominal && tx.discountNominal > 0) {
       const dTitle = getDiscountLabel(tx);
       const discLabel = `${dTitle}:`;
       const discVal = `-Rp ${tx.discountNominal.toLocaleString("id-ID")}`;
-      addLine(discLabel + " ".repeat(Math.max(1, 32 - discLabel.length - discVal.length)) + discVal);
+      addLine(discLabel + " ".repeat(Math.max(1, maxCols - discLabel.length - discVal.length)) + discVal);
     }
 
     const netLabel = "TOTAL BAYAR:";
     const netVal = `Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : (tx.totalPrice || 0)).toLocaleString("id-ID")}`;
     addBytes([0x1B, 0x45, 0x01]); // Bold
-    addLine(netLabel + " ".repeat(Math.max(1, 32 - netLabel.length - netVal.length)) + netVal);
+    addLine(netLabel + " ".repeat(Math.max(1, maxCols - netLabel.length - netVal.length)) + netVal);
     addBytes([0x1B, 0x45, 0x00]); // Bold off
 
-    addLine("-".repeat(32));
+    addLine("-".repeat(maxCols));
 
     // Center footer
     addBytes([0x1B, 0x61, 0x01]);
@@ -955,31 +957,83 @@ export default function App() {
     return result;
   };
 
-  // Web Bluetooth Connect
+  // Web Bluetooth Connect (Supports iware XBTII & Standard POS Thermal Printers)
   const connectBluetoothPrinter = async (silent = false) => {
     const nav = navigator as any;
     if (!nav.bluetooth) {
-      if (!silent) showToast("Web Bluetooth tidak didukung di browser ini!", "error");
+      if (!silent) showToast("Web Bluetooth tidak didukung di browser/mode ini! Gunakan Chrome/Edge/Opera di Android/Desktop.", "error");
       return;
     }
 
     setIsPrinterConnecting(true);
     setPrinterStatus("Connecting...");
     try {
-      const device = await nav.bluetooth.requestDevice({
-        filters: [
-          { services: ["0000ffe0-0000-1000-8000-00805f9b34fb"] },
-          { services: ["000018f0-0000-1000-8000-00805f9b34fb"] }
-        ],
-        optionalServices: ["0000ffe1-0000-1000-8000-00805f9b34fb"]
-      });
+      let device: any = null;
+      try {
+        // Primary strategy: request all paired/unpaired bluetooth devices (supported on Android/Desktop Chrome)
+        device = await nav.bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [
+            "0000ffe0-0000-1000-8000-00805f9b34fb",
+            "0000ffe1-0000-1000-8000-00805f9b34fb",
+            "000018f0-0000-1000-8000-00805f9b34fb",
+            "0000e0ff-0000-1000-8000-00805f9b34fb",
+            "0000ff00-0000-1000-8000-00805f9b34fb",
+            "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+            "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+          ]
+        });
+      } catch (e1) {
+        // Fallback strategy: filter by service UUIDs and device name prefixes including iware XBTII
+        device = await nav.bluetooth.requestDevice({
+          filters: [
+            { namePrefix: "iware" },
+            { namePrefix: "iWare" },
+            { namePrefix: "XBTII" },
+            { namePrefix: "XBT" },
+            { namePrefix: "POS" },
+            { namePrefix: "RPP" },
+            { services: ["0000ffe0-0000-1000-8000-00805f9b34fb"] },
+            { services: ["000018f0-0000-1000-8000-00805f9b34fb"] }
+          ],
+          optionalServices: [
+            "0000ffe0-0000-1000-8000-00805f9b34fb",
+            "0000ffe1-0000-1000-8000-00805f9b34fb",
+            "000018f0-0000-1000-8000-00805f9b34fb",
+            "0000e0ff-0000-1000-8000-00805f9b34fb",
+            "0000ff00-0000-1000-8000-00805f9b34fb",
+            "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+            "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+          ]
+        });
+      }
 
       const server = await device.gatt?.connect();
-      let service;
-      try {
-        service = await server?.getPrimaryService("0000ffe0-0000-1000-8000-00805f9b34fb");
-      } catch (err) {
-        service = await server?.getPrimaryService("000018f0-0000-1000-8000-00805f9b34fb");
+      let service: any = null;
+
+      const targetServices = [
+        "0000ffe0-0000-1000-8000-00805f9b34fb",
+        "000018f0-0000-1000-8000-00805f9b34fb",
+        "0000e0ff-0000-1000-8000-00805f9b34fb",
+        "0000ff00-0000-1000-8000-00805f9b34fb",
+        "49535343-fe7d-4ae5-8fa9-9fafd205e455",
+        "e7810a71-73ae-499d-8c15-faa9aef0c3f2"
+      ];
+
+      for (const sUuid of targetServices) {
+        try {
+          service = await server?.getPrimaryService(sUuid);
+          if (service) break;
+        } catch (e) {}
+      }
+
+      if (!service && server) {
+        try {
+          const primaryServices = await server.getPrimaryServices();
+          if (primaryServices && primaryServices.length > 0) {
+            service = primaryServices[0];
+          }
+        } catch (e) {}
       }
 
       const characteristics = await service?.getCharacteristics();
@@ -988,12 +1042,13 @@ export default function App() {
       if (writeChar) {
         setBtDevice(device);
         setBtCharacteristic(writeChar);
-        setPrinterStatus(`Connected to ${device.name || "Bluetooth Printer"}`);
+        const deviceLabel = device.name || "iware XBTII (Bluetooth POS)";
+        setPrinterStatus(`Connected to ${deviceLabel}`);
         savePrinterConfig({
           ...printerConfig,
-          deviceName: device.name || "Bluetooth Printer"
+          deviceName: deviceLabel
         });
-        if (!silent) showToast("Printer Bluetooth berhasil terhubung!", "success");
+        if (!silent) showToast(`Printer Bluetooth (${deviceLabel}) berhasil terhubung!`, "success");
       } else {
         throw new Error("Karakteristik write printer tidak ditemukan!");
       }
@@ -4809,17 +4864,17 @@ export default function App() {
               <div className="flex items-center gap-1 shrink-0">
                 {/* Keyboard Size Control */}
                 <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[9px]">
-                  {[0.8, 1.0, 1.2].map((sc) => (
+                  {[1.0, 1.2, 1.4, 1.6].map((sc) => (
                     <button
                       key={sc}
                       type="button"
                       onClick={() => handleSetKeyboardScale(sc)}
-                      className={`px-1 py-0.2 rounded font-bold transition-all cursor-pointer ${
+                      className={`px-1.5 py-0.2 rounded font-bold transition-all cursor-pointer ${
                         keyboardScale === sc ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
                       }`}
                       title={`Ukuran Keyboard ${Math.round(sc * 100)}%`}
                     >
-                      {sc === 0.8 ? "S" : sc === 1.0 ? "M" : "L"}
+                      {sc === 1.0 ? "M" : sc === 1.2 ? "L" : sc === 1.4 ? "XL" : "XXL"}
                     </button>
                   ))}
                 </div>
@@ -10169,7 +10224,10 @@ export default function App() {
                 <div className="bg-white rounded-2xl p-6 border border-slate-200 shadow-sm lg:col-span-7 space-y-4 animate-in fade-in duration-300">
                   <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                     <Printer className="h-4.5 w-4.5 text-emerald-600" />
-                    <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Konektivitas Printer Fisik (Thermal Bluetooth / USB)</h4>
+                    <div>
+                      <h4 className="font-bold text-xs text-slate-700 uppercase tracking-wider">Konektivitas Printer Fisik (Thermal Bluetooth / USB)</h4>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Support Direct Bluetooth Thermal POS (iware XBTII, RPP02N, POS-58/80, ESC/POS)</p>
+                    </div>
                   </div>
 
                   <div className="space-y-3 text-xs">
@@ -10184,8 +10242,8 @@ export default function App() {
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 cursor-pointer"
                       >
                         <option value="system">Sistem Print Browser / PDF (Default)</option>
-                        <option value="bluetooth">Bluetooth (Direct ESC/POS Raw)</option>
-                        <option value="usb">USB (Direct ESC/POS Raw)</option>
+                        <option value="bluetooth">Direct Bluetooth POS Printer (iware XBTII / Thermal POS)</option>
+                        <option value="usb">Direct USB ESC/POS Thermal Printer</option>
                       </select>
                     </div>
 
