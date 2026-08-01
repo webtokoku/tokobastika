@@ -323,11 +323,12 @@ export default function App() {
   const [focusedInputLabel, setFocusedInputLabel] = useState<string>("");
   const [keyboardPos, setKeyboardPos] = useState<{ x: number; y: number } | null>(null);
   const [isDraggingKeyboard, setIsDraggingKeyboard] = useState<boolean>(false);
+  const [isResizingKeyboard, setIsResizingKeyboard] = useState<boolean>(false);
   const [keyboardScale, setKeyboardScale] = useState<number>(() => {
     try {
       const saved = localStorage.getItem("bastika_vk_scale");
       const parsed = saved ? parseFloat(saved) : 1;
-      return parsed < 1 ? 1 : parsed;
+      return (isNaN(parsed) || parsed < 0.5 || parsed > 2.5) ? 1 : parsed;
     } catch {
       return 1;
     }
@@ -345,6 +346,11 @@ export default function App() {
     mouseY: 0,
     initialX: 0,
     initialY: 0,
+  });
+  const resizeStartRef = useRef<{ mouseX: number; mouseY: number; startScale: number }>({
+    mouseX: 0,
+    mouseY: 0,
+    startScale: 1,
   });
   const isKeyboardUserMovedRef = useRef<boolean>(false);
   const [activePressedKey, setActivePressedKey] = useState<string | null>(null);
@@ -517,6 +523,67 @@ export default function App() {
       window.removeEventListener("touchend", handleDragEnd);
     };
   }, [isDraggingKeyboard]);
+
+  // Window-level Mouse & Touch listeners for Resizing Virtual Keyboard via Bottom-Left Handle
+  const handleKeyboardResizeStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (e.cancelable) e.preventDefault();
+    e.stopPropagation();
+    const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+    const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+    resizeStartRef.current = {
+      mouseX: clientX,
+      mouseY: clientY,
+      startScale: keyboardScale,
+    };
+    setIsResizingKeyboard(true);
+  };
+
+  useEffect(() => {
+    if (!isResizingKeyboard) return;
+
+    let animFrameId: number;
+
+    const handleResizeMove = (e: MouseEvent | TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
+      const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
+      const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
+
+      // Bottom-left handle: moving DOWN (+dY) or LEFT (-dX) enlarges scale.
+      // Moving UP (-dY) or RIGHT (+dX) shrinks scale.
+      const deltaX = resizeStartRef.current.mouseX - clientX;
+      const deltaY = clientY - resizeStartRef.current.mouseY;
+
+      const scaleDelta = (deltaY + deltaX) / 300;
+      let newScale = resizeStartRef.current.startScale + scaleDelta;
+
+      newScale = Math.max(0.6, Math.min(2.2, newScale));
+      newScale = Math.round(newScale * 100) / 100;
+
+      cancelAnimationFrame(animFrameId);
+      animFrameId = requestAnimationFrame(() => {
+        handleSetKeyboardScale(newScale);
+      });
+    };
+
+    const handleResizeEnd = () => {
+      setIsResizingKeyboard(false);
+      cancelAnimationFrame(animFrameId);
+    };
+
+    window.addEventListener("mousemove", handleResizeMove, { passive: false });
+    window.addEventListener("mouseup", handleResizeEnd);
+    window.addEventListener("touchmove", handleResizeMove, { passive: false });
+    window.addEventListener("touchend", handleResizeEnd);
+
+    return () => {
+      cancelAnimationFrame(animFrameId);
+      window.removeEventListener("mousemove", handleResizeMove);
+      window.removeEventListener("mouseup", handleResizeEnd);
+      window.removeEventListener("touchmove", handleResizeMove);
+      window.removeEventListener("touchend", handleResizeEnd);
+    };
+  }, [isResizingKeyboard]);
 
   // Virtual Keyboard Key Press Handler (Dispatches native events for React state compatibility)
   const handleVirtualKeyPress = (key: string) => {
@@ -5098,7 +5165,7 @@ export default function App() {
           </div>
         ) : (
           /* FULL FLOATING DRAGGABLE VIRTUAL KEYBOARD PANEL */
-          <div className="bg-slate-950/95 text-slate-100 border-2 border-emerald-500 backdrop-blur-md shadow-2xl p-2.5 sm:p-3 w-[95vw] max-w-[480px] sm:max-w-[580px] rounded-2xl">
+          <div className="relative bg-slate-950/95 text-slate-100 border-2 border-emerald-500 backdrop-blur-md shadow-2xl p-2.5 sm:p-3 w-[95vw] max-w-[480px] sm:max-w-[580px] rounded-2xl">
             {/* Header Ribbon / Drag Bar */}
             <div
               onMouseDown={handleKeyboardDragStart}
@@ -5114,15 +5181,16 @@ export default function App() {
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
-                {/* Reset Position Button */}
+                {/* Reset Position & Scale Button */}
                 <button
                   type="button"
                   onClick={() => {
                     isKeyboardUserMovedRef.current = false;
                     setKeyboardPos(null);
+                    handleSetKeyboardScale(1);
                   }}
                   className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-600 text-slate-300 rounded text-[10px] sm:text-xs font-bold cursor-pointer touch-manipulation"
-                  title="Kembalikan posisi keyboard ke tengah bawah"
+                  title="Kembalikan posisi & ukuran keyboard ke default (100%)"
                 >
                   Reset
                 </button>
@@ -5519,6 +5587,25 @@ export default function App() {
                 })}
               </div>
             )}
+
+            {/* Sisi Kiri Bawah: Draggable Persistent Resize Handle */}
+            <div
+              onMouseDown={handleKeyboardResizeStart}
+              onTouchStart={handleKeyboardResizeStart}
+              className={`absolute -bottom-2.5 -left-2.5 z-30 flex items-center gap-1 px-2.5 py-1 rounded-tr-xl rounded-bl-2xl shadow-xl border-2 cursor-nesw-resize transition-all touch-none select-none ${
+                isResizingKeyboard
+                  ? "bg-amber-400 text-slate-950 border-amber-300 ring-4 ring-amber-400/40 scale-110"
+                  : "bg-emerald-500 hover:bg-emerald-400 active:bg-emerald-300 text-slate-950 border-slate-900"
+              }`}
+              title="Tahan & geser untuk mengubah ukuran keyboard (Tersimpan otomatis)"
+            >
+              <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 20l16-16M4 20h10M4 20v-10" />
+              </svg>
+              <span className="text-[10px] font-black tracking-tight text-slate-950">
+                {Math.round(keyboardScale * 100)}%
+              </span>
+            </div>
           </div>
         )}
       </div>
