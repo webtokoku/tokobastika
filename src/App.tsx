@@ -282,6 +282,21 @@ export default function App() {
   const [focusedInputLabel, setFocusedInputLabel] = useState<string>("");
   const [keyboardPos, setKeyboardPos] = useState<{ x: number; y: number } | null>(null);
   const [isDraggingKeyboard, setIsDraggingKeyboard] = useState<boolean>(false);
+  const [keyboardScale, setKeyboardScale] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem("bastika_vk_scale");
+      return saved ? parseFloat(saved) : 1;
+    } catch {
+      return 1;
+    }
+  });
+
+  const handleSetKeyboardScale = (scale: number) => {
+    setKeyboardScale(scale);
+    try {
+      localStorage.setItem("bastika_vk_scale", String(scale));
+    } catch {}
+  };
 
   const dragStartPosRef = useRef<{ mouseX: number; mouseY: number; initialX: number; initialY: number }>({
     mouseX: 0,
@@ -314,7 +329,7 @@ export default function App() {
     return () => observer.disconnect();
   }, [showVirtualKeyboard]);
 
-  // Track focused input elements globally & auto-position floating keyboard near target input
+  // Track focused input elements globally & auto-position floating keyboard near target input ONLY if Keyboard ON
   useEffect(() => {
     const handleFocusIn = (e: FocusEvent) => {
       const target = e.target as HTMLElement;
@@ -346,17 +361,16 @@ export default function App() {
             setKeyboardType("qwerty");
           }
 
-          // Auto-open virtual keyboard on Desktop mode if not explicitly closed
-          if (effectiveOrientation === "landscape") {
-            setShowVirtualKeyboard(true);
+          // Unminimize keyboard on focus ONLY if user activated Virtual Keyboard switch ON
+          if (showVirtualKeyboard) {
             setKeyboardMinimized(false);
           }
 
           // Position virtual keyboard floating near target input if user hasn't manually moved it
-          if (!isKeyboardUserMovedRef.current) {
+          if (showVirtualKeyboard && !isKeyboardUserMovedRef.current) {
             const rect = inputEl.getBoundingClientRect();
-            const kbWidth = Math.min(420, window.innerWidth - 20);
-            const kbHeight = 240;
+            const kbWidth = Math.min(420, window.innerWidth - 20) * keyboardScale;
+            const kbHeight = 240 * keyboardScale;
             let posX = Math.max(10, Math.min(window.innerWidth - kbWidth - 10, rect.left));
             let posY = rect.bottom + 8;
             if (posY + kbHeight > window.innerHeight - 10) {
@@ -370,10 +384,11 @@ export default function App() {
 
     document.addEventListener("focusin", handleFocusIn);
     return () => document.removeEventListener("focusin", handleFocusIn);
-  }, [effectiveOrientation, showVirtualKeyboard]);
+  }, [effectiveOrientation, showVirtualKeyboard, keyboardScale]);
 
-  // Window-level Mouse & Touch listeners for Draggable Virtual Keyboard
+  // Window-level Mouse & Touch listeners for High-Sensitivity Draggable Virtual Keyboard
   const handleKeyboardDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    if (e.cancelable) e.preventDefault();
     const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
     const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
@@ -393,7 +408,10 @@ export default function App() {
   useEffect(() => {
     if (!isDraggingKeyboard) return;
 
+    let animFrameId: number;
+
     const handleDragMove = (e: MouseEvent | TouchEvent) => {
+      if (e.cancelable) e.preventDefault();
       const clientX = "touches" in e ? e.touches[0].clientX : e.clientX;
       const clientY = "touches" in e ? e.touches[0].clientY : e.clientY;
 
@@ -403,24 +421,29 @@ export default function App() {
       let newX = dragStartPosRef.current.initialX + deltaX;
       let newY = dragStartPosRef.current.initialY + deltaY;
 
-      const maxX = Math.max(10, window.innerWidth - 280);
-      const maxY = Math.max(10, window.innerHeight - 80);
+      const maxX = Math.max(0, window.innerWidth - 120);
+      const maxY = Math.max(0, window.innerHeight - 60);
       newX = Math.max(0, Math.min(maxX, newX));
       newY = Math.max(0, Math.min(maxY, newY));
 
-      setKeyboardPos({ x: newX, y: newY });
+      cancelAnimationFrame(animFrameId);
+      animFrameId = requestAnimationFrame(() => {
+        setKeyboardPos({ x: newX, y: newY });
+      });
     };
 
     const handleDragEnd = () => {
       setIsDraggingKeyboard(false);
+      cancelAnimationFrame(animFrameId);
     };
 
-    window.addEventListener("mousemove", handleDragMove);
+    window.addEventListener("mousemove", handleDragMove, { passive: false });
     window.addEventListener("mouseup", handleDragEnd);
     window.addEventListener("touchmove", handleDragMove, { passive: false });
     window.addEventListener("touchend", handleDragEnd);
 
     return () => {
+      cancelAnimationFrame(animFrameId);
       window.removeEventListener("mousemove", handleDragMove);
       window.removeEventListener("mouseup", handleDragEnd);
       window.removeEventListener("touchmove", handleDragMove);
@@ -4732,15 +4755,17 @@ export default function App() {
           left: `${posX}px`,
           top: `${posY}px`,
           zIndex: 9999,
+          transform: `scale(${keyboardScale})`,
+          transformOrigin: "top left",
         }}
-        className="print:hidden animate-in fade-in-50 duration-150 select-none shadow-2xl"
+        className="print:hidden animate-in fade-in-50 duration-150 select-none shadow-2xl touch-none"
       >
         {keyboardMinimized ? (
           /* MINIMIZED FLOATING BAR */
           <div
             onMouseDown={handleKeyboardDragStart}
             onTouchStart={handleKeyboardDragStart}
-            className="w-[280px] px-3 py-2 bg-slate-900/95 text-white backdrop-blur-md border-2 border-emerald-500 rounded-2xl shadow-2xl flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing hover:bg-slate-900"
+            className="w-[280px] px-3 py-2 bg-slate-900/95 text-white backdrop-blur-md border-2 border-emerald-500 rounded-2xl shadow-2xl flex items-center justify-between gap-2 cursor-grab active:cursor-grabbing hover:bg-slate-900 touch-none select-none"
           >
             <div className="flex items-center gap-1.5 min-w-0">
               <GripHorizontal className="h-4 w-4 text-emerald-400 shrink-0" />
@@ -4771,17 +4796,34 @@ export default function App() {
             <div
               onMouseDown={handleKeyboardDragStart}
               onTouchStart={handleKeyboardDragStart}
-              className="flex items-center justify-between gap-1.5 mb-2 pb-1.5 border-b border-slate-800 text-xs cursor-grab active:cursor-grabbing bg-slate-900/90 -mx-2 -mt-2 p-2 rounded-t-xl hover:bg-slate-900 transition-colors"
+              className="flex items-center justify-between gap-1.5 mb-2 pb-1.5 border-b border-slate-800 text-xs cursor-grab active:cursor-grabbing bg-slate-900/90 -mx-2 -mt-2 p-2 rounded-t-xl hover:bg-slate-900 transition-colors touch-none select-none"
             >
               <div className="flex items-center gap-1.5 min-w-0">
                 <GripHorizontal className="h-4 w-4 text-emerald-400 shrink-0" />
                 <span className="font-extrabold text-white text-[11px] shrink-0">Keyboard Virtual</span>
                 <span className="text-[9px] text-emerald-400 bg-emerald-950 border border-emerald-800 px-1 py-0.2 rounded font-semibold hidden sm:inline">
-                  Tahan & Geser
+                  Geser
                 </span>
               </div>
 
               <div className="flex items-center gap-1 shrink-0">
+                {/* Keyboard Size Control */}
+                <div className="flex items-center bg-slate-950 border border-slate-800 rounded-lg p-0.5 text-[9px]">
+                  {[0.8, 1.0, 1.2].map((sc) => (
+                    <button
+                      key={sc}
+                      type="button"
+                      onClick={() => handleSetKeyboardScale(sc)}
+                      className={`px-1 py-0.2 rounded font-bold transition-all cursor-pointer ${
+                        keyboardScale === sc ? "bg-emerald-600 text-white" : "text-slate-400 hover:text-white"
+                      }`}
+                      title={`Ukuran Keyboard ${Math.round(sc * 100)}%`}
+                    >
+                      {sc === 0.8 ? "S" : sc === 1.0 ? "M" : "L"}
+                    </button>
+                  ))}
+                </div>
+
                 {/* Reset Position Button */}
                 <button
                   type="button"
@@ -4789,8 +4831,8 @@ export default function App() {
                     isKeyboardUserMovedRef.current = false;
                     if (focusedInputElement) {
                       const rect = focusedInputElement.getBoundingClientRect();
-                      const kbWidth = Math.min(420, window.innerWidth - 20);
-                      const kbHeight = 240;
+                      const kbWidth = Math.min(420, window.innerWidth - 20) * keyboardScale;
+                      const kbHeight = 240 * keyboardScale;
                       let pX = Math.max(10, Math.min(window.innerWidth - kbWidth - 10, rect.left));
                       let pY = rect.bottom + 8;
                       if (pY + kbHeight > window.innerHeight - 10) {
@@ -4804,7 +4846,7 @@ export default function App() {
                   className="px-1.5 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[10px] font-semibold cursor-pointer"
                   title="Posisikan ulang di dekat input"
                 >
-                  Dekat Input
+                  Dekat
                 </button>
 
                 {/* Layout Switcher */}
@@ -5167,9 +5209,13 @@ export default function App() {
             : "w-full border-b border-slate-800"
         }`}>
           {/* Header Bar */}
-          <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
-            <div className="flex items-center gap-3 overflow-hidden">
-              <div className="h-8 w-8 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
+          <div className={`border-b border-slate-800 bg-slate-950 transition-all ${
+            effectiveOrientation === "landscape" && isSidebarCollapsed
+              ? "p-2.5 flex flex-col items-center justify-center gap-2.5"
+              : "p-3.5 flex items-center justify-between"
+          }`}>
+            <div className="flex items-center gap-3 overflow-hidden justify-center">
+              <div className="h-8 w-8 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0" title="Bastika Reseller">
                 <img src={invoiceSettings?.appIconUrl || "/icon.jpg"} alt="Bastika Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
               </div>
               {(effectiveOrientation === "landscape" ? !isSidebarCollapsed : true) && (
@@ -5444,9 +5490,13 @@ export default function App() {
           : "w-full border-b border-slate-800"
       }`}>
         {/* Brand Header */}
-        <div className="p-3.5 border-b border-slate-800 flex items-center justify-between bg-slate-950">
-          <div className="flex items-center gap-3 overflow-hidden">
-            <div className="h-8 w-8 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0">
+        <div className={`border-b border-slate-800 bg-slate-950 transition-all ${
+          effectiveOrientation === "landscape" && isSidebarCollapsed
+            ? "p-2.5 flex flex-col items-center justify-center gap-2.5"
+            : "p-3.5 flex items-center justify-between"
+        }`}>
+          <div className="flex items-center gap-3 overflow-hidden justify-center">
+            <div className="h-8 w-8 bg-white rounded-xl flex items-center justify-center shadow-md overflow-hidden p-0.5 shrink-0" title="Bastika Parfum">
               <img src={invoiceSettings?.appIconUrl || "/icon.jpg"} alt="Bastika Logo" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
             </div>
             {(effectiveOrientation === "landscape" ? !isSidebarCollapsed : true) && (
