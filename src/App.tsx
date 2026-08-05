@@ -1085,8 +1085,87 @@ export default function App() {
     }
   };
 
+  // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands
+  const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 192): Promise<Uint8Array | null> => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "Anonymous";
+      img.onload = () => {
+        try {
+          const width = Math.max(8, Math.floor(targetWidthPx / 8) * 8);
+          const height = Math.max(1, Math.round((img.height / img.width) * width));
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) {
+            resolve(null);
+            return;
+          }
+
+          ctx.fillStyle = "#FFFFFF";
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+
+          const imgData = ctx.getImageData(0, 0, width, height);
+          const data = imgData.data;
+
+          const bytesWidth = width / 8;
+          const bitmap = new Uint8Array(bytesWidth * height);
+
+          for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+              const idx = (y * width + x) * 4;
+              const r = data[idx];
+              const g = data[idx + 1];
+              const b = data[idx + 2];
+              const a = data[idx + 3];
+
+              // Calculate luminance & check transparency
+              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+              const isBlack = a > 128 && lum < 190;
+
+              if (isBlack) {
+                const byteIdx = y * bytesWidth + Math.floor(x / 8);
+                const bitIdx = 7 - (x % 8);
+                bitmap[byteIdx] |= (1 << bitIdx);
+              }
+            }
+          }
+
+          const xL = bytesWidth % 256;
+          const xH = Math.floor(bytesWidth / 256);
+          const yL = height % 256;
+          const yH = Math.floor(height / 256);
+
+          // ESC/POS Command: Center Align + GS v 0 (Print raster bit image)
+          const header = new Uint8Array([
+            0x1B, 0x61, 0x01, // Center align
+            0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH
+          ]);
+          const footer = new Uint8Array([0x0A]);
+
+          const combined = new Uint8Array(header.length + bitmap.length + footer.length);
+          combined.set(header, 0);
+          combined.set(bitmap, header.length);
+          combined.set(footer, header.length + bitmap.length);
+
+          resolve(combined);
+        } catch (err) {
+          console.error("Gagal convert logo to ESC/POS raster:", err);
+          resolve(null);
+        }
+      };
+      img.onerror = () => {
+        resolve(null);
+      };
+      img.src = url;
+    });
+  };
+
   // Helper to format receipt for thermal printers using standard ESC/POS
-  const formatReceiptToEscPos = (tx: any, settings: InvoiceSettings): Uint8Array => {
+  const formatReceiptToEscPos = async (tx: any, settings: InvoiceSettings): Promise<Uint8Array> => {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
     const maxCols = settings.paperWidth === "80mm" ? 48 : settings.paperWidth === "54mm" ? 28 : 32;
@@ -1123,6 +1202,16 @@ export default function App() {
 
     // Initialize printer
     addBytes([0x1B, 0x40]);
+
+    // Print Logo header for ESC/POS thermal printer if showLogo is enabled
+    if (settings.showLogo !== false) {
+      const logoUrl = settings.logoUrl || "/icon.jpg";
+      const targetWidth = settings.paperWidth === "80mm" ? 256 : settings.paperWidth === "54mm" ? 160 : 192;
+      const logoRaster = await convertImageUrlToEscPosRaster(logoUrl, targetWidth);
+      if (logoRaster) {
+        chunks.push(logoRaster);
+      }
+    }
 
     // Set font mode if small font size requested
     if (settings.fontSize === "xs" || settings.fontSize === "sm") {
@@ -1273,12 +1362,13 @@ export default function App() {
 
         {/* Header */}
         <div className="text-center space-y-1 pt-1">
-          {settings.showLogo && settings.logoUrl && (
-            <div className="flex justify-center mb-1.5">
+          {settings.showLogo !== false && (
+            <div className="flex justify-center mb-1.5 print:mb-2 print:block print:text-center">
               <img 
-                src={settings.logoUrl} 
+                src={settings.logoUrl || "/icon.jpg"} 
                 alt="Logo Toko" 
-                className="h-14 w-14 object-contain rounded-full border border-slate-200 shadow-2xs" 
+                className="h-14 w-14 object-contain rounded-full border border-slate-200 shadow-2xs mx-auto print:h-16 print:w-16 print:mx-auto print:block" 
+                crossOrigin="anonymous"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = "/icon.jpg";
@@ -1682,13 +1772,14 @@ export default function App() {
 
   const handlePrintTicket = async (tx: any) => {
     if (printerConfig.mode === "system") {
+      await new Promise((res) => setTimeout(res, 100));
       window.print();
       return;
     }
 
     setIsPrinterConnecting(true);
     try {
-      const escPosData = formatReceiptToEscPos(tx, invoiceSettings);
+      const escPosData = await formatReceiptToEscPos(tx, invoiceSettings);
 
       if (printerConfig.mode === "bluetooth") {
         if (!btCharacteristic) {
