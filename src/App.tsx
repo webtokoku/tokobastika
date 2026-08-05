@@ -1086,7 +1086,7 @@ export default function App() {
   };
 
   // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands with Floyd-Steinberg dithering
-  const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 144): Promise<Uint8Array | null> => {
+  const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 256): Promise<Uint8Array | null> => {
     return new Promise((resolve) => {
       let resolved = false;
       const timer = setTimeout(() => {
@@ -1144,7 +1144,7 @@ export default function App() {
               }
             }
 
-            // Floyd-Steinberg Dithering
+            // Floyd-Steinberg Dithering with enhanced contrast threshold for clear thermal printing
             const bytesWidth = width / 8;
             const bitmap = new Uint8Array(bytesWidth * height);
 
@@ -1152,7 +1152,7 @@ export default function App() {
               for (let x = 0; x < width; x++) {
                 const idx = y * width + x;
                 const oldVal = gray[idx];
-                const newVal = oldVal < 140 ? 0 : 255;
+                const newVal = oldVal < 165 ? 0 : 255;
                 const err = oldVal - newVal;
 
                 if (newVal === 0) {
@@ -1213,10 +1213,10 @@ export default function App() {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
 
-    // Max columns based on paper width for standard Font A:
-    // 54mm/58mm -> 30 cols max (prevents unwanted physical printer line wrapping)
-    // 80mm -> 42 cols max
-    const maxCols = settings.paperWidth === "80mm" ? 42 : 30;
+    // Max columns based on paper width for standard 12x24 Font A (384 dots printhead):
+    // 54mm/58mm -> 32 cols max
+    // 80mm -> 48 cols max
+    const maxCols = settings.paperWidth === "80mm" ? 48 : 32;
 
     const addBytes = (bytes: number[]) => {
       chunks.push(new Uint8Array(bytes));
@@ -1267,9 +1267,8 @@ export default function App() {
       } else {
         const titleLines = wordWrap(fullTitle, maxCols);
         titleLines.forEach((tl) => addLine(tl));
-        addBytes([0x1B, 0x61, 0x02]); // Right align for price line
-        addLine(valStr);
-        addBytes([0x1B, 0x61, 0x00]); // Left align back
+        const vSpaces = Math.max(0, maxCols - valStr.length);
+        addLine(" ".repeat(vSpaces) + valStr);
       }
     };
 
@@ -1290,7 +1289,7 @@ export default function App() {
     // 2. Print Logo header if enabled
     if (settings.showLogo !== false) {
       const logoUrl = settings.logoUrl || "/icon.jpg";
-      const targetWidth = settings.paperWidth === "80mm" ? 216 : 144;
+      const targetWidth = settings.paperWidth === "80mm" ? 384 : (settings.paperWidth === "54mm" ? 256 : 288);
       const logoRaster = await convertImageUrlToEscPosRaster(logoUrl, targetWidth);
       if (logoRaster) {
         chunks.push(logoRaster);
@@ -1301,7 +1300,7 @@ export default function App() {
     if (settings.fontSize === "xs" || settings.fontSize === "sm") {
       addBytes([0x1B, 0x21, 0x01]); // Font B
     } else {
-      addBytes([0x1B, 0x21, 0x00]); // Font A
+      addBytes([0x1B, 0x21, 0x00]); // Font A (12x24)
     }
 
     // Header Info (Centered)
