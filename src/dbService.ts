@@ -1453,7 +1453,8 @@ export function subscribeToInvoiceSettings(callback: (settings: InvoiceSettings)
     footerMessage2: "Barang yang sudah dibeli tidak dapat ditukar/dikembalikan.",
     paperWidth: "58mm",
     logoUrl: "/icon.jpg",
-    showLogo: true
+    showLogo: true,
+    fontSize: "md"
   };
 
   return onSnapshot(doc(db, "config", "invoice"), (snapshot) => {

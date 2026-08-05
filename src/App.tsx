@@ -1012,6 +1012,77 @@ export default function App() {
     };
   };
 
+  const getInvoiceFontSizes = (size: string = "md") => {
+    switch (size) {
+      case "xs":
+        return {
+          basePx: "7.5px",
+          titlePx: "10px",
+          subTitlePx: "6.5px",
+          headerPx: "7px",
+          metaPx: "6.5px",
+          rowPx: "6.5px",
+          subRowPx: "5.5px",
+          totalPx: "7.5px",
+          footerPx: "5.5px",
+          containerWidth: "240px",
+        };
+      case "sm":
+        return {
+          basePx: "8.5px",
+          titlePx: "11px",
+          subTitlePx: "7.5px",
+          headerPx: "7.5px",
+          metaPx: "7px",
+          rowPx: "7px",
+          subRowPx: "6px",
+          totalPx: "8.5px",
+          footerPx: "6px",
+          containerWidth: "260px",
+        };
+      case "lg":
+        return {
+          basePx: "10.5px",
+          titlePx: "13.5px",
+          subTitlePx: "9px",
+          headerPx: "9px",
+          metaPx: "8.5px",
+          rowPx: "8.5px",
+          subRowPx: "7.5px",
+          totalPx: "10px",
+          footerPx: "7.5px",
+          containerWidth: "300px",
+        };
+      case "xl":
+        return {
+          basePx: "12px",
+          titlePx: "15px",
+          subTitlePx: "10px",
+          headerPx: "10px",
+          metaPx: "9.5px",
+          rowPx: "9.5px",
+          subRowPx: "8.5px",
+          totalPx: "11.5px",
+          footerPx: "8.5px",
+          containerWidth: "320px",
+        };
+      case "md":
+      default:
+        return {
+          basePx: "9px",
+          titlePx: "12px",
+          subTitlePx: "8px",
+          headerPx: "8px",
+          metaPx: "7.5px",
+          rowPx: "7.5px",
+          subRowPx: "6.5px",
+          totalPx: "9px",
+          footerPx: "6.5px",
+          containerWidth: "280px",
+        };
+    }
+  };
+
   // Helper to format receipt for thermal printers using standard ESC/POS
   const formatReceiptToEscPos = (tx: any, settings: InvoiceSettings): Uint8Array => {
     const encoder = new TextEncoder();
@@ -1028,6 +1099,11 @@ export default function App() {
 
     // Initialize printer
     addBytes([0x1B, 0x40]);
+
+    // Set font mode if small font size requested
+    if (settings.fontSize === "xs" || settings.fontSize === "sm") {
+      addBytes([0x1B, 0x21, 0x01]); // Font B (smaller text)
+    }
 
     // Center align for header
     addBytes([0x1B, 0x61, 0x01]);
@@ -1056,14 +1132,21 @@ export default function App() {
           calcSubtotal += itemTotal;
           const { bottleDesc } = getBundlingBottleVolumeInfo(item);
 
-          addLine(`[Paket] ${item.bundlingName || item.scentName}`);
-          if (bottleDesc) {
-            addLine(`  (Ukuran: ${bottleDesc})`);
-          }
-          const bLabel = `  ${item.bottleCount || 1}x unit`;
+          const bLabel = `[Paket] ${item.bundlingName || item.scentName}`;
           const bVal = `Rp ${itemTotal.toLocaleString("id-ID")}`;
           const bSpaces = maxCols - bLabel.length - bVal.length;
-          addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
+          if (bSpaces >= 1) {
+            addLine(bLabel + " ".repeat(bSpaces) + bVal);
+          } else {
+            addLine(bLabel);
+            const vSpaces = maxCols - bVal.length;
+            addLine(" ".repeat(Math.max(0, vSpaces)) + bVal);
+          }
+
+          if (bottleDesc) {
+            addLine(`  (${bottleDesc})`);
+          }
+          addLine(`  ${item.bottleCount || 1}x unit`);
           return;
         }
 
@@ -1076,20 +1159,34 @@ export default function App() {
         calcSubtotal += (scentCost + bottleCost);
 
         if (!isHB && (item.volumeMl || 0) > 0) {
-          addLine(`${item.scentName} (${item.volumeMl}ml)`);
-          const lineText = `${item.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml x ${item.bottleCount}x`;
-          const valText = `Rp ${scentCost.toLocaleString("id-ID")}`;
-          const spaces = maxCols - lineText.length - valText.length;
-          addLine(lineText + " ".repeat(Math.max(1, spaces)) + valText);
+          const scentTitle = `${item.scentName} (${item.volumeMl}ml)`;
+          const scentVal = `Rp ${scentCost.toLocaleString("id-ID")}`;
+          const sSpaces = maxCols - scentTitle.length - scentVal.length;
+          if (sSpaces >= 1) {
+            addLine(scentTitle + " ".repeat(sSpaces) + scentVal);
+          } else {
+            addLine(scentTitle);
+            const vSpaces = maxCols - scentVal.length;
+            addLine(" ".repeat(Math.max(0, vSpaces)) + scentVal);
+          }
+
+          const detailText = `  ${item.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml x ${item.bottleCount}x`;
+          addLine(detailText);
         }
 
         if (item.bottleSize && item.bottleSize !== "None") {
           const bLabel = item.bringOwnBottle
-            ? `Botol ${item.bottleSize} (${item.bottleCount}x) - Bawa Sendiri`
-            : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
+            ? `  Botol ${item.bottleSize} (${item.bottleCount}x) - Own`
+            : `  Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
           const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
           const bSpaces = maxCols - bLabel.length - bVal.length;
-          addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
+          if (bSpaces >= 1) {
+            addLine(bLabel + " ".repeat(bSpaces) + bVal);
+          } else {
+            addLine(bLabel);
+            const vSpaces = maxCols - bVal.length;
+            addLine(" ".repeat(Math.max(0, vSpaces)) + bVal);
+          }
         }
       });
     } else if (tx.scentName && tx.scentName !== "Klaim Promo Potongan") {
@@ -1101,20 +1198,34 @@ export default function App() {
       calcSubtotal = scentCost + bottleCost;
 
       if (!isHB && (tx.volumeMl || 0) > 0) {
-        addLine(`${tx.scentName} (${tx.volumeMl}ml)`);
-        const lineText = `${tx.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml`;
-        const valText = `Rp ${scentCost.toLocaleString("id-ID")}`;
-        const spaces = maxCols - lineText.length - valText.length;
-        addLine(lineText + " ".repeat(Math.max(1, spaces)) + valText);
+        const scentTitle = `${tx.scentName} (${tx.volumeMl}ml)`;
+        const scentVal = `Rp ${scentCost.toLocaleString("id-ID")}`;
+        const sSpaces = maxCols - scentTitle.length - scentVal.length;
+        if (sSpaces >= 1) {
+          addLine(scentTitle + " ".repeat(sSpaces) + scentVal);
+        } else {
+          addLine(scentTitle);
+          const vSpaces = maxCols - scentVal.length;
+          addLine(" ".repeat(Math.max(0, vSpaces)) + scentVal);
+        }
+
+        const detailText = `  ${tx.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml x ${tx.bottleCount || 1}x`;
+        addLine(detailText);
       }
 
       if (tx.bottleSize && tx.bottleSize !== "None") {
         const bLabel = tx.bringOwnBottle
-          ? `Botol ${tx.bottleSize} (${tx.bottleCount || 1}x) - Bawa Sendiri`
-          : `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
+          ? `  Botol ${tx.bottleSize} (${tx.bottleCount || 1}x) - Own`
+          : `  Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
         const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
         const bSpaces = maxCols - bLabel.length - bVal.length;
-        addLine(bLabel + " ".repeat(Math.max(1, bSpaces)) + bVal);
+        if (bSpaces >= 1) {
+          addLine(bLabel + " ".repeat(bSpaces) + bVal);
+        } else {
+          addLine(bLabel);
+          const vSpaces = maxCols - bVal.length;
+          addLine(" ".repeat(Math.max(0, vSpaces)) + bVal);
+        }
       }
     } else if (tx.packageName) {
       calcSubtotal = tx.totalPrice || 0;
@@ -1125,50 +1236,284 @@ export default function App() {
     }
 
     addLine("-".repeat(maxCols));
-
-    // Totals
-    const subLabel = "SUBTOTAL:";
-    const subVal = `Rp ${calcSubtotal.toLocaleString("id-ID")}`;
-    addLine(subLabel + " ".repeat(Math.max(1, maxCols - subLabel.length - subVal.length)) + subVal);
-
-    if (tx.discountNominal && tx.discountNominal > 0) {
-      const dTitle = getDiscountLabel(tx);
-      const discLabel = `${dTitle}:`;
-      const discVal = `-Rp ${tx.discountNominal.toLocaleString("id-ID")}`;
-      addLine(discLabel + " ".repeat(Math.max(1, maxCols - discLabel.length - discVal.length)) + discVal);
+    addLine(`SUBTOTAL : Rp ${calcSubtotal.toLocaleString("id-ID")}`);
+    if (tx.discountNominal) {
+      addLine(`DISKON   : -Rp ${tx.discountNominal.toLocaleString("id-ID")}`);
     }
-
-    const netLabel = "TOTAL BAYAR:";
-    const netVal = `Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : (tx.totalPrice || 0)).toLocaleString("id-ID")}`;
-    addBytes([0x1B, 0x45, 0x01]); // Bold
-    addLine(netLabel + " ".repeat(Math.max(1, maxCols - netLabel.length - netVal.length)) + netVal);
+    addBytes([0x1B, 0x45, 0x01]); // Bold on
+    addLine(`TOTAL    : Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}`);
     addBytes([0x1B, 0x45, 0x00]); // Bold off
-
     addLine("-".repeat(maxCols));
 
-    // Center footer
-    addBytes([0x1B, 0x61, 0x01]);
-    if (settings.footerMessage1 || settings.footerMessage2) {
-      if (settings.footerMessage1) addLine(settings.footerMessage1);
-      if (settings.footerMessage2) addLine(settings.footerMessage2);
-    } else {
-      addLine("Terima Kasih");
-      addLine("Selamat Belanja Kembali");
-    }
+    // Footer
+    addBytes([0x1B, 0x61, 0x01]); // Center align
+    if (settings.footerMessage1) addLine(settings.footerMessage1.toUpperCase());
+    if (settings.footerMessage2) addLine(settings.footerMessage2);
+    addLine("\n\n\n"); // Feed lines
 
-    // Extra line feeds and cut
-    addLine("\n\n\n");
-    addBytes([0x1D, 0x56, 0x41, 0x03]); // Partial cut
+    // Cut paper (GS V 66 0)
+    addBytes([0x1D, 0x56, 0x42, 0x00]);
 
-    // Merge chunks
-    const totalLength = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+    // Concatenate all chunks
+    const totalLength = chunks.reduce((acc, curr) => acc + curr.length, 0);
     const result = new Uint8Array(totalLength);
     let offset = 0;
     for (const chunk of chunks) {
       result.set(chunk, offset);
       offset += chunk.length;
     }
+
     return result;
+  };
+
+  const ReceiptInnerContent = ({ tx, settings, isPrintArea = false }: { tx: any; settings: InvoiceSettings; isPrintArea?: boolean }) => {
+    const f = getInvoiceFontSizes(settings.fontSize || "md");
+    const widthPx = settings.paperWidth === "80mm" ? "340px" : f.containerWidth;
+
+    return (
+      <div
+        className={`bg-white text-black font-mono leading-relaxed p-4 select-none relative ${
+          isPrintArea ? "w-full mx-auto shadow-none border-none" : "shadow-2xl border border-slate-200 rounded-sm"
+        }`}
+        style={{ width: isPrintArea ? "100%" : widthPx, fontSize: f.basePx }}
+      >
+        {!isPrintArea && (
+          <div className="absolute top-0 left-0 right-0 h-1 bg-repeat-x bg-[linear-gradient(45deg,transparent_33.3%,#ddd_33.3%,#ddd_66.6%,transparent_66.6%)] bg-[length:6px_4px]"></div>
+        )}
+
+        {/* Header */}
+        <div className="text-center space-y-1 pt-2">
+          {settings.showLogo && settings.logoUrl && (
+            <div className="flex justify-center mb-1.5">
+              <img 
+                src={settings.logoUrl} 
+                alt="Logo Toko" 
+                className="h-16 w-16 object-contain rounded-full border-2 border-slate-200 shadow-sm" 
+                referrerPolicy="no-referrer"
+                onError={(e) => {
+                  (e.currentTarget as HTMLImageElement).src = "/icon.jpg";
+                }}
+              />
+            </div>
+          )}
+          <h5 className="font-extrabold uppercase tracking-wide leading-none" style={{ fontSize: f.titlePx }}>
+            {settings.storeName}
+          </h5>
+          {settings.slogan && (
+            <p className="text-slate-600 font-semibold italic" style={{ fontSize: f.subTitlePx }}>
+              {settings.slogan}
+            </p>
+          )}
+          {settings.address && (
+            <p className="text-slate-600 whitespace-pre-line leading-tight px-1" style={{ fontSize: f.subTitlePx }}>
+              {settings.address}
+            </p>
+          )}
+          {settings.phone && (
+            <p className="text-slate-600 font-bold" style={{ fontSize: f.subTitlePx }}>
+              Telp/WA: {settings.phone}
+            </p>
+          )}
+          
+          <div className="py-1">
+            <p className="font-extrabold bg-slate-100 py-0.5 rounded border border-slate-200 text-slate-700" style={{ fontSize: f.headerPx }}>
+              {settings.headerMessage || "BUKTI PENJUALAN RESMI"}
+            </p>
+          </div>
+        </div>
+
+        {/* Invoice Meta */}
+        <div className="text-slate-700 space-y-0.5 pt-2 border-t border-dashed border-slate-300" style={{ fontSize: f.metaPx }}>
+          <div className="flex justify-between">
+            <span>TANGGAL   : {new Date(tx.date || tx.createdAt || Date.now()).toLocaleString("id-ID")}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>INVOICE   : {tx.id || tx.invoiceNo}</span>
+          </div>
+          <div className="flex justify-between">
+            <span>KASIR     : {tx.operatorEmail || tx.createdByName || "Kasir"}</span>
+          </div>
+          <div className="flex justify-between font-bold">
+            <span>PELANGGAN : {tx.customerName || "Pelanggan Umum"}</span>
+          </div>
+        </div>
+
+        {/* Items Section */}
+        <div className="border-t border-dashed border-slate-300 my-2 pt-1 flex flex-col gap-1">
+          <div className="font-bold text-slate-800 pb-0.5 flex justify-between" style={{ fontSize: f.headerPx }}>
+            <span>AROMA & KEMASAN</span>
+            <span>JUMLAH</span>
+          </div>
+          
+          {tx.scentName === "Klaim Promo Potongan" ? (
+            <div className="text-slate-800 space-y-0.5" style={{ fontSize: f.rowPx }}>
+              <div className="flex justify-between font-semibold">
+                <span>Klaim Promo Diskon Pelanggan</span>
+                <span>Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
+              </div>
+              <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
+                <span>Penukaran Akumulasi Loyalitas</span>
+              </div>
+            </div>
+          ) : tx.items && tx.items.length > 0 ? (
+            <div className="space-y-1.5">
+              {tx.items.map((item: any, index: number) => {
+                if (item.isBundling) {
+                  const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
+                  const { bottleDesc } = getBundlingBottleVolumeInfo(item);
+
+                  return (
+                    <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1 last:border-b-0 last:pb-0">
+                      <div className="space-y-0.5" style={{ fontSize: f.rowPx }}>
+                        <div className="flex justify-between font-semibold text-slate-800">
+                          <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</span>
+                          <span>Rp {itemTotal.toLocaleString("id-ID")}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
+                          <span>
+                            {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }
+
+                const isHB = item.scentName === "Hanya Botol";
+                const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
+                const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
+                const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl * (item.bottleCount || 1));
+                const bottleCost = bPrice * (item.bottleCount || 1);
+
+                return (
+                  <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1 last:border-b-0 last:pb-0">
+                    {/* Scent Row */}
+                    {!isHB && (item.volumeMl || 0) > 0 && (
+                      <div className="text-slate-800 space-y-0.5">
+                        <div className="flex justify-between font-semibold" style={{ fontSize: f.rowPx }}>
+                          <span>{item.scentName} ({item.volumeMl}ml)</span>
+                          <span>Rp {scentCost.toLocaleString("id-ID")}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
+                          <span>{item.volumeMl}ml x Rp {pPerMl.toLocaleString("id-ID")}/ml x {item.bottleCount}x</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bottle Row */}
+                    {item.bottleSize && item.bottleSize !== "None" && (
+                      <div className="pt-0.5 flex justify-between text-slate-800" style={{ fontSize: f.rowPx }}>
+                        <span className="text-slate-600">
+                          {item.bringOwnBottle 
+                            ? `Botol ${item.bottleSize} (${item.bottleCount} pcs) - Bawa Sendiri`
+                            : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount} pcs)`
+                          }
+                        </span>
+                        <span>
+                          Rp {bottleCost.toLocaleString("id-ID")}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : tx.packageName ? (
+            <div className="text-slate-800 space-y-0.5" style={{ fontSize: f.rowPx }}>
+              <div className="flex justify-between font-semibold">
+                <span>{tx.packageName} ({tx.bottleCount} unit)</span>
+                <span>Rp {tx.totalPrice.toLocaleString("id-ID")}</span>
+              </div>
+              <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
+                <span>Paket Bundling Titipan</span>
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="text-slate-800 space-y-0.5">
+                <div className="flex justify-between font-semibold" style={{ fontSize: f.rowPx }}>
+                  <span>Bibit {tx.scentName} ({tx.volumeMl}ml)</span>
+                  <span>
+                    Rp {((tx.volumeMl || 0) * getEssencePricePerMl(tx.scentName, masterProducts, prices) * (tx.bottleCount || 1)).toLocaleString("id-ID")}
+                  </span>
+                </div>
+                <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
+                  <span>{tx.volumeMl} ml x Rp {getEssencePricePerMl(tx.scentName, masterProducts, prices).toLocaleString("id-ID")} /ml</span>
+                </div>
+              </div>
+
+              {tx.bottleSize && tx.bottleSize !== "None" && (
+                <div className="pt-1 flex justify-between text-slate-800" style={{ fontSize: f.rowPx }}>
+                  <span>
+                    {tx.bringOwnBottle 
+                      ? `Botol ${tx.bottleSize} (${tx.bottleCount} pcs) - Bawa Sendiri`
+                      : `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount} pcs)`
+                    }
+                  </span>
+                  <span>
+                    Rp {(getBottleUnitPrice(tx.bottleSize, tx.bottleType, tx.bringOwnBottle, masterProducts, bottleSizes) * (tx.bottleCount || 1)).toLocaleString("id-ID")}
+                  </span>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Totals Section */}
+        <div className="border-t border-dashed border-slate-300 my-2 pt-1.5 space-y-0.5">
+          <div className="flex justify-between text-slate-700" style={{ fontSize: f.metaPx }}>
+            <span>SUBTOTAL</span>
+            <span>
+              Rp {(tx.scentName === "Klaim Promo Potongan"
+                ? (tx.discountNominal || 0)
+                : tx.packageName
+                ? tx.totalPrice
+                : tx.items && tx.items.length > 0
+                ? tx.items.reduce((acc: number, item: any) => {
+                    if (item.isBundling) {
+                      return acc + ((item.bundlingPrice || 0) * (item.bottleCount || 1));
+                    }
+                    const isHB = item.scentName === "Hanya Botol";
+                    const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
+                    const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
+                    const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl);
+                    return acc + ((scentCost + bPrice) * (item.bottleCount || 1));
+                  }, 0)
+                : (((tx.volumeMl || 0) * getEssencePricePerMl(tx.scentName, masterProducts, prices) * (tx.bottleCount || 1)) +
+                   (getBottleUnitPrice(tx.bottleSize, tx.bottleType, tx.bringOwnBottle, masterProducts, bottleSizes) * (tx.bottleCount || 1)))
+              ).toLocaleString("id-ID")}
+            </span>
+          </div>
+          {tx.discountNominal ? (
+            <>
+              <div className="flex justify-between font-bold text-emerald-700" style={{ fontSize: f.metaPx }}>
+                <span>{getDiscountLabel(tx)}</span>
+                <span>-Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
+              </div>
+              {tx.claimPromoOnThisTx && (
+                <div className="text-slate-500 italic text-right leading-none" style={{ fontSize: f.subRowPx }}>
+                  * Penukaran Akumulasi Loyalitas Belanja
+                </div>
+              )}
+            </>
+          ) : null}
+          <div className="flex justify-between font-black border-t border-dotted border-slate-400 pt-1 text-slate-900" style={{ fontSize: f.totalPx }}>
+            <span>TOTAL BAYAR</span>
+            <span>Rp {(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}</span>
+          </div>
+        </div>
+
+        {/* Footer Section */}
+        <div className="text-center text-slate-500 space-y-0.5 pt-3 border-t border-dashed border-slate-300" style={{ fontSize: f.footerPx }}>
+          <p className="font-bold text-slate-700 uppercase">{settings.footerMessage1}</p>
+          <p className="italic leading-snug">{settings.footerMessage2}</p>
+        </div>
+
+        {!isPrintArea && (
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-repeat-x bg-[linear-gradient(225deg,transparent_33.3%,#ddd_33.3%,#ddd_66.6%,transparent_66.6%)] bg-[length:6px_4px]"></div>
+        )}
+      </div>
+    );
   };
 
   // Web Bluetooth Connect (Supports iware XBTII & Standard POS Thermal Printers)
@@ -10435,18 +10780,34 @@ export default function App() {
                         </select>
                       </div>
 
-                      <div className="flex items-center gap-3 pt-4">
-                        <input
-                          id="inv-show-logo"
-                          type="checkbox"
-                          checked={tempSettings.showLogo}
-                          onChange={(e) => handleSettingChange("showLogo", e.target.checked)}
-                          className="h-4 w-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
-                        />
-                        <label htmlFor="inv-show-logo" className="text-xs font-bold text-slate-600 select-none cursor-pointer">
-                          Tampilkan Kop Gambar Logo pada Nota Invoice
-                        </label>
+                      <div>
+                        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Ukuran Font Thermal / Invoice</label>
+                        <select
+                          id="inv-font-size"
+                          value={tempSettings.fontSize || "md"}
+                          onChange={(e) => handleSettingChange("fontSize", e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
+                        >
+                          <option value="xs">Extra Kecil (7.5px) - Hemat Kertas</option>
+                          <option value="sm">Kecil (8.5px) - Kompak</option>
+                          <option value="md">Normal / Sedang (9px) - Standard POS (Default)</option>
+                          <option value="lg">Besar (10.5px) - Jelas & Easy Read</option>
+                          <option value="xl">Extra Besar (12px) - Tulisan Sangat Jelas</option>
+                        </select>
                       </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 pt-2">
+                      <input
+                        id="inv-show-logo"
+                        type="checkbox"
+                        checked={tempSettings.showLogo}
+                        onChange={(e) => handleSettingChange("showLogo", e.target.checked)}
+                        className="h-4 w-4 text-emerald-600 border-slate-300 rounded focus:ring-emerald-500 cursor-pointer"
+                      />
+                      <label htmlFor="inv-show-logo" className="text-xs font-bold text-slate-600 select-none cursor-pointer">
+                        Tampilkan Kop Gambar Logo pada Nota Invoice
+                      </label>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
@@ -11567,209 +11928,8 @@ export default function App() {
             <div className="print-modal-container fixed inset-0 z-50 bg-slate-900/85 backdrop-blur-sm flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-200 print:bg-transparent print:p-0 print:overflow-visible print:static print:block">
               
               {/* Invisible custom print wrapper used strictly by browser window.print() */}
-              <div id="print-receipt-area" className="hidden print:block bg-white text-black font-mono text-[10px] leading-relaxed p-2 w-[280px] mx-auto">
-                <div className="text-center space-y-1">
-                  {invoiceSettings.showLogo && invoiceSettings.logoUrl && (
-                    <div className="flex justify-center mb-2">
-                      <img 
-                        src={invoiceSettings.logoUrl} 
-                        alt="Kop Logo BASTIKA" 
-                        className="h-20 w-20 object-contain rounded-full border-2 border-slate-200 shadow-sm" 
-                        referrerPolicy="no-referrer"
-                        onError={(e) => {
-                          (e.currentTarget as HTMLImageElement).src = "/icon.jpg";
-                        }}
-                      />
-                    </div>
-                  )}
-                  <h3 className="font-extrabold text-xs uppercase tracking-wide">{invoiceSettings.storeName}</h3>
-                  <p className="text-[8px] font-semibold italic">{invoiceSettings.slogan}</p>
-                  <p className="text-[8px] whitespace-pre-line leading-tight px-1">{invoiceSettings.address}</p>
-                  <p className="text-[8px] font-bold">Telp/WA: {invoiceSettings.phone}</p>
-                  
-                  <div className="py-1">
-                    <p className="text-[8px] font-extrabold bg-slate-100 py-0.5 rounded border border-slate-200">
-                      {invoiceSettings.headerMessage || "NOTA PENJUALAN"}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="text-[8px] space-y-0.5 pt-2 border-t border-dashed border-slate-300">
-                  <div>TANGGAL   : {new Date(printTx.date).toLocaleString("id-ID")}</div>
-                  <div>INVOICE   : {printTx.id}</div>
-                  <div>KASIR     : {printTx.operatorEmail}</div>
-                  <div>PELANGGAN : {printTx.customerName || "Pelanggan Umum"}</div>
-                </div>
-
-                <div className="border-t border-dashed border-slate-300 my-2 pt-1.5">
-                  <div className="text-[8px] font-bold pb-1 flex justify-between">
-                    <span>AROMA & KEMASAN</span>
-                    <span>JUMLAH</span>
-                  </div>
-                  
-                  {printTx.scentName === "Klaim Promo Potongan" ? (
-                    <div className="text-[8px] space-y-0.5">
-                      <div className="flex justify-between font-bold">
-                        <span>Klaim Promo Diskon Pelanggan</span>
-                        <span>Rp {printTx.discountNominal.toLocaleString("id-ID")}</span>
-                      </div>
-                      <div className="flex justify-between text-[7px] text-slate-500 pl-2">
-                        <span>Penukaran Akumulasi Loyalitas</span>
-                      </div>
-                    </div>
-                  ) : printTx.items && printTx.items.length > 0 ? (
-                    <div className="space-y-2">
-                      {printTx.items.map((item, index) => {
-                        if (item.isBundling) {
-                          const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
-                          const { bottleDesc } = getBundlingBottleVolumeInfo(item);
-
-                          return (
-                            <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1.5 last:border-b-0 last:pb-0">
-                              <div className="text-[8px] space-y-0.5">
-                                <div className="flex justify-between font-bold">
-                                  <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</span>
-                                  <span>Rp {itemTotal.toLocaleString("id-ID")}</span>
-                                </div>
-                                <div className="flex justify-between text-[7px] text-slate-500 pl-2">
-                                  <span>
-                                    {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        }
-
-                        const isHB = item.scentName === "Hanya Botol";
-                        const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                        const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
-                        const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl * (item.bottleCount || 1));
-                        const bottleCost = bPrice * (item.bottleCount || 1);
-
-                        return (
-                          <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1.5 last:border-b-0 last:pb-0">
-                            {/* Scent Row */}
-                            {!isHB && (item.volumeMl || 0) > 0 && (
-                              <div className="text-[8px] space-y-0.5">
-                                <div className="flex justify-between font-bold">
-                                  <span>{item.scentName} ({item.volumeMl}ml)</span>
-                                  <span>Rp {scentCost.toLocaleString("id-ID")}</span>
-                                </div>
-                                <div className="flex justify-between text-[7px] text-slate-500 pl-2">
-                                  <span>{item.volumeMl}ml x Rp {pPerMl.toLocaleString("id-ID")}/ml x {item.bottleCount}x</span>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* Bottle Row */}
-                            {item.bottleSize && item.bottleSize !== "None" && (
-                              <div className="text-[8px] pt-0.5 flex justify-between">
-                                <span className="text-slate-600">
-                                  {item.bringOwnBottle 
-                                    ? `Botol ${item.bottleSize} (${item.bottleCount} pcs) - Bawa Sendiri`
-                                    : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount} pcs)`
-                                  }
-                                </span>
-                                <span>
-                                  Rp {bottleCost.toLocaleString("id-ID")}
-                                </span>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ) : printTx.packageName ? (
-                    <div className="text-[8px] space-y-0.5">
-                      <div className="flex justify-between font-bold">
-                        <span>{printTx.packageName} ({printTx.bottleCount} unit)</span>
-                        <span>Rp {printTx.totalPrice.toLocaleString("id-ID")}</span>
-                      </div>
-                      <div className="flex justify-between text-[7px] text-slate-500 pl-2">
-                        <span>Paket Bundling Titipan</span>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      {/* Scent Row */}
-                      <div className="text-[8px] space-y-0.5">
-                        <div className="flex justify-between font-bold">
-                          <span>Bibit {printTx.scentName} ({printTx.volumeMl}ml)</span>
-                          <span>
-                            Rp {((printTx.volumeMl || 0) * getEssencePricePerMl(printTx.scentName, masterProducts, prices) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
-                          </span>
-                        </div>
-                        <div className="flex justify-between text-[7px] text-slate-500 pl-2">
-                          <span>{printTx.volumeMl} ml x Rp {getEssencePricePerMl(printTx.scentName, masterProducts, prices).toLocaleString("id-ID")} /ml</span>
-                        </div>
-                      </div>
-
-                      {/* Bottle Row if any */}
-                      {printTx.bottleSize && printTx.bottleSize !== "None" && (
-                        <div className="text-[8px] pt-1 flex justify-between">
-                          <span>
-                            {printTx.bringOwnBottle
-                              ? `Botol ${printTx.bottleSize} (${printTx.bottleCount} pcs) - Bawa Sendiri`
-                              : `Botol ${printTx.bottleType || "Kaca"} ${printTx.bottleSize} (${printTx.bottleCount} pcs)`
-                            }
-                          </span>
-                          <span>
-                            Rp {(getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
-                          </span>
-                        </div>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                <div className="border-t border-dashed border-slate-300 my-2 pt-1.5 space-y-0.5">
-                  <div className="flex justify-between text-[8px]">
-                    <span>SUBTOTAL</span>
-                    <span>
-                      Rp {(printTx.scentName === "Klaim Promo Potongan"
-                        ? (printTx.discountNominal || 0)
-                        : printTx.packageName
-                        ? printTx.totalPrice
-                        : printTx.items && printTx.items.length > 0
-                        ? printTx.items.reduce((acc, item) => {
-                            if (item.isBundling) {
-                              return acc + ((item.bundlingPrice || 0) * (item.bottleCount || 1));
-                            }
-                            const isHB = item.scentName === "Hanya Botol";
-                            const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                            const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
-                            const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl);
-                            return acc + ((scentCost + bPrice) * (item.bottleCount || 1));
-                          }, 0)
-                        : (((printTx.volumeMl || 0) * getEssencePricePerMl(printTx.scentName, masterProducts, prices) * (printTx.bottleCount || 1)) +
-                           (getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)))
-                      ).toLocaleString("id-ID")}
-                    </span>
-                  </div>
-                  {printTx.discountNominal ? (
-                    <>
-                      <div className="flex justify-between text-[8px] font-bold text-emerald-700">
-                        <span>{getDiscountLabel(printTx)}</span>
-                        <span>-Rp {printTx.discountNominal.toLocaleString("id-ID")}</span>
-                      </div>
-                      {printTx.claimPromoOnThisTx && (
-                        <div className="text-[6.5px] text-slate-500 italic text-right leading-none">
-                          * Penukaran Akumulasi Loyalitas Belanja
-                        </div>
-                      )}
-                    </>
-                  ) : null}
-                  <div className="flex justify-between text-[9px] font-black border-t border-dotted border-slate-400 pt-1">
-                    <span>TOTAL BAYAR</span>
-                    <span>Rp {(printTx.scentName === "Klaim Promo Potongan" ? 0 : printTx.totalPrice).toLocaleString("id-ID")}</span>
-                  </div>
-                </div>
-
-                <div className="text-center text-[7px] space-y-0.5 pt-3 border-t border-dashed border-slate-300">
-                  <p className="font-bold text-slate-800 uppercase">{invoiceSettings.footerMessage1}</p>
-                  <p className="italic">{invoiceSettings.footerMessage2}</p>
-                </div>
+              <div id="print-receipt-area" className="hidden print:block bg-white text-black font-mono leading-relaxed p-0 mx-auto">
+                <ReceiptInnerContent tx={printTx} settings={invoiceSettings} isPrintArea={true} />
               </div>
 
               {/* On-screen visual preview box */}
@@ -11781,7 +11941,7 @@ export default function App() {
                     </div>
                     <div>
                       <h4 className="font-extrabold text-xs text-white uppercase tracking-wider">Cetak Invoice Mini Bluetooth</h4>
-                      <p className="text-[10px] text-slate-400">Portrait, Lebar Kertas {invoiceSettings.paperWidth}</p>
+                      <p className="text-[10px] text-slate-400">Portrait, Kertas {invoiceSettings.paperWidth} (Font: {invoiceSettings.fontSize || "md"})</p>
                     </div>
                   </div>
                   <button 
@@ -11792,232 +11952,53 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="p-6 overflow-y-auto flex-1 bg-slate-950/20 space-y-6 flex flex-col items-center">
+                <div className="p-5 overflow-y-auto flex-1 bg-slate-950/20 space-y-4 flex flex-col items-center">
                   
+                  {/* Quick Font Size Selector Pill Bar right inside Modal */}
+                  <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex flex-col gap-2">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="text-[11px] font-bold text-slate-300">Ukuran Font Nota:</span>
+                      <span className="text-[10px] text-emerald-400 font-semibold uppercase">{invoiceSettings.fontSize || "md"}</span>
+                    </div>
+                    <div className="grid grid-cols-5 gap-1">
+                      {[
+                        { id: "xs", label: "XS" },
+                        { id: "sm", label: "SM" },
+                        { id: "md", label: "MD" },
+                        { id: "lg", label: "LG" },
+                        { id: "xl", label: "XL" },
+                      ].map((s) => (
+                        <button
+                          key={s.id}
+                          onClick={() => {
+                            const updated = { ...invoiceSettings, fontSize: s.id as any };
+                            setInvoiceSettings(updated);
+                            setTempSettings(updated);
+                            updateInvoiceSettings(updated).catch(() => {});
+                          }}
+                          className={`py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border ${
+                            (invoiceSettings.fontSize || "md") === s.id
+                              ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-900/50"
+                              : "bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                          }`}
+                        >
+                          {s.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
                   {/* Explanatory badge */}
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-left w-full text-[11px] text-emerald-400 leading-normal flex gap-2.5 items-start">
                     <Info className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
                     <span>
-                      Nota siap dicetak! Hubungkan browser ke printer thermal bluetooth mini Anda lewat system printer driver (pilih ukuran kertas yang sesuai pada browser).
+                      Hasil cetak fisik printer dijamin 100% presisi dan sama persis seperti preview di bawah ini.
                     </span>
                   </div>
 
                   {/* Aesthetic On-Screen Thermal Paper */}
-                  <div ref={invoiceRef} className="bg-white text-black p-5 shadow-2xl font-mono text-[9px] leading-relaxed relative border border-slate-200 select-none rounded-sm w-[250px] md:w-[280px]">
-                    {/* Top edge jagged lines */}
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-repeat-x bg-[linear-gradient(45deg,transparent_33.3%,#ddd_33.3%,#ddd_66.6%,transparent_66.6%)] bg-[length:6px_4px]"></div>
-
-                    <div className="text-center space-y-1 pt-3">
-                      {invoiceSettings.showLogo && invoiceSettings.logoUrl && (
-                        <div className="flex justify-center mb-1.5">
-                          <img 
-                            src={invoiceSettings.logoUrl} 
-                            alt="Logo Toko" 
-                            className="h-20 w-20 object-contain rounded-full border-2 border-slate-200 shadow-sm" 
-                            referrerPolicy="no-referrer"
-                            onError={(e) => {
-                              (e.currentTarget as HTMLImageElement).src = "/icon.jpg";
-                            }}
-                          />
-                        </div>
-                      )}
-                      <h5 className="font-extrabold text-xs uppercase tracking-wide leading-none">{invoiceSettings.storeName}</h5>
-                      <p className="text-[7px] text-slate-600 font-semibold italic">{invoiceSettings.slogan}</p>
-                      <p className="text-[7px] text-slate-600 whitespace-pre-line leading-tight px-1">{invoiceSettings.address}</p>
-                      <p className="text-[7px] text-slate-600 font-bold">Telp/WA: {invoiceSettings.phone}</p>
-                      
-                      <div className="py-1">
-                        <p className="text-[7px] font-extrabold bg-slate-100 py-0.5 rounded border border-slate-200 text-slate-700">
-                          {invoiceSettings.headerMessage || "BUKTI PENJUALAN"}
-                        </p>
-                      </div>
-                    </div>
-
-                    <div className="text-[7px] text-slate-700 space-y-0.5 pt-2 border-t border-dashed border-slate-300">
-                      <div className="flex justify-between">
-                        <span>TANGGAL   : {new Date(printTx.date).toLocaleString("id-ID")}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>INVOICE   : {printTx.id}</span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>KASIR     : {printTx.operatorEmail}</span>
-                      </div>
-                      <div className="flex justify-between font-bold">
-                        <span>PELANGGAN : {printTx.customerName || "Pelanggan Umum"}</span>
-                      </div>
-                    </div>
-
-                    <div className="border-t border-dashed border-slate-300 my-2 pt-1 flex flex-col gap-1">
-                      <div className="text-[7px] font-bold text-slate-800 pb-0.5 flex justify-between">
-                        <span>AROMA & KEMASAN</span>
-                        <span>JUMLAH</span>
-                      </div>
-                      
-                      {printTx.scentName === "Klaim Promo Potongan" ? (
-                        <div className="text-[7px] text-slate-800 space-y-0.5">
-                          <div className="flex justify-between font-semibold">
-                            <span>Klaim Promo Diskon Pelanggan</span>
-                            <span>Rp {printTx.discountNominal.toLocaleString("id-ID")}</span>
-                          </div>
-                          <div className="flex justify-between text-[6px] text-slate-500 pl-1">
-                            <span>Penukaran Akumulasi Loyalitas</span>
-                          </div>
-                        </div>
-                      ) : printTx.items && printTx.items.length > 0 ? (
-                        <div className="space-y-1.5">
-                          {printTx.items.map((item, index) => {
-                            if (item.isBundling) {
-                              const itemTotal = (item.bundlingPrice || 0) * (item.bottleCount || 1);
-                              const { bottleDesc } = getBundlingBottleVolumeInfo(item);
-
-                              return (
-                                <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1 last:border-b-0 last:pb-0">
-                                  <div className="text-[7px] space-y-0.5">
-                                    <div className="flex justify-between font-semibold text-slate-800">
-                                      <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</span>
-                                      <span>Rp {itemTotal.toLocaleString("id-ID")}</span>
-                                    </div>
-                                    <div className="flex justify-between text-[6px] text-slate-500 pl-1">
-                                      <span>
-                                        {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            }
-
-                            const isHB = item.scentName === "Hanya Botol";
-                            const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                            const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
-                            const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl * (item.bottleCount || 1));
-                            const bottleCost = bPrice * (item.bottleCount || 1);
-
-                            return (
-                              <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1 last:border-b-0 last:pb-0">
-                                {/* Scent Row */}
-                                {!isHB && (item.volumeMl || 0) > 0 && (
-                                  <div className="text-[7px] text-slate-800 space-y-0.5">
-                                    <div className="flex justify-between font-semibold">
-                                      <span>{item.scentName} ({item.volumeMl}ml)</span>
-                                      <span>Rp {scentCost.toLocaleString("id-ID")}</span>
-                                    </div>
-                                    <div className="flex justify-between text-[6px] text-slate-500 pl-1">
-                                      <span>{item.volumeMl}ml x Rp {pPerMl.toLocaleString("id-ID")}/ml x {item.bottleCount}x</span>
-                                    </div>
-                                  </div>
-                                )}
-
-                                {/* Bottle Row */}
-                                {item.bottleSize && item.bottleSize !== "None" && (
-                                  <div className="text-[7px] pt-0.5 flex justify-between text-slate-800">
-                                    <span className="text-slate-600">
-                                      {item.bringOwnBottle 
-                                        ? `Botol ${item.bottleSize} (${item.bottleCount} pcs) - Bawa Sendiri`
-                                        : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount} pcs)`
-                                      }
-                                    </span>
-                                    <span>
-                                      Rp {bottleCost.toLocaleString("id-ID")}
-                                    </span>
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      ) : printTx.packageName ? (
-                        <div className="text-[7px] text-slate-800 space-y-0.5">
-                          <div className="flex justify-between font-semibold">
-                            <span>{printTx.packageName} ({printTx.bottleCount} unit)</span>
-                            <span>Rp {printTx.totalPrice.toLocaleString("id-ID")}</span>
-                          </div>
-                          <div className="flex justify-between text-[6px] text-slate-500 pl-1">
-                            <span>Paket Bundling Titipan</span>
-                          </div>
-                        </div>
-                      ) : (
-                        <>
-                          <div className="text-[7px] text-slate-800 space-y-0.5">
-                            <div className="flex justify-between font-semibold">
-                              <span>Bibit {printTx.scentName} ({printTx.volumeMl}ml)</span>
-                              <span>
-                                Rp {((printTx.volumeMl || 0) * getEssencePricePerMl(printTx.scentName, masterProducts, prices) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
-                              </span>
-                            </div>
-                            <div className="flex justify-between text-[6px] text-slate-500 pl-1">
-                              <span>{printTx.volumeMl} ml x Rp {getEssencePricePerMl(printTx.scentName, masterProducts, prices).toLocaleString("id-ID")} /ml</span>
-                            </div>
-                          </div>
-
-                          {printTx.bottleSize && printTx.bottleSize !== "None" && (
-                            <div className="text-[7px] pt-1 flex justify-between text-slate-800">
-                              <span>
-                                {printTx.bringOwnBottle 
-                                  ? `Botol ${printTx.bottleSize} (${printTx.bottleCount} pcs) - Bawa Sendiri`
-                                  : `Botol ${printTx.bottleType || "Kaca"} ${printTx.bottleSize} (${printTx.bottleCount} pcs)`
-                                }
-                              </span>
-                              <span>
-                                Rp {(getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)).toLocaleString("id-ID")}
-                              </span>
-                            </div>
-                          )}
-                        </>
-                      )}
-                    </div>
-
-                    <div className="border-t border-dashed border-slate-300 my-2 pt-1.5 space-y-0.5">
-                      <div className="flex justify-between text-[7px] text-slate-700">
-                        <span>SUBTOTAL</span>
-                        <span>
-                          Rp {(printTx.scentName === "Klaim Promo Potongan"
-                            ? (printTx.discountNominal || 0)
-                            : printTx.packageName
-                            ? printTx.totalPrice
-                            : printTx.items && printTx.items.length > 0
-                            ? printTx.items.reduce((acc, item) => {
-                                if (item.isBundling) {
-                                  return acc + ((item.bundlingPrice || 0) * (item.bottleCount || 1));
-                                }
-                                const isHB = item.scentName === "Hanya Botol";
-                                const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                                const bPrice = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
-                                const scentCost = isHB ? 0 : ((item.volumeMl || 0) * pPerMl);
-                                return acc + ((scentCost + bPrice) * (item.bottleCount || 1));
-                              }, 0)
-                            : (((printTx.volumeMl || 0) * getEssencePricePerMl(printTx.scentName, masterProducts, prices) * (printTx.bottleCount || 1)) +
-                               (getBottleUnitPrice(printTx.bottleSize, printTx.bottleType, printTx.bringOwnBottle, masterProducts, bottleSizes) * (printTx.bottleCount || 1)))
-                          ).toLocaleString("id-ID")}
-                        </span>
-                      </div>
-                      {printTx.discountNominal ? (
-                        <>
-                          <div className="flex justify-between text-[7px] font-bold text-emerald-700">
-                            <span>{getDiscountLabel(printTx)}</span>
-                            <span>-Rp {printTx.discountNominal.toLocaleString("id-ID")}</span>
-                          </div>
-                          {printTx.claimPromoOnThisTx && (
-                            <div className="text-[5.5px] text-slate-500 italic text-right leading-none">
-                              * Penukaran Akumulasi Loyalitas Belanja
-                            </div>
-                          )}
-                        </>
-                      ) : null}
-                      <div className="flex justify-between text-[8px] font-black border-t border-dotted border-slate-400 pt-1">
-                        <span>TOTAL BAYAR</span>
-                        <span>Rp {(printTx.scentName === "Klaim Promo Potongan" ? 0 : printTx.totalPrice).toLocaleString("id-ID")}</span>
-                      </div>
-                    </div>
-
-                    <div className="text-center text-[6px] text-slate-500 space-y-0.5 pt-3 border-t border-dashed border-slate-300">
-                      <p className="font-bold text-slate-700 uppercase">{invoiceSettings.footerMessage1}</p>
-                      <p className="italic leading-snug">{invoiceSettings.footerMessage2}</p>
-                    </div>
-
-                    {/* Bottom edge jagged lines */}
-                    <div className="absolute bottom-0 left-0 right-0 h-1 bg-repeat-x bg-[linear-gradient(225deg,transparent_33.3%,#ddd_33.3%,#ddd_66.6%,transparent_66.6%)] bg-[length:6px_4px]"></div>
+                  <div ref={invoiceRef}>
+                    <ReceiptInnerContent tx={printTx} settings={invoiceSettings} isPrintArea={false} />
                   </div>
 
                 </div>

@@ -115,6 +115,7 @@ export interface InvoiceSettings {
   logoUrl: string;
   showLogo: boolean;
   appIconUrl?: string;
+  fontSize?: "xs" | "sm" | "md" | "lg" | "xl";
 }
 
 export interface Customer {
