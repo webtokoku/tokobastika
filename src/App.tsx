@@ -1111,8 +1111,59 @@ export default function App() {
         }
         img.onload = () => {
           try {
+            // 1. First measure & crop empty white/transparent margins from original logo image
+            const origW = img.naturalWidth || img.width;
+            const origH = img.naturalHeight || img.height;
+            const tempCanvas = document.createElement("canvas");
+            tempCanvas.width = origW;
+            tempCanvas.height = origH;
+            const tempCtx = tempCanvas.getContext("2d");
+            if (!tempCtx) {
+              finish(null);
+              return;
+            }
+
+            tempCtx.fillStyle = "#FFFFFF";
+            tempCtx.fillRect(0, 0, origW, origH);
+            tempCtx.drawImage(img, 0, 0);
+
+            const origImgData = tempCtx.getImageData(0, 0, origW, origH);
+            const origData = origImgData.data;
+
+            // Find non-white & non-transparent bounding box
+            let minX = origW, minY = origH, maxX = 0, maxY = 0;
+            let foundPixel = false;
+            for (let y = 0; y < origH; y++) {
+              for (let x = 0; x < origW; x++) {
+                const idx = (y * origW + x) * 4;
+                const r = origData[idx];
+                const g = origData[idx + 1];
+                const b = origData[idx + 2];
+                const a = origData[idx + 3];
+
+                if (a > 30 && (r < 240 || g < 240 || b < 240)) {
+                  if (x < minX) minX = x;
+                  if (x > maxX) maxX = x;
+                  if (y < minY) minY = y;
+                  if (y > maxY) maxY = y;
+                  foundPixel = true;
+                }
+              }
+            }
+
+            // Fallback if no dark pixel found
+            if (!foundPixel) {
+              minX = 0; minY = 0; maxX = origW - 1; maxY = origH - 1;
+            }
+
+            const cropX = minX;
+            const cropY = minY;
+            const cropW = Math.max(1, maxX - minX + 1);
+            const cropH = Math.max(1, maxY - minY + 1);
+
+            // 2. Draw cropped artwork scaled to larger target resolution for maximum thermal print sharpness
             const width = Math.max(8, Math.floor(targetWidthPx / 8) * 8);
-            const height = Math.max(1, Math.round((img.height / img.width) * width));
+            const height = Math.max(1, Math.round((cropH / cropW) * width));
 
             const canvas = document.createElement("canvas");
             canvas.width = width;
@@ -1125,12 +1176,12 @@ export default function App() {
 
             ctx.fillStyle = "#FFFFFF";
             ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
+            ctx.drawImage(tempCanvas, cropX, cropY, cropW, cropH, 0, 0, width, height);
 
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
 
-            // Convert to grayscale float array
+            // Convert to grayscale float array with contrast boosting for small text inside logo
             const gray = new Float32Array(width * height);
             for (let i = 0; i < width * height; i++) {
               const r = data[i * 4];
@@ -1140,11 +1191,18 @@ export default function App() {
               if (a < 128) {
                 gray[i] = 255; // transparent -> white
               } else {
-                gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+                let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+                // Darken text/detail pixels slightly so small fonts inside logo print crisp & readable
+                if (luma < 175) {
+                  luma = Math.max(0, luma - 30);
+                } else {
+                  luma = Math.min(255, luma + 30);
+                }
+                gray[i] = luma;
               }
             }
 
-            // Floyd-Steinberg Dithering with enhanced contrast threshold for clear thermal printing
+            // Floyd-Steinberg Dithering with optimized threshold
             const bytesWidth = width / 8;
             const bitmap = new Uint8Array(bytesWidth * height);
 
@@ -1152,7 +1210,7 @@ export default function App() {
               for (let x = 0; x < width; x++) {
                 const idx = y * width + x;
                 const oldVal = gray[idx];
-                const newVal = oldVal < 165 ? 0 : 255;
+                const newVal = oldVal < 160 ? 0 : 255;
                 const err = oldVal - newVal;
 
                 if (newVal === 0) {
@@ -1179,7 +1237,8 @@ export default function App() {
               0x1B, 0x61, 0x01, // Center align
               0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH
             ]);
-            const footer = new Uint8Array([0x0A, 0x1B, 0x61, 0x00]);
+            // Remove 0x0A (linefeed) so logo is positioned right above store name without extra blank gap
+            const footer = new Uint8Array([0x1B, 0x61, 0x01]);
 
             const combined = new Uint8Array(header.length + bitmap.length + footer.length);
             combined.set(header, 0);
@@ -1289,7 +1348,7 @@ export default function App() {
     // 2. Print Logo header if enabled
     if (settings.showLogo !== false) {
       const logoUrl = settings.logoUrl || "/icon.jpg";
-      const targetWidth = settings.paperWidth === "80mm" ? 384 : (settings.paperWidth === "54mm" ? 256 : 288);
+      const targetWidth = settings.paperWidth === "80mm" ? 480 : (settings.paperWidth === "54mm" ? 320 : 352);
       const logoRaster = await convertImageUrlToEscPosRaster(logoUrl, targetWidth);
       if (logoRaster) {
         chunks.push(logoRaster);
@@ -1458,13 +1517,13 @@ export default function App() {
         )}
 
         {/* Header */}
-        <div className="text-center space-y-1 pt-1">
+        <div className="text-center space-y-0.5 pt-0.5">
           {settings.showLogo !== false && (
-            <div className="flex justify-center mb-1.5 print:mb-2 print:block print:text-center">
+            <div className="flex justify-center mb-1 print:mb-1 print:block print:text-center">
               <img 
                 src={settings.logoUrl || "/icon.jpg"} 
                 alt="Logo Toko" 
-                className="h-14 w-14 object-contain rounded-full border border-slate-200 shadow-2xs mx-auto print:h-16 print:w-16 print:mx-auto print:block" 
+                className="h-20 w-20 max-w-full object-contain mx-auto print:h-24 print:w-24 print:mx-auto print:block" 
                 crossOrigin="anonymous"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
