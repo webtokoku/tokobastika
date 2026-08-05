@@ -1088,79 +1088,89 @@ export default function App() {
   // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands
   const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 192): Promise<Uint8Array | null> => {
     return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "Anonymous";
-      img.onload = () => {
-        try {
-          const width = Math.max(8, Math.floor(targetWidthPx / 8) * 8);
-          const height = Math.max(1, Math.round((img.height / img.width) * width));
+      const loadImg = (srcUrl: string, useCors: boolean) => {
+        const img = new Image();
+        if (useCors && !srcUrl.startsWith("data:")) {
+          img.crossOrigin = "Anonymous";
+        }
+        img.onload = () => {
+          try {
+            const width = Math.max(8, Math.floor(targetWidthPx / 8) * 8);
+            const height = Math.max(1, Math.round((img.height / img.width) * width));
 
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) {
-            resolve(null);
-            return;
-          }
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) {
+              resolve(null);
+              return;
+            }
 
-          ctx.fillStyle = "#FFFFFF";
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
+            ctx.fillStyle = "#FFFFFF";
+            ctx.fillRect(0, 0, width, height);
+            ctx.drawImage(img, 0, 0, width, height);
 
-          const imgData = ctx.getImageData(0, 0, width, height);
-          const data = imgData.data;
+            const imgData = ctx.getImageData(0, 0, width, height);
+            const data = imgData.data;
 
-          const bytesWidth = width / 8;
-          const bitmap = new Uint8Array(bytesWidth * height);
+            const bytesWidth = width / 8;
+            const bitmap = new Uint8Array(bytesWidth * height);
 
-          for (let y = 0; y < height; y++) {
-            for (let x = 0; x < width; x++) {
-              const idx = (y * width + x) * 4;
-              const r = data[idx];
-              const g = data[idx + 1];
-              const b = data[idx + 2];
-              const a = data[idx + 3];
+            for (let y = 0; y < height; y++) {
+              for (let x = 0; x < width; x++) {
+                const idx = (y * width + x) * 4;
+                const r = data[idx];
+                const g = data[idx + 1];
+                const b = data[idx + 2];
+                const a = data[idx + 3];
 
-              // Calculate luminance & check transparency
-              const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-              const isBlack = a > 128 && lum < 190;
+                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
+                const isBlack = a > 128 && lum < 190;
 
-              if (isBlack) {
-                const byteIdx = y * bytesWidth + Math.floor(x / 8);
-                const bitIdx = 7 - (x % 8);
-                bitmap[byteIdx] |= (1 << bitIdx);
+                if (isBlack) {
+                  const byteIdx = y * bytesWidth + Math.floor(x / 8);
+                  const bitIdx = 7 - (x % 8);
+                  bitmap[byteIdx] |= (1 << bitIdx);
+                }
               }
             }
+
+            const xL = bytesWidth % 256;
+            const xH = Math.floor(bytesWidth / 256);
+            const yL = height % 256;
+            const yH = Math.floor(height / 256);
+
+            const header = new Uint8Array([
+              0x1B, 0x61, 0x01, // Center align
+              0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH
+            ]);
+            const footer = new Uint8Array([0x0A, 0x1B, 0x61, 0x00]);
+
+            const combined = new Uint8Array(header.length + bitmap.length + footer.length);
+            combined.set(header, 0);
+            combined.set(bitmap, header.length);
+            combined.set(footer, header.length + bitmap.length);
+
+            resolve(combined);
+          } catch (err) {
+            console.error("Gagal convert logo to ESC/POS raster:", err);
+            resolve(null);
           }
-
-          const xL = bytesWidth % 256;
-          const xH = Math.floor(bytesWidth / 256);
-          const yL = height % 256;
-          const yH = Math.floor(height / 256);
-
-          // ESC/POS Command: Center Align + GS v 0 (Print raster bit image)
-          const header = new Uint8Array([
-            0x1B, 0x61, 0x01, // Center align
-            0x1D, 0x76, 0x30, 0x00, xL, xH, yL, yH
-          ]);
-          const footer = new Uint8Array([0x0A]);
-
-          const combined = new Uint8Array(header.length + bitmap.length + footer.length);
-          combined.set(header, 0);
-          combined.set(bitmap, header.length);
-          combined.set(footer, header.length + bitmap.length);
-
-          resolve(combined);
-        } catch (err) {
-          console.error("Gagal convert logo to ESC/POS raster:", err);
-          resolve(null);
-        }
+        };
+        img.onerror = () => {
+          if (useCors) {
+            loadImg(srcUrl, false);
+          } else if (srcUrl !== "/icon.jpg") {
+            loadImg("/icon.jpg", false);
+          } else {
+            resolve(null);
+          }
+        };
+        img.src = srcUrl;
       };
-      img.onerror = () => {
-        resolve(null);
-      };
-      img.src = url;
+
+      loadImg(url, true);
     });
   };
 
@@ -1692,6 +1702,7 @@ export default function App() {
           deviceName: deviceLabel
         });
         if (!silent) showToast(`Printer Bluetooth (${deviceLabel}) berhasil terhubung!`, "success");
+        return writeChar;
       } else {
         throw new Error("Karakteristik write printer tidak ditemukan!");
       }
@@ -1699,17 +1710,18 @@ export default function App() {
       console.error(err);
       setPrinterStatus("Disconnected");
       if (!silent) showToast(`Koneksi Bluetooth gagal: ${err.message}`, "error");
+      return null;
     } finally {
       setIsPrinterConnecting(false);
     }
   };
 
   // Web USB Connect
-  const connectUsbPrinter = async (silent = false) => {
+  const connectUsbPrinter = async (silent = false): Promise<any | null> => {
     const nav = navigator as any;
     if (!nav.usb) {
       if (!silent) showToast("Web USB tidak didukung di browser ini!", "error");
-      return;
+      return null;
     }
 
     setIsPrinterConnecting(true);
@@ -1732,10 +1744,12 @@ export default function App() {
         usbVendorId: device.vendorId.toString()
       });
       if (!silent) showToast("Printer USB berhasil terhubung!", "success");
+      return device;
     } catch (err: any) {
       console.error(err);
       setPrinterStatus("Disconnected");
       if (!silent) showToast(`Koneksi USB gagal: ${err.message}`, "error");
+      return null;
     } finally {
       setIsPrinterConnecting(false);
     }
@@ -1782,39 +1796,46 @@ export default function App() {
       const escPosData = await formatReceiptToEscPos(tx, invoiceSettings);
 
       if (printerConfig.mode === "bluetooth") {
-        if (!btCharacteristic) {
-          showToast("Printer Bluetooth belum terhubung! Silakan hubungkan printer.", "error");
-          await connectBluetoothPrinter();
-          return;
+        let activeChar = btCharacteristic;
+        if (!activeChar) {
+          showToast("Menghubungkan ke Printer Bluetooth...", "info");
+          activeChar = await connectBluetoothPrinter();
+          if (!activeChar) {
+            setIsPrinterConnecting(false);
+            return;
+          }
         }
 
         const chunkSize = 20;
         for (let i = 0; i < escPosData.length; i += chunkSize) {
           const chunk = escPosData.slice(i, i + chunkSize);
-          await btCharacteristic.writeValue(chunk);
+          await activeChar.writeValue(chunk);
         }
-        showToast("Invoice berhasil dikirim ke Printer Bluetooth!", "success");
+        showToast("Invoice berhasil dicetak langsung via Bluetooth!", "success");
       } else if (printerConfig.mode === "usb") {
-        if (!usbDevice) {
-          showToast("Printer USB belum terhubung! Silakan hubungkan printer.", "error");
-          await connectUsbPrinter();
-          return;
+        let activeUsb = usbDevice;
+        if (!activeUsb) {
+          showToast("Menghubungkan ke Printer USB...", "info");
+          activeUsb = await connectUsbPrinter();
+          if (!activeUsb) {
+            setIsPrinterConnecting(false);
+            return;
+          }
         }
 
-        const endpoint = usbDevice.configuration?.interfaces[0]?.alternates[0]?.endpoints.find(
+        const endpoint = activeUsb.configuration?.interfaces[0]?.alternates[0]?.endpoints.find(
           (e: any) => e.direction === "out"
         );
         if (!endpoint) {
           throw new Error("USB out endpoint tidak ditemukan!");
         }
 
-        await usbDevice.transferOut(endpoint.endpointNumber, escPosData);
-        showToast("Invoice berhasil dikirim ke Printer USB!", "success");
+        await activeUsb.transferOut(endpoint.endpointNumber, escPosData);
+        showToast("Invoice berhasil dicetak langsung via USB!", "success");
       }
     } catch (err: any) {
       console.error(err);
-      showToast(`Gagal mencetak: ${err.message}. Mengalihkan ke printer system browser...`, "error");
-      window.print();
+      showToast(`Gagal mencetak langsung: ${err.message}`, "error");
     } finally {
       setIsPrinterConnecting(false);
     }
@@ -12040,8 +12061,41 @@ export default function App() {
 
                 <div className="p-5 overflow-y-auto flex-1 bg-slate-950/20 space-y-4 flex flex-col items-center">
                   
-                  {/* Quick Controls: Paper Width & Font Size Pill Bars right inside Modal */}
+                  {/* Quick Controls: Mode Cetak, Paper Width & Font Size Pill Bars right inside Modal */}
                   <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col gap-2.5">
+                    
+                    {/* Mode Cetak Selector */}
+                    <div className="flex flex-col gap-1 pb-1 border-b border-slate-800/80">
+                      <div className="flex justify-between items-center px-1">
+                        <span className="text-[11px] font-bold text-slate-300">Metode / Koneksi Cetak:</span>
+                        <span className="text-[10px] text-emerald-400 font-semibold uppercase">
+                          {printerConfig.mode === "bluetooth" ? "Direct Bluetooth" : printerConfig.mode === "usb" ? "Direct USB" : "Sistem OS"}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: "bluetooth", label: "Bluetooth Direct" },
+                          { id: "usb", label: "USB Direct" },
+                          { id: "system", label: "Sistem OS" },
+                        ].map((m) => (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => {
+                              savePrinterConfig({ ...printerConfig, mode: m.id as any });
+                            }}
+                            className={`py-1.5 rounded-xl font-bold text-[11px] transition-all cursor-pointer border ${
+                              printerConfig.mode === m.id
+                                ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-900/50"
+                                : "bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                            }`}
+                          >
+                            {m.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
                     {/* Paper Width Selector */}
                     <div className="flex flex-col gap-1">
                       <div className="flex justify-between items-center px-1">
@@ -12115,7 +12169,9 @@ export default function App() {
                   <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-left w-full text-[11px] text-emerald-400 leading-normal flex gap-2.5 items-start">
                     <Info className="h-4 w-4 shrink-0 mt-0.5 text-emerald-400" />
                     <span>
-                      Hasil cetak fisik printer dijamin 100% presisi dan sama persis seperti preview di bawah ini.
+                      {printerConfig.mode === "bluetooth" || printerConfig.mode === "usb"
+                        ? "Pencetakan langsung ke printer kasir (ESC/POS) tanpa melewati dialog preview OS."
+                        : "Pencetakan via Sistem OS presisi 100% menyesuaikan lebar kertas " + (invoiceSettings.paperWidth || "54mm") + "."}
                     </span>
                   </div>
 
@@ -12153,10 +12209,19 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => handlePrintTicket(printTx)}
-                    className="flex-1 min-w-[120px] bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    disabled={isPrinterConnecting}
+                    className="flex-1 min-w-[130px] bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-black text-xs py-2.5 rounded-xl shadow-md flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
                     <Printer className="h-4 w-4" />
-                    <span>Cetak</span>
+                    <span>
+                      {isPrinterConnecting
+                        ? "Memproses..."
+                        : printerConfig.mode === "bluetooth"
+                        ? "Cetak (Bluetooth)"
+                        : printerConfig.mode === "usb"
+                        ? "Cetak (USB)"
+                        : "Cetak (Sistem)"}
+                    </span>
                   </button>
                 </div>
               </div>
@@ -12183,16 +12248,19 @@ export default function App() {
 
             @media print {
               @page {
-                size: portrait;
-                margin: 0 !important;
+                size: ${invoiceSettings.paperWidth || "54mm"} auto;
+                margin: 0mm !important;
               }
               html, body {
+                width: ${invoiceSettings.paperWidth || "54mm"} !important;
                 margin: 0 !important;
                 padding: 0 !important;
                 height: auto !important;
                 min-height: 0 !important;
                 background: white !important;
                 overflow: visible !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
               }
               /* Neutralize layout wrappers so they don't force min-height/flex and cause multi-page overflow */
               #root, 
@@ -12222,15 +12290,26 @@ export default function App() {
               #print-receipt-area {
                 display: block !important;
                 position: static !important;
-                width: 280px !important;
+                width: ${invoiceSettings.paperWidth || "54mm"} !important;
+                max-width: ${invoiceSettings.paperWidth || "54mm"} !important;
                 margin: 0 auto !important;
-                padding: 8px !important;
+                padding: 2mm !important;
                 background: white !important;
                 color: black !important;
                 box-sizing: border-box !important;
                 page-break-inside: avoid !important;
                 page-break-after: avoid !important;
                 page-break-before: avoid !important;
+              }
+              #print-receipt-area img {
+                display: block !important;
+                visibility: visible !important;
+                opacity: 1 !important;
+                margin: 0 auto 4px auto !important;
+                max-width: 60px !important;
+                max-height: 60px !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
               }
               * {
                 -webkit-print-color-adjust: exact !important;
