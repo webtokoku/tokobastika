@@ -1012,73 +1012,75 @@ export default function App() {
     };
   };
 
-  const getInvoiceFontSizes = (size: string = "md") => {
+  const getInvoiceFontSizes = (size: string = "md", paperWidth: string = "58mm") => {
+    const is54 = paperWidth === "54mm";
+    const is80 = paperWidth === "80mm";
     switch (size) {
       case "xs":
         return {
-          basePx: "7.5px",
-          titlePx: "10px",
-          subTitlePx: "6.5px",
-          headerPx: "7px",
-          metaPx: "6.5px",
-          rowPx: "6.5px",
-          subRowPx: "5.5px",
-          totalPx: "7.5px",
-          footerPx: "5.5px",
-          containerWidth: "240px",
+          basePx: is54 ? "7px" : "7.5px",
+          titlePx: is54 ? "9.5px" : "10px",
+          subTitlePx: is54 ? "6px" : "6.5px",
+          headerPx: is54 ? "6.5px" : "7px",
+          metaPx: is54 ? "6px" : "6.5px",
+          rowPx: is54 ? "6px" : "6.5px",
+          subRowPx: is54 ? "5px" : "5.5px",
+          totalPx: is54 ? "7px" : "7.5px",
+          footerPx: is54 ? "5px" : "5.5px",
+          containerWidth: is54 ? "200px" : is80 ? "340px" : "240px",
         };
       case "sm":
         return {
-          basePx: "8.5px",
-          titlePx: "11px",
-          subTitlePx: "7.5px",
-          headerPx: "7.5px",
-          metaPx: "7px",
-          rowPx: "7px",
-          subRowPx: "6px",
-          totalPx: "8.5px",
-          footerPx: "6px",
-          containerWidth: "260px",
+          basePx: is54 ? "8px" : "8.5px",
+          titlePx: is54 ? "10.5px" : "11px",
+          subTitlePx: is54 ? "7px" : "7.5px",
+          headerPx: is54 ? "7px" : "7.5px",
+          metaPx: is54 ? "6.5px" : "7px",
+          rowPx: is54 ? "6.5px" : "7px",
+          subRowPx: is54 ? "5.5px" : "6px",
+          totalPx: is54 ? "8px" : "8.5px",
+          footerPx: is54 ? "5.5px" : "6px",
+          containerWidth: is54 ? "210px" : is80 ? "340px" : "260px",
         };
       case "lg":
         return {
-          basePx: "10.5px",
-          titlePx: "13.5px",
-          subTitlePx: "9px",
-          headerPx: "9px",
-          metaPx: "8.5px",
-          rowPx: "8.5px",
-          subRowPx: "7.5px",
-          totalPx: "10px",
-          footerPx: "7.5px",
-          containerWidth: "300px",
+          basePx: is54 ? "10px" : "10.5px",
+          titlePx: is54 ? "12.5px" : "13.5px",
+          subTitlePx: is54 ? "8.5px" : "9px",
+          headerPx: is54 ? "8.5px" : "9px",
+          metaPx: is54 ? "8px" : "8.5px",
+          rowPx: is54 ? "8px" : "8.5px",
+          subRowPx: is54 ? "7px" : "7.5px",
+          totalPx: is54 ? "9.5px" : "10px",
+          footerPx: is54 ? "7px" : "7.5px",
+          containerWidth: is54 ? "235px" : is80 ? "340px" : "300px",
         };
       case "xl":
         return {
-          basePx: "12px",
-          titlePx: "15px",
-          subTitlePx: "10px",
-          headerPx: "10px",
-          metaPx: "9.5px",
-          rowPx: "9.5px",
-          subRowPx: "8.5px",
-          totalPx: "11.5px",
-          footerPx: "8.5px",
-          containerWidth: "320px",
+          basePx: is54 ? "11px" : "12px",
+          titlePx: is54 ? "14px" : "15px",
+          subTitlePx: is54 ? "9.5px" : "10px",
+          headerPx: is54 ? "9.5px" : "10px",
+          metaPx: is54 ? "9px" : "9.5px",
+          rowPx: is54 ? "9px" : "9.5px",
+          subRowPx: is54 ? "8px" : "8.5px",
+          totalPx: is54 ? "10.5px" : "11.5px",
+          footerPx: is54 ? "8px" : "8.5px",
+          containerWidth: is54 ? "250px" : is80 ? "340px" : "320px",
         };
       case "md":
       default:
         return {
-          basePx: "9px",
-          titlePx: "12px",
-          subTitlePx: "8px",
-          headerPx: "8px",
-          metaPx: "7.5px",
-          rowPx: "7.5px",
-          subRowPx: "6.5px",
-          totalPx: "9px",
-          footerPx: "6.5px",
-          containerWidth: "280px",
+          basePx: is54 ? "8.5px" : "9px",
+          titlePx: is54 ? "11px" : "12px",
+          subTitlePx: is54 ? "7.5px" : "8px",
+          headerPx: is54 ? "7.5px" : "8px",
+          metaPx: is54 ? "7px" : "7.5px",
+          rowPx: is54 ? "7px" : "7.5px",
+          subRowPx: is54 ? "6px" : "6.5px",
+          totalPx: is54 ? "8.5px" : "9px",
+          footerPx: is54 ? "6px" : "6.5px",
+          containerWidth: is54 ? "220px" : is80 ? "340px" : "280px",
         };
     }
   };
@@ -1087,7 +1089,7 @@ export default function App() {
   const formatReceiptToEscPos = (tx: any, settings: InvoiceSettings): Uint8Array => {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
-    const maxCols = settings.paperWidth === "80mm" ? 48 : 32;
+    const maxCols = settings.paperWidth === "80mm" ? 48 : settings.paperWidth === "54mm" ? 28 : 32;
 
     const addBytes = (bytes: number[]) => {
       chunks.push(new Uint8Array(bytes));
@@ -1095,6 +1097,28 @@ export default function App() {
 
     const addLine = (text: string = "") => {
       chunks.push(encoder.encode(text + "\n"));
+    };
+
+    const addRowWithVal = (title: string, valStr: string, indent: string = "") => {
+      const fullTitle = indent + title;
+      const sSpaces = maxCols - fullTitle.length - valStr.length;
+      if (sSpaces >= 1) {
+        addLine(fullTitle + " ".repeat(sSpaces) + valStr);
+      } else {
+        addLine(fullTitle);
+        const vSpaces = maxCols - valStr.length;
+        addLine(" ".repeat(Math.max(0, vSpaces)) + valStr);
+      }
+    };
+
+    const addMetaLine = (label: string, value: string) => {
+      const line = `${label} : ${value}`;
+      if (line.length <= maxCols) {
+        addLine(line);
+      } else {
+        addLine(`${label} :`);
+        addLine(`  ${value}`);
+      }
     };
 
     // Initialize printer
@@ -1117,10 +1141,10 @@ export default function App() {
 
     // Left align for body
     addBytes([0x1B, 0x61, 0x00]);
-    addLine(`No. Nota : ${tx.invoiceNo || tx.id}`);
-    addLine(`Tanggal  : ${new Date(tx.createdAt || tx.date || Date.now()).toLocaleString("id-ID")}`);
-    addLine(`Kasir    : ${tx.operatorEmail || tx.createdByName || "Kasir"}`);
-    if (tx.customerName) addLine(`Pelanggan: ${tx.customerName}`);
+    addMetaLine("No. Nota ", tx.invoiceNo || tx.id);
+    addMetaLine("Tanggal  ", new Date(tx.createdAt || tx.date || Date.now()).toLocaleString("id-ID"));
+    addMetaLine("Kasir    ", tx.operatorEmail || tx.createdByName || "Kasir");
+    if (tx.customerName) addMetaLine("Pelanggan", tx.customerName);
     addLine("-".repeat(maxCols));
 
     // Items
@@ -1134,14 +1158,7 @@ export default function App() {
 
           const bLabel = `[Paket] ${item.bundlingName || item.scentName}`;
           const bVal = `Rp ${itemTotal.toLocaleString("id-ID")}`;
-          const bSpaces = maxCols - bLabel.length - bVal.length;
-          if (bSpaces >= 1) {
-            addLine(bLabel + " ".repeat(bSpaces) + bVal);
-          } else {
-            addLine(bLabel);
-            const vSpaces = maxCols - bVal.length;
-            addLine(" ".repeat(Math.max(0, vSpaces)) + bVal);
-          }
+          addRowWithVal(bLabel, bVal);
 
           if (bottleDesc) {
             addLine(`  (${bottleDesc})`);
@@ -1161,14 +1178,7 @@ export default function App() {
         if (!isHB && (item.volumeMl || 0) > 0) {
           const scentTitle = `${item.scentName} (${item.volumeMl}ml)`;
           const scentVal = `Rp ${scentCost.toLocaleString("id-ID")}`;
-          const sSpaces = maxCols - scentTitle.length - scentVal.length;
-          if (sSpaces >= 1) {
-            addLine(scentTitle + " ".repeat(sSpaces) + scentVal);
-          } else {
-            addLine(scentTitle);
-            const vSpaces = maxCols - scentVal.length;
-            addLine(" ".repeat(Math.max(0, vSpaces)) + scentVal);
-          }
+          addRowWithVal(scentTitle, scentVal);
 
           const detailText = `  ${item.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml x ${item.bottleCount}x`;
           addLine(detailText);
@@ -1176,17 +1186,10 @@ export default function App() {
 
         if (item.bottleSize && item.bottleSize !== "None") {
           const bLabel = item.bringOwnBottle
-            ? `  Botol ${item.bottleSize} (${item.bottleCount}x) - Own`
-            : `  Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
+            ? `Botol ${item.bottleSize} (${item.bottleCount}x) - Own`
+            : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount}x)`;
           const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
-          const bSpaces = maxCols - bLabel.length - bVal.length;
-          if (bSpaces >= 1) {
-            addLine(bLabel + " ".repeat(bSpaces) + bVal);
-          } else {
-            addLine(bLabel);
-            const vSpaces = maxCols - bVal.length;
-            addLine(" ".repeat(Math.max(0, vSpaces)) + bVal);
-          }
+          addRowWithVal(bLabel, bVal, "  ");
         }
       });
     } else if (tx.scentName && tx.scentName !== "Klaim Promo Potongan") {
@@ -1200,14 +1203,7 @@ export default function App() {
       if (!isHB && (tx.volumeMl || 0) > 0) {
         const scentTitle = `${tx.scentName} (${tx.volumeMl}ml)`;
         const scentVal = `Rp ${scentCost.toLocaleString("id-ID")}`;
-        const sSpaces = maxCols - scentTitle.length - scentVal.length;
-        if (sSpaces >= 1) {
-          addLine(scentTitle + " ".repeat(sSpaces) + scentVal);
-        } else {
-          addLine(scentTitle);
-          const vSpaces = maxCols - scentVal.length;
-          addLine(" ".repeat(Math.max(0, vSpaces)) + scentVal);
-        }
+        addRowWithVal(scentTitle, scentVal);
 
         const detailText = `  ${tx.volumeMl}ml x Rp ${pPerMl.toLocaleString("id-ID")}/ml x ${tx.bottleCount || 1}x`;
         addLine(detailText);
@@ -1215,33 +1211,26 @@ export default function App() {
 
       if (tx.bottleSize && tx.bottleSize !== "None") {
         const bLabel = tx.bringOwnBottle
-          ? `  Botol ${tx.bottleSize} (${tx.bottleCount || 1}x) - Own`
-          : `  Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
+          ? `Botol ${tx.bottleSize} (${tx.bottleCount || 1}x) - Own`
+          : `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount || 1}x)`;
         const bVal = `Rp ${bottleCost.toLocaleString("id-ID")}`;
-        const bSpaces = maxCols - bLabel.length - bVal.length;
-        if (bSpaces >= 1) {
-          addLine(bLabel + " ".repeat(bSpaces) + bVal);
-        } else {
-          addLine(bLabel);
-          const vSpaces = maxCols - bVal.length;
-          addLine(" ".repeat(Math.max(0, vSpaces)) + bVal);
-        }
+        addRowWithVal(bLabel, bVal, "  ");
       }
     } else if (tx.packageName) {
       calcSubtotal = tx.totalPrice || 0;
-      addLine(`${tx.packageName} (${tx.bottleCount || 1} unit)`);
+      addRowWithVal(`${tx.packageName} (${tx.bottleCount || 1} unit)`, `Rp ${calcSubtotal.toLocaleString("id-ID")}`);
     } else if (tx.scentName === "Klaim Promo Potongan") {
       calcSubtotal = tx.discountNominal || 0;
-      addLine(`Klaim Promo Diskon Pelanggan`);
+      addRowWithVal(`Klaim Promo Diskon Pelanggan`, `Rp 0`);
     }
 
     addLine("-".repeat(maxCols));
-    addLine(`SUBTOTAL : Rp ${calcSubtotal.toLocaleString("id-ID")}`);
+    addRowWithVal("SUBTOTAL", `Rp ${calcSubtotal.toLocaleString("id-ID")}`);
     if (tx.discountNominal) {
-      addLine(`DISKON   : -Rp ${tx.discountNominal.toLocaleString("id-ID")}`);
+      addRowWithVal("DISKON", `-Rp ${tx.discountNominal.toLocaleString("id-ID")}`);
     }
     addBytes([0x1B, 0x45, 0x01]); // Bold on
-    addLine(`TOTAL    : Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}`);
+    addRowWithVal("TOTAL BAYAR", `Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}`);
     addBytes([0x1B, 0x45, 0x00]); // Bold off
     addLine("-".repeat(maxCols));
 
@@ -1267,28 +1256,29 @@ export default function App() {
   };
 
   const ReceiptInnerContent = ({ tx, settings, isPrintArea = false }: { tx: any; settings: InvoiceSettings; isPrintArea?: boolean }) => {
-    const f = getInvoiceFontSizes(settings.fontSize || "md");
-    const widthPx = settings.paperWidth === "80mm" ? "340px" : f.containerWidth;
+    const f = getInvoiceFontSizes(settings.fontSize || "md", settings.paperWidth || "58mm");
+    const printWidth = settings.paperWidth === "54mm" ? "48mm" : settings.paperWidth === "80mm" ? "72mm" : "52mm";
+    const widthPx = isPrintArea ? printWidth : f.containerWidth;
 
     return (
       <div
-        className={`bg-white text-black font-mono leading-relaxed p-4 select-none relative ${
+        className={`bg-white text-black font-mono leading-relaxed p-3.5 select-none relative transition-all duration-200 ${
           isPrintArea ? "w-full mx-auto shadow-none border-none" : "shadow-2xl border border-slate-200 rounded-sm"
         }`}
-        style={{ width: isPrintArea ? "100%" : widthPx, fontSize: f.basePx }}
+        style={{ width: widthPx, maxWidth: "100%", fontSize: f.basePx }}
       >
         {!isPrintArea && (
           <div className="absolute top-0 left-0 right-0 h-1 bg-repeat-x bg-[linear-gradient(45deg,transparent_33.3%,#ddd_33.3%,#ddd_66.6%,transparent_66.6%)] bg-[length:6px_4px]"></div>
         )}
 
         {/* Header */}
-        <div className="text-center space-y-1 pt-2">
+        <div className="text-center space-y-1 pt-1">
           {settings.showLogo && settings.logoUrl && (
             <div className="flex justify-center mb-1.5">
               <img 
                 src={settings.logoUrl} 
                 alt="Logo Toko" 
-                className="h-16 w-16 object-contain rounded-full border-2 border-slate-200 shadow-sm" 
+                className="h-14 w-14 object-contain rounded-full border border-slate-200 shadow-2xs" 
                 referrerPolicy="no-referrer"
                 onError={(e) => {
                   (e.currentTarget as HTMLImageElement).src = "/icon.jpg";
@@ -1305,7 +1295,7 @@ export default function App() {
             </p>
           )}
           {settings.address && (
-            <p className="text-slate-600 whitespace-pre-line leading-tight px-1" style={{ fontSize: f.subTitlePx }}>
+            <p className="text-slate-600 whitespace-pre-line leading-tight px-0.5" style={{ fontSize: f.subTitlePx }}>
               {settings.address}
             </p>
           )}
@@ -1324,34 +1314,38 @@ export default function App() {
 
         {/* Invoice Meta */}
         <div className="text-slate-700 space-y-0.5 pt-2 border-t border-dashed border-slate-300" style={{ fontSize: f.metaPx }}>
-          <div className="flex justify-between">
-            <span>TANGGAL   : {new Date(tx.date || tx.createdAt || Date.now()).toLocaleString("id-ID")}</span>
+          <div className="flex justify-between gap-1 items-start">
+            <span className="shrink-0 font-semibold">TANGGAL:</span>
+            <span className="text-right font-medium">{new Date(tx.date || tx.createdAt || Date.now()).toLocaleString("id-ID")}</span>
           </div>
-          <div className="flex justify-between">
-            <span>INVOICE   : {tx.id || tx.invoiceNo}</span>
+          <div className="flex justify-between gap-1 items-start">
+            <span className="shrink-0 font-semibold">INVOICE:</span>
+            <span className="text-right font-medium font-mono truncate max-w-[140px]">{tx.id || tx.invoiceNo}</span>
           </div>
-          <div className="flex justify-between">
-            <span>KASIR     : {tx.operatorEmail || tx.createdByName || "Kasir"}</span>
+          <div className="flex justify-between gap-1 items-start">
+            <span className="shrink-0 font-semibold">KASIR:</span>
+            <span className="text-right font-medium truncate max-w-[140px]">{tx.operatorEmail || tx.createdByName || "Kasir"}</span>
           </div>
-          <div className="flex justify-between font-bold">
-            <span>PELANGGAN : {tx.customerName || "Pelanggan Umum"}</span>
+          <div className="flex justify-between gap-1 items-start font-bold">
+            <span className="shrink-0">PELANGGAN:</span>
+            <span className="text-right truncate max-w-[140px]">{tx.customerName || "Pelanggan Umum"}</span>
           </div>
         </div>
 
         {/* Items Section */}
         <div className="border-t border-dashed border-slate-300 my-2 pt-1 flex flex-col gap-1">
-          <div className="font-bold text-slate-800 pb-0.5 flex justify-between" style={{ fontSize: f.headerPx }}>
+          <div className="font-bold text-slate-800 pb-0.5 flex justify-between gap-1" style={{ fontSize: f.headerPx }}>
             <span>AROMA & KEMASAN</span>
-            <span>JUMLAH</span>
+            <span className="shrink-0 whitespace-nowrap">JUMLAH</span>
           </div>
           
           {tx.scentName === "Klaim Promo Potongan" ? (
             <div className="text-slate-800 space-y-0.5" style={{ fontSize: f.rowPx }}>
-              <div className="flex justify-between font-semibold">
-                <span>Klaim Promo Diskon Pelanggan</span>
-                <span>Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
+              <div className="flex justify-between gap-1 font-semibold items-baseline">
+                <span className="leading-tight break-words">Klaim Promo Diskon Pelanggan</span>
+                <span className="shrink-0 whitespace-nowrap">Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
               </div>
-              <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
+              <div className="flex justify-between text-slate-500 pl-1 leading-tight" style={{ fontSize: f.subRowPx }}>
                 <span>Penukaran Akumulasi Loyalitas</span>
               </div>
             </div>
@@ -1365,12 +1359,12 @@ export default function App() {
                   return (
                     <div key={item.id || index} className="border-b border-dotted border-slate-200/50 pb-1 last:border-b-0 last:pb-0">
                       <div className="space-y-0.5" style={{ fontSize: f.rowPx }}>
-                        <div className="flex justify-between font-semibold text-slate-800">
-                          <span>[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</span>
-                          <span>Rp {itemTotal.toLocaleString("id-ID")}</span>
+                        <div className="flex justify-between gap-1 font-semibold text-slate-800 items-baseline">
+                          <span className="leading-tight break-words">[Paket] {item.bundlingName || item.scentName} ({item.bottleCount || 1} unit)</span>
+                          <span className="shrink-0 whitespace-nowrap">Rp {itemTotal.toLocaleString("id-ID")}</span>
                         </div>
-                        <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
-                          <span>
+                        <div className="flex justify-between text-slate-500 pl-1 leading-tight" style={{ fontSize: f.subRowPx }}>
+                          <span className="break-words">
                             {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
                           </span>
                         </div>
@@ -1390,26 +1384,26 @@ export default function App() {
                     {/* Scent Row */}
                     {!isHB && (item.volumeMl || 0) > 0 && (
                       <div className="text-slate-800 space-y-0.5">
-                        <div className="flex justify-between font-semibold" style={{ fontSize: f.rowPx }}>
-                          <span>{item.scentName} ({item.volumeMl}ml)</span>
-                          <span>Rp {scentCost.toLocaleString("id-ID")}</span>
+                        <div className="flex justify-between gap-1 font-semibold items-baseline" style={{ fontSize: f.rowPx }}>
+                          <span className="leading-tight break-words">{item.scentName} ({item.volumeMl}ml)</span>
+                          <span className="shrink-0 whitespace-nowrap">Rp {scentCost.toLocaleString("id-ID")}</span>
                         </div>
-                        <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
-                          <span>{item.volumeMl}ml x Rp {pPerMl.toLocaleString("id-ID")}/ml x {item.bottleCount}x</span>
+                        <div className="flex justify-between text-slate-500 pl-1 leading-tight" style={{ fontSize: f.subRowPx }}>
+                          <span className="break-words">{item.volumeMl}ml x Rp {pPerMl.toLocaleString("id-ID")}/ml x {item.bottleCount}x</span>
                         </div>
                       </div>
                     )}
 
                     {/* Bottle Row */}
                     {item.bottleSize && item.bottleSize !== "None" && (
-                      <div className="pt-0.5 flex justify-between text-slate-800" style={{ fontSize: f.rowPx }}>
-                        <span className="text-slate-600">
+                      <div className="pt-0.5 flex justify-between gap-1 text-slate-800 items-baseline" style={{ fontSize: f.rowPx }}>
+                        <span className="text-slate-600 leading-tight break-words">
                           {item.bringOwnBottle 
                             ? `Botol ${item.bottleSize} (${item.bottleCount} pcs) - Bawa Sendiri`
                             : `Botol ${item.bottleType || "Kaca"} ${item.bottleSize} (${item.bottleCount} pcs)`
                           }
                         </span>
-                        <span>
+                        <span className="shrink-0 whitespace-nowrap">
                           Rp {bottleCost.toLocaleString("id-ID")}
                         </span>
                       </div>
@@ -1420,37 +1414,37 @@ export default function App() {
             </div>
           ) : tx.packageName ? (
             <div className="text-slate-800 space-y-0.5" style={{ fontSize: f.rowPx }}>
-              <div className="flex justify-between font-semibold">
-                <span>{tx.packageName} ({tx.bottleCount} unit)</span>
-                <span>Rp {tx.totalPrice.toLocaleString("id-ID")}</span>
+              <div className="flex justify-between gap-1 font-semibold items-baseline">
+                <span className="leading-tight break-words">{tx.packageName} ({tx.bottleCount} unit)</span>
+                <span className="shrink-0 whitespace-nowrap">Rp {tx.totalPrice.toLocaleString("id-ID")}</span>
               </div>
-              <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
+              <div className="flex justify-between text-slate-500 pl-1 leading-tight" style={{ fontSize: f.subRowPx }}>
                 <span>Paket Bundling Titipan</span>
               </div>
             </div>
           ) : (
             <>
               <div className="text-slate-800 space-y-0.5">
-                <div className="flex justify-between font-semibold" style={{ fontSize: f.rowPx }}>
-                  <span>Bibit {tx.scentName} ({tx.volumeMl}ml)</span>
-                  <span>
+                <div className="flex justify-between gap-1 font-semibold items-baseline" style={{ fontSize: f.rowPx }}>
+                  <span className="leading-tight break-words">Bibit {tx.scentName} ({tx.volumeMl}ml)</span>
+                  <span className="shrink-0 whitespace-nowrap">
                     Rp {((tx.volumeMl || 0) * getEssencePricePerMl(tx.scentName, masterProducts, prices) * (tx.bottleCount || 1)).toLocaleString("id-ID")}
                   </span>
                 </div>
-                <div className="flex justify-between text-slate-500 pl-1" style={{ fontSize: f.subRowPx }}>
-                  <span>{tx.volumeMl} ml x Rp {getEssencePricePerMl(tx.scentName, masterProducts, prices).toLocaleString("id-ID")} /ml</span>
+                <div className="flex justify-between text-slate-500 pl-1 leading-tight" style={{ fontSize: f.subRowPx }}>
+                  <span className="break-words">{tx.volumeMl} ml x Rp {getEssencePricePerMl(tx.scentName, masterProducts, prices).toLocaleString("id-ID")} /ml</span>
                 </div>
               </div>
 
               {tx.bottleSize && tx.bottleSize !== "None" && (
-                <div className="pt-1 flex justify-between text-slate-800" style={{ fontSize: f.rowPx }}>
-                  <span>
+                <div className="pt-1 flex justify-between gap-1 text-slate-800 items-baseline" style={{ fontSize: f.rowPx }}>
+                  <span className="leading-tight break-words">
                     {tx.bringOwnBottle 
                       ? `Botol ${tx.bottleSize} (${tx.bottleCount} pcs) - Bawa Sendiri`
                       : `Botol ${tx.bottleType || "Kaca"} ${tx.bottleSize} (${tx.bottleCount} pcs)`
                     }
                   </span>
-                  <span>
+                  <span className="shrink-0 whitespace-nowrap">
                     Rp {(getBottleUnitPrice(tx.bottleSize, tx.bottleType, tx.bringOwnBottle, masterProducts, bottleSizes) * (tx.bottleCount || 1)).toLocaleString("id-ID")}
                   </span>
                 </div>
@@ -1461,9 +1455,9 @@ export default function App() {
 
         {/* Totals Section */}
         <div className="border-t border-dashed border-slate-300 my-2 pt-1.5 space-y-0.5">
-          <div className="flex justify-between text-slate-700" style={{ fontSize: f.metaPx }}>
-            <span>SUBTOTAL</span>
-            <span>
+          <div className="flex justify-between text-slate-700 items-baseline" style={{ fontSize: f.metaPx }}>
+            <span className="font-semibold">SUBTOTAL</span>
+            <span className="shrink-0 whitespace-nowrap font-medium">
               Rp {(tx.scentName === "Klaim Promo Potongan"
                 ? (tx.discountNominal || 0)
                 : tx.packageName
@@ -1486,9 +1480,9 @@ export default function App() {
           </div>
           {tx.discountNominal ? (
             <>
-              <div className="flex justify-between font-bold text-emerald-700" style={{ fontSize: f.metaPx }}>
+              <div className="flex justify-between font-bold text-emerald-700 items-baseline" style={{ fontSize: f.metaPx }}>
                 <span>{getDiscountLabel(tx)}</span>
-                <span>-Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
+                <span className="shrink-0 whitespace-nowrap">-Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
               </div>
               {tx.claimPromoOnThisTx && (
                 <div className="text-slate-500 italic text-right leading-none" style={{ fontSize: f.subRowPx }}>
@@ -1497,9 +1491,9 @@ export default function App() {
               )}
             </>
           ) : null}
-          <div className="flex justify-between font-black border-t border-dotted border-slate-400 pt-1 text-slate-900" style={{ fontSize: f.totalPx }}>
+          <div className="flex justify-between font-black border-t border-dotted border-slate-400 pt-1 text-slate-900 items-baseline" style={{ fontSize: f.totalPx }}>
             <span>TOTAL BAYAR</span>
-            <span>Rp {(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}</span>
+            <span className="shrink-0 whitespace-nowrap">Rp {(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}</span>
           </div>
         </div>
 
@@ -10772,11 +10766,12 @@ export default function App() {
                         <select
                           id="inv-width"
                           value={tempSettings.paperWidth}
-                          onChange={(e) => handleSettingChange("paperWidth", e.target.value as "58mm" | "80mm")}
+                          onChange={(e) => handleSettingChange("paperWidth", e.target.value as "54mm" | "58mm" | "80mm")}
                           className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
                         >
-                          <option value="58mm">Thermal 58mm (Standard Mini)</option>
-                          <option value="80mm">Thermal 80mm (Standard Desktop)</option>
+                          <option value="54mm">Thermal 54mm (Mini Pocket / Portable)</option>
+                          <option value="58mm">Thermal 58mm (Standard Mini POS)</option>
+                          <option value="80mm">Thermal 80mm (Standard Desktop POS)</option>
                         </select>
                       </div>
 
@@ -11954,37 +11949,74 @@ export default function App() {
 
                 <div className="p-5 overflow-y-auto flex-1 bg-slate-950/20 space-y-4 flex flex-col items-center">
                   
-                  {/* Quick Font Size Selector Pill Bar right inside Modal */}
-                  <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 flex flex-col gap-2">
-                    <div className="flex justify-between items-center px-1">
-                      <span className="text-[11px] font-bold text-slate-300">Ukuran Font Nota:</span>
-                      <span className="text-[10px] text-emerald-400 font-semibold uppercase">{invoiceSettings.fontSize || "md"}</span>
+                  {/* Quick Controls: Paper Width & Font Size Pill Bars right inside Modal */}
+                  <div className="w-full bg-slate-900/90 border border-slate-800 rounded-2xl p-3 flex flex-col gap-2.5">
+                    {/* Paper Width Selector */}
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between items-center px-1">
+                        <span className="text-[11px] font-bold text-slate-300">Lebar Kertas Cetak:</span>
+                        <span className="text-[10px] text-emerald-400 font-semibold uppercase">{invoiceSettings.paperWidth || "54mm"}</span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1">
+                        {[
+                          { id: "54mm", label: "54 mm" },
+                          { id: "58mm", label: "58 mm" },
+                          { id: "80mm", label: "80 mm" },
+                        ].map((pw) => (
+                          <button
+                            key={pw.id}
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...invoiceSettings, paperWidth: pw.id as any };
+                              setInvoiceSettings(updated);
+                              setTempSettings(updated);
+                              updateInvoiceSettings(updated).catch(() => {});
+                            }}
+                            className={`py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border ${
+                              (invoiceSettings.paperWidth || "54mm") === pw.id
+                                ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-900/50"
+                                : "bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                            }`}
+                          >
+                            {pw.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
-                    <div className="grid grid-cols-5 gap-1">
-                      {[
-                        { id: "xs", label: "XS" },
-                        { id: "sm", label: "SM" },
-                        { id: "md", label: "MD" },
-                        { id: "lg", label: "LG" },
-                        { id: "xl", label: "XL" },
-                      ].map((s) => (
-                        <button
-                          key={s.id}
-                          onClick={() => {
-                            const updated = { ...invoiceSettings, fontSize: s.id as any };
-                            setInvoiceSettings(updated);
-                            setTempSettings(updated);
-                            updateInvoiceSettings(updated).catch(() => {});
-                          }}
-                          className={`py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border ${
-                            (invoiceSettings.fontSize || "md") === s.id
-                              ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-900/50"
-                              : "bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
-                          }`}
-                        >
-                          {s.label}
-                        </button>
-                      ))}
+
+                    {/* Font Size Selector */}
+                    <div className="flex flex-col gap-1 pt-1 border-t border-slate-800/80">
+                      <div className="flex justify-between items-center px-1">
+                        <span className="text-[11px] font-bold text-slate-300">Ukuran Font Nota:</span>
+                        <span className="text-[10px] text-emerald-400 font-semibold uppercase">{invoiceSettings.fontSize || "md"}</span>
+                      </div>
+                      <div className="grid grid-cols-5 gap-1">
+                        {[
+                          { id: "xs", label: "XS" },
+                          { id: "sm", label: "SM" },
+                          { id: "md", label: "MD" },
+                          { id: "lg", label: "LG" },
+                          { id: "xl", label: "XL" },
+                        ].map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...invoiceSettings, fontSize: s.id as any };
+                              setInvoiceSettings(updated);
+                              setTempSettings(updated);
+                              updateInvoiceSettings(updated).catch(() => {});
+                            }}
+                            className={`py-1.5 rounded-xl font-bold text-xs transition-all cursor-pointer border ${
+                              (invoiceSettings.fontSize || "md") === s.id
+                                ? "bg-emerald-600 text-white border-emerald-500 shadow-sm shadow-emerald-900/50"
+                                : "bg-slate-800/80 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-700"
+                            }`}
+                          >
+                            {s.label}
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
 

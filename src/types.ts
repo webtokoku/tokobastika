@@ -111,7 +111,7 @@ export interface InvoiceSettings {
   headerMessage: string;
   footerMessage1: string;
   footerMessage2: string;
-  paperWidth: "58mm" | "80mm";
+  paperWidth: "54mm" | "58mm" | "80mm";
   logoUrl: string;
   showLogo: boolean;
   appIconUrl?: string;
