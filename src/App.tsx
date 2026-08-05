@@ -1085,8 +1085,8 @@ export default function App() {
     }
   };
 
-  // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands
-  const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 192): Promise<Uint8Array | null> => {
+  // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands with Floyd-Steinberg dithering
+  const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 144): Promise<Uint8Array | null> => {
     return new Promise((resolve) => {
       let resolved = false;
       const timer = setTimeout(() => {
@@ -1130,24 +1130,42 @@ export default function App() {
             const imgData = ctx.getImageData(0, 0, width, height);
             const data = imgData.data;
 
+            // Convert to grayscale float array
+            const gray = new Float32Array(width * height);
+            for (let i = 0; i < width * height; i++) {
+              const r = data[i * 4];
+              const g = data[i * 4 + 1];
+              const b = data[i * 4 + 2];
+              const a = data[i * 4 + 3];
+              if (a < 128) {
+                gray[i] = 255; // transparent -> white
+              } else {
+                gray[i] = 0.299 * r + 0.587 * g + 0.114 * b;
+              }
+            }
+
+            // Floyd-Steinberg Dithering
             const bytesWidth = width / 8;
             const bitmap = new Uint8Array(bytesWidth * height);
 
             for (let y = 0; y < height; y++) {
               for (let x = 0; x < width; x++) {
-                const idx = (y * width + x) * 4;
-                const r = data[idx];
-                const g = data[idx + 1];
-                const b = data[idx + 2];
-                const a = data[idx + 3];
+                const idx = y * width + x;
+                const oldVal = gray[idx];
+                const newVal = oldVal < 140 ? 0 : 255;
+                const err = oldVal - newVal;
 
-                const lum = 0.299 * r + 0.587 * g + 0.114 * b;
-                const isBlack = a > 128 && lum < 190;
-
-                if (isBlack) {
+                if (newVal === 0) {
                   const byteIdx = y * bytesWidth + Math.floor(x / 8);
                   const bitIdx = 7 - (x % 8);
                   bitmap[byteIdx] |= (1 << bitIdx);
+                }
+
+                if (x + 1 < width) gray[idx + 1] += err * (7 / 16);
+                if (y + 1 < height) {
+                  if (x > 0) gray[(y + 1) * width + (x - 1)] += err * (3 / 16);
+                  gray[(y + 1) * width + x] += err * (5 / 16);
+                  if (x + 1 < width) gray[(y + 1) * width + (x + 1)] += err * (1 / 16);
                 }
               }
             }
@@ -1194,7 +1212,11 @@ export default function App() {
   const formatReceiptToEscPos = async (tx: any, settings: InvoiceSettings): Promise<Uint8Array> => {
     const encoder = new TextEncoder();
     const chunks: Uint8Array[] = [];
-    const maxCols = settings.paperWidth === "80mm" ? 48 : settings.paperWidth === "54mm" ? 28 : 32;
+
+    // Max columns based on paper width for standard Font A:
+    // 54mm/58mm -> 30 cols max (prevents unwanted physical printer line wrapping)
+    // 80mm -> 42 cols max
+    const maxCols = settings.paperWidth === "80mm" ? 42 : 30;
 
     const addBytes = (bytes: number[]) => {
       chunks.push(new Uint8Array(bytes));
@@ -1204,15 +1226,50 @@ export default function App() {
       chunks.push(encoder.encode(text + "\n"));
     };
 
+    // Word wrap text gracefully so words aren't cut mid-word
+    const wordWrap = (text: string, maxLen: number): string[] => {
+      if (!text) return [];
+      const words = text.trim().split(/\s+/);
+      const lines: string[] = [];
+      let currentLine = "";
+
+      for (const word of words) {
+        if ((currentLine ? currentLine + " " + word : word).length <= maxLen) {
+          currentLine = currentLine ? currentLine + " " + word : word;
+        } else {
+          if (currentLine) lines.push(currentLine);
+          if (word.length > maxLen) {
+            let rem = word;
+            while (rem.length > maxLen) {
+              lines.push(rem.substring(0, maxLen));
+              rem = rem.substring(maxLen);
+            }
+            currentLine = rem;
+          } else {
+            currentLine = word;
+          }
+        }
+      }
+      if (currentLine) lines.push(currentLine);
+      return lines;
+    };
+
+    const addCenteredWrapped = (text: string) => {
+      const lines = wordWrap(text, maxCols);
+      lines.forEach((l) => addLine(l));
+    };
+
     const addRowWithVal = (title: string, valStr: string, indent: string = "") => {
       const fullTitle = indent + title;
       const sSpaces = maxCols - fullTitle.length - valStr.length;
       if (sSpaces >= 1) {
         addLine(fullTitle + " ".repeat(sSpaces) + valStr);
       } else {
-        addLine(fullTitle);
-        const vSpaces = maxCols - valStr.length;
-        addLine(" ".repeat(Math.max(0, vSpaces)) + valStr);
+        const titleLines = wordWrap(fullTitle, maxCols);
+        titleLines.forEach((tl) => addLine(tl));
+        addBytes([0x1B, 0x61, 0x02]); // Right align for price line
+        addLine(valStr);
+        addBytes([0x1B, 0x61, 0x00]); // Left align back
       }
     };
 
@@ -1222,44 +1279,59 @@ export default function App() {
         addLine(line);
       } else {
         addLine(`${label} :`);
-        addLine(`  ${value}`);
+        const wrappedVals = wordWrap(value, maxCols - 2);
+        wrappedVals.forEach((v) => addLine(`  ${v}`));
       }
     };
 
-    // Initialize printer
+    // 1. Initialize printer
     addBytes([0x1B, 0x40]);
 
-    // Print Logo header for ESC/POS thermal printer if showLogo is enabled
+    // 2. Print Logo header if enabled
     if (settings.showLogo !== false) {
       const logoUrl = settings.logoUrl || "/icon.jpg";
-      const targetWidth = settings.paperWidth === "80mm" ? 256 : settings.paperWidth === "54mm" ? 160 : 192;
+      const targetWidth = settings.paperWidth === "80mm" ? 216 : 144;
       const logoRaster = await convertImageUrlToEscPosRaster(logoUrl, targetWidth);
       if (logoRaster) {
         chunks.push(logoRaster);
       }
     }
 
-    // Set font mode if small font size requested
+    // Set font size
     if (settings.fontSize === "xs" || settings.fontSize === "sm") {
-      addBytes([0x1B, 0x21, 0x01]); // Font B (smaller text)
+      addBytes([0x1B, 0x21, 0x01]); // Font B
+    } else {
+      addBytes([0x1B, 0x21, 0x00]); // Font A
     }
 
-    // Center align for header
-    addBytes([0x1B, 0x61, 0x01]);
+    // Header Info (Centered)
+    addBytes([0x1B, 0x61, 0x01]); // Center align
     addBytes([0x1B, 0x45, 0x01]); // Bold on
-    addLine(settings.storeName.toUpperCase());
+    addCenteredWrapped(settings.storeName.toUpperCase());
     addBytes([0x1B, 0x45, 0x00]); // Bold off
-    
-    if (settings.address) addLine(settings.address);
-    if (settings.phone) addLine(`HP: ${settings.phone}`);
+
+    if (settings.address) {
+      addCenteredWrapped(settings.address);
+    }
+    if (settings.phone) {
+      addLine(`Telp/WA: ${settings.phone}`);
+    }
+    addLine("[ BUKTI PENJUALAN RESMI ]");
     addLine("-".repeat(maxCols));
 
-    // Left align for body
+    // Metadata (Left Aligned)
     addBytes([0x1B, 0x61, 0x00]);
-    addMetaLine("No. Nota ", tx.invoiceNo || tx.id);
-    addMetaLine("Tanggal  ", new Date(tx.createdAt || tx.date || Date.now()).toLocaleString("id-ID"));
-    addMetaLine("Kasir    ", tx.operatorEmail || tx.createdByName || "Kasir");
-    if (tx.customerName) addMetaLine("Pelanggan", tx.customerName);
+    const dtStr = new Date(tx.createdAt || tx.date || Date.now()).toLocaleString("id-ID", {
+      day: "numeric", month: "numeric", year: "numeric", hour: "2-digit", minute: "2-digit"
+    });
+    addMetaLine("TANGGAL  ", dtStr);
+    addMetaLine("INVOICE  ", tx.invoiceNo || tx.id);
+    addMetaLine("KASIR    ", tx.operatorEmail ? tx.operatorEmail.split("@")[0] : (tx.createdByName || "Kasir"));
+    if (tx.customerName) addMetaLine("PELANGGAN", tx.customerName);
+    addLine("-".repeat(maxCols));
+
+    // Table Header
+    addRowWithVal("AROMA & KEMASAN", "JUMLAH");
     addLine("-".repeat(maxCols));
 
     // Items
@@ -1342,7 +1414,7 @@ export default function App() {
     addLine("-".repeat(maxCols));
     addRowWithVal("SUBTOTAL", `Rp ${calcSubtotal.toLocaleString("id-ID")}`);
     if (tx.discountNominal) {
-      addRowWithVal("DISKON", `-Rp ${tx.discountNominal.toLocaleString("id-ID")}`);
+      addRowWithVal("DISKON PROMO", `-Rp ${tx.discountNominal.toLocaleString("id-ID")}`);
     }
     addBytes([0x1B, 0x45, 0x01]); // Bold on
     addRowWithVal("TOTAL BAYAR", `Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}`);
@@ -1351,14 +1423,14 @@ export default function App() {
 
     // Footer
     addBytes([0x1B, 0x61, 0x01]); // Center align
-    if (settings.footerMessage1) addLine(settings.footerMessage1.toUpperCase());
-    if (settings.footerMessage2) addLine(settings.footerMessage2);
+    if (settings.footerMessage1) addCenteredWrapped(settings.footerMessage1.toUpperCase());
+    if (settings.footerMessage2) addCenteredWrapped(settings.footerMessage2);
     addLine("\n\n\n"); // Feed lines
 
-    // Cut paper (GS V 66 0)
+    // Cut paper
     addBytes([0x1D, 0x56, 0x42, 0x00]);
 
-    // Concatenate all chunks
+    // Concatenate chunks
     const totalLength = chunks.reduce((acc, curr) => acc + curr.length, 0);
     const result = new Uint8Array(totalLength);
     let offset = 0;
