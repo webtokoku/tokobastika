@@ -1088,8 +1088,24 @@ export default function App() {
   // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands
   const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 192): Promise<Uint8Array | null> => {
     return new Promise((resolve) => {
+      let resolved = false;
+      const timer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          resolve(null);
+        }
+      }, 2000);
+
+      const finish = (result: Uint8Array | null) => {
+        if (!resolved) {
+          resolved = true;
+          clearTimeout(timer);
+          resolve(result);
+        }
+      };
+
       const loadImg = (srcUrl: string, useCors: boolean) => {
-        const img = new Image();
+        const img = new window.Image();
         if (useCors && !srcUrl.startsWith("data:")) {
           img.crossOrigin = "Anonymous";
         }
@@ -1103,7 +1119,7 @@ export default function App() {
             canvas.height = height;
             const ctx = canvas.getContext("2d");
             if (!ctx) {
-              resolve(null);
+              finish(null);
               return;
             }
 
@@ -1152,10 +1168,10 @@ export default function App() {
             combined.set(bitmap, header.length);
             combined.set(footer, header.length + bitmap.length);
 
-            resolve(combined);
+            finish(combined);
           } catch (err) {
             console.error("Gagal convert logo to ESC/POS raster:", err);
-            resolve(null);
+            finish(null);
           }
         };
         img.onerror = () => {
@@ -1164,7 +1180,7 @@ export default function App() {
           } else if (srcUrl !== "/icon.jpg") {
             loadImg("/icon.jpg", false);
           } else {
-            resolve(null);
+            finish(null);
           }
         };
         img.src = srcUrl;
