@@ -3020,7 +3020,7 @@ export default function App() {
 
   // Computed: Get the latest completed sales transaction
   const lastSaleTx = [...transactions]
-    .filter((t) => t.type === "sale")
+    .filter((t) => t.type === "sale" && (!t.isConsignment || t.paymentStatus === "Lunas"))
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
 
   const handleSignOut = async () => {
@@ -4072,8 +4072,12 @@ export default function App() {
     return true;
   };
 
-  // Filtered lists for reporting
-  const filteredTransactions = transactions.filter(t => isWithinFilter(t.date));
+  // Filtered lists for reporting (excluding unpaid reseller consignment sales)
+  const filteredTransactions = transactions.filter(t => {
+    if (!isWithinFilter(t.date)) return false;
+    if (t.isConsignment && t.type === "sale" && t.paymentStatus !== "Lunas") return false;
+    return true;
+  });
   const filteredSalaries = salaries.filter(s => isWithinFilter(s.datePaid));
   const filteredCashLedger = cashLedger.filter(m => isWithinFilter(m.date));
 
@@ -7057,7 +7061,7 @@ export default function App() {
                   </p>
                   <div className="mt-3 flex items-center gap-1 text-[10px] text-emerald-600 font-medium">
                     <ArrowUpRight className="h-3 w-3" />
-                    <span>{transactions.filter(t => t.type === "sale").length} transaksi penjualan</span>
+                    <span>{filteredTransactions.filter(t => t.type === "sale").length} transaksi penjualan</span>
                   </div>
                 </div>
 
@@ -9406,7 +9410,7 @@ export default function App() {
 
                 {(() => {
                   const filteredSales = [...transactions]
-                    .filter(t => t.type === "sale")
+                    .filter(t => t.type === "sale" && (!t.isConsignment || t.paymentStatus === "Lunas"))
                     .filter(t => {
                       // 1. Text search filter
                       if (salesSearchTerm) {
@@ -10703,7 +10707,9 @@ export default function App() {
                   <h3 className="font-bold text-sm text-slate-900">Histori Kronologis Transaksi Toko</h3>
                   <p className="text-[11px] text-slate-500">Mencatat seluruh mutasi penjualan kasir dan pembelian stok yang dilakukan.</p>
                 </div>
-                <span className="text-xs bg-slate-100 px-2.5 py-1 rounded-full font-semibold text-slate-600">{transactions.length} baris data</span>
+                <span className="text-xs bg-slate-100 px-2.5 py-1 rounded-full font-semibold text-slate-600">
+                  {transactions.filter(t => !(t.isConsignment && t.type === "sale" && t.paymentStatus !== "Lunas")).length} baris data
+                </span>
               </div>
 
               {/* Date, Month, Year Filter Bar */}
@@ -10788,6 +10794,10 @@ export default function App() {
 
               {(() => {
                 const filteredHistory = transactions.filter(t => {
+                  // Exclude unpaid reseller/consignment sales (managed in Konsinyasi & Bundling until settled)
+                  if (t.isConsignment && t.type === "sale" && t.paymentStatus !== "Lunas") {
+                    return false;
+                  }
                   // 1. Text Search Filter
                   if (searchTerm) {
                     const term = searchCaseSensitive ? searchTerm : searchTerm.toLowerCase();
