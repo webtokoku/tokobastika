@@ -1488,7 +1488,13 @@ export function subscribeToInvoiceSettings(callback: (settings: InvoiceSettings)
 
   return onSnapshot(doc(db, "config", "invoice"), (snapshot) => {
     if (snapshot.exists()) {
-      callback({ ...defaultSettings, ...snapshot.data() } as InvoiceSettings);
+      const data = snapshot.data();
+      callback({
+        ...defaultSettings,
+        ...data,
+        logoUrl: (data.logoUrl && typeof data.logoUrl === "string" && data.logoUrl.trim() !== "") ? data.logoUrl : "/icon.jpg",
+        showLogo: data.showLogo !== false
+      } as InvoiceSettings);
     } else {
       callback(defaultSettings);
     }

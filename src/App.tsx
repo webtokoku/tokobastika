@@ -1526,13 +1526,16 @@ export default function App() {
           {settings.showLogo !== false && (
             <div className="flex justify-center mb-1 print:mb-1 print:block print:text-center">
               <img 
-                src={settings.logoUrl || "/icon.jpg"} 
+                src={(settings.logoUrl && settings.logoUrl.trim() !== "") ? settings.logoUrl : "/icon.jpg"} 
                 alt="Logo Toko" 
                 className="h-20 w-20 max-w-full object-contain mx-auto print:h-24 print:w-24 print:mx-auto print:block" 
-                crossOrigin="anonymous"
                 referrerPolicy="no-referrer"
                 onError={(e) => {
-                  (e.currentTarget as HTMLImageElement).src = "/icon.jpg";
+                  const target = e.currentTarget as HTMLImageElement;
+                  target.removeAttribute("crossorigin");
+                  if (!target.src.endsWith("/icon.jpg")) {
+                    target.src = "/icon.jpg";
+                  }
                 }}
               />
             </div>
@@ -2186,8 +2189,8 @@ export default function App() {
   // State for Cashier Bundling Sale Input
   const [saleInputMode, setSaleInputMode] = useState<"regular" | "bundling">("regular");
   const [saleBundlingName, setSaleBundlingName] = useState<string>("");
-  const [saleBundlingPrice, setSaleBundlingPrice] = useState<number>(0);
-  const [saleBundlingCount, setSaleBundlingCount] = useState<number>(1);
+  const [saleBundlingPrice, setSaleBundlingPrice] = useState<number | string>(0);
+  const [saleBundlingCount, setSaleBundlingCount] = useState<number | string>(1);
   const [saleBundlingFormula, setSaleBundlingFormula] = useState<FormulaIngredient[]>([]);
   const [saleBundlingCartInput, setSaleBundlingCartInput] = useState<{
     type: "essence" | "alcohol" | "bottle";
@@ -3165,7 +3168,9 @@ export default function App() {
           showToast("Harap isi nama paket bundling!", "error");
           return;
         }
-        if (saleBundlingPrice <= 0) {
+        const bPrice = Number(saleBundlingPrice) || 0;
+        const bCount = Number(saleBundlingCount) || 1;
+        if (bPrice <= 0) {
           showToast("Harga paket bundling harus di atas 0!", "error");
           return;
         }
@@ -3177,10 +3182,10 @@ export default function App() {
           scentName: saleBundlingName.trim(),
           volumeMl: bundleEssenceMl,
           bottleSize: "Bundling",
-          bottleCount: saleBundlingCount || 1,
+          bottleCount: bCount,
           isBundling: true,
           bundlingName: saleBundlingName.trim(),
-          bundlingPrice: saleBundlingPrice,
+          bundlingPrice: bPrice,
           formula: saleBundlingFormula
         });
       } else {
@@ -8616,8 +8621,11 @@ export default function App() {
                             type="number"
                             min="0"
                             placeholder="Total Rp"
-                            value={saleBundlingPrice || ""}
-                            onChange={(e) => setSaleBundlingPrice(Number(e.target.value))}
+                            value={saleBundlingPrice === 0 ? "" : saleBundlingPrice}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSaleBundlingPrice(val === "" ? "" : Number(val));
+                            }}
                             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 text-slate-800"
                           />
                         </div>
@@ -8629,8 +8637,16 @@ export default function App() {
                           <input
                             type="number"
                             min="1"
-                            value={saleBundlingCount || 1}
-                            onChange={(e) => setSaleBundlingCount(Number(e.target.value))}
+                            value={saleBundlingCount}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setSaleBundlingCount(val === "" ? "" : Number(val));
+                            }}
+                            onBlur={() => {
+                              if (saleBundlingCount === "" || Number(saleBundlingCount) < 1) {
+                                setSaleBundlingCount(1);
+                              }
+                            }}
                             className="w-full bg-white border border-slate-200 rounded-xl px-3.5 py-2 text-xs font-semibold focus:ring-1 focus:ring-emerald-500 text-slate-800"
                           />
                         </div>
@@ -8733,7 +8749,21 @@ export default function App() {
                                 type="number"
                                 min="1"
                                 value={saleBundlingCartInput.quantity || ""}
-                                onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, quantity: Number(e.target.value) }))}
+                                onChange={(e) => {
+                                  const val = e.target.value;
+                                  setSaleBundlingCartInput(prev => ({
+                                    ...prev,
+                                    quantity: val === "" ? ("" as any) : Number(val)
+                                  }));
+                                }}
+                                onBlur={() => {
+                                  if (!saleBundlingCartInput.quantity || Number(saleBundlingCartInput.quantity) < 1) {
+                                    setSaleBundlingCartInput(prev => ({
+                                      ...prev,
+                                      quantity: prev.type === "bottle" ? 1 : 10
+                                    }));
+                                  }
+                                }}
                                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold"
                               />
                               <button
@@ -8808,11 +8838,13 @@ export default function App() {
                             showToast("Nama paket bundling wajib diisi!", "error");
                             return;
                           }
-                          if (saleBundlingPrice <= 0) {
+                          const finalPrice = Number(saleBundlingPrice) || 0;
+                          const finalCount = Number(saleBundlingCount) || 1;
+                          if (finalPrice <= 0) {
                             showToast("Harga paket bundling harus lebih besar dari 0!", "error");
                             return;
                           }
-                          if (saleBundlingCount <= 0) {
+                          if (finalCount <= 0) {
                             showToast("Jumlah paket minimal 1!", "error");
                             return;
                           }
@@ -8825,10 +8857,10 @@ export default function App() {
                             scentName: saleBundlingName.trim(),
                             volumeMl: bundleEssenceMl,
                             bottleSize: "Bundling",
-                            bottleCount: saleBundlingCount || 1,
+                            bottleCount: finalCount,
                             isBundling: true,
                             bundlingName: saleBundlingName.trim(),
-                            bundlingPrice: saleBundlingPrice,
+                            bundlingPrice: finalPrice,
                             formula: saleBundlingFormula
                           };
 
@@ -11482,15 +11514,19 @@ export default function App() {
                       <div className="absolute top-0 left-0 right-0 h-1 bg-repeat-x bg-[linear-gradient(45deg,transparent_33.3%,#ccc_33.3%,#ccc_66.6%,transparent_66.6%)] bg-[length:6px_4px]"></div>
 
                       <div className="text-center space-y-1.5 pt-4">
-                        {tempSettings.showLogo && tempSettings.logoUrl && (
+                        {tempSettings.showLogo !== false && (
                           <div className="flex justify-center mb-1.5">
                             <img 
-                              src={tempSettings.logoUrl} 
+                              src={(tempSettings.logoUrl && tempSettings.logoUrl.trim() !== "") ? tempSettings.logoUrl : "/icon.jpg"} 
                               alt="Logo" 
                               className="h-20 w-20 object-contain rounded-full border-2 border-slate-200 shadow-sm" 
                               referrerPolicy="no-referrer"
                               onError={(e) => {
-                                (e.currentTarget as HTMLImageElement).src = "/icon.jpg";
+                                const target = e.currentTarget as HTMLImageElement;
+                                target.removeAttribute("crossorigin");
+                                if (!target.src.endsWith("/icon.jpg")) {
+                                  target.src = "/icon.jpg";
+                                }
                               }}
                             />
                           </div>
