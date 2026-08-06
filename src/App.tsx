@@ -77,7 +77,9 @@ import {
   deleteMasterProduct,
   seedMasterProductsIfEmpty,
   getCategoryPrefix,
-  getNextPrimaryCode
+  getNextPrimaryCode,
+  formatScentTitleCase,
+  normKey
 } from "./dbService";
 import { 
   Shelf as ShelfType, 
@@ -7672,16 +7674,19 @@ export default function App() {
                           setEditingMasterProduct(null);
                         } else {
                           // Check if product with same category & referenceKey already exists
-                          const refKey = (newMasterProduct.referenceKey || "").trim() || newMasterProduct.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
-                          const normRef = refKey.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+                          let refKey = (newMasterProduct.referenceKey || "").trim() || newMasterProduct.name.replace(/^bibit\s+/i, "").replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+                          if (newMasterProduct.category === "essence") {
+                            refKey = formatScentTitleCase(refKey);
+                          }
+                          const normRef = normKey(refKey);
                           const existingProd = masterProducts.find(p => {
-                            const pRef = (p.referenceKey || "").trim() || p.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
-                            return p.category === newMasterProduct.category && pRef.toLowerCase().replace(/[^a-z0-9]+/g, "_") === normRef;
+                            const pRef = (p.referenceKey || "").trim() || p.name.replace(/^bibit\s+/i, "").replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+                            return p.category === newMasterProduct.category && normKey(pRef) === normRef;
                           });
 
                           if (existingProd) {
                             await updateMasterProduct(existingProd.id, {
-                              name: newMasterProduct.name,
+                              name: newMasterProduct.category === "essence" ? `Bibit ${refKey}` : newMasterProduct.name,
                               price: newMasterProduct.price,
                               category: newMasterProduct.category,
                               referenceKey: refKey
@@ -7736,13 +7741,22 @@ export default function App() {
                       <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nama Produk Terkini</label>
                       <input
                         type="text"
-                        placeholder="Contoh: Bibit Bacarat, Botol Kaca 30ml"
+                        placeholder="Contoh: Bibit Baccarat, Botol Kaca 30ml"
                         value={editingMasterProduct ? editingMasterProduct.name : newMasterProduct.name}
                         onChange={(e) => {
+                          const val = e.target.value;
                           if (editingMasterProduct) {
-                            setEditingMasterProduct({ ...editingMasterProduct, name: e.target.value });
+                            let refKey = editingMasterProduct.referenceKey;
+                            if (editingMasterProduct.category === "essence") {
+                              refKey = formatScentTitleCase(val);
+                            }
+                            setEditingMasterProduct({ ...editingMasterProduct, name: val, referenceKey: refKey });
                           } else {
-                            setNewMasterProduct({ ...newMasterProduct, name: e.target.value });
+                            let refKey = newMasterProduct.referenceKey;
+                            if (newMasterProduct.category === "essence") {
+                              refKey = formatScentTitleCase(val);
+                            }
+                            setNewMasterProduct({ ...newMasterProduct, name: val, referenceKey: refKey });
                           }
                         }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800 font-medium"
@@ -7758,7 +7772,8 @@ export default function App() {
                           if (editingMasterProduct) {
                             setEditingMasterProduct({ ...editingMasterProduct, category: cat });
                           } else {
-                            setNewMasterProduct({ ...newMasterProduct, category: cat });
+                            const nextId = getNextPrimaryCode(cat, masterProducts);
+                            setNewMasterProduct({ ...newMasterProduct, category: cat, id: nextId });
                           }
                         }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-800 font-bold"
@@ -7779,13 +7794,20 @@ export default function App() {
                       </label>
                       <input
                         type="text"
-                        placeholder="Contoh: Bacarat, 30ml"
+                        placeholder="Contoh: Baccarat, 30ml"
                         value={editingMasterProduct ? editingMasterProduct.referenceKey : newMasterProduct.referenceKey}
                         onChange={(e) => {
+                          const rawRef = e.target.value;
                           if (editingMasterProduct) {
-                            setEditingMasterProduct({ ...editingMasterProduct, referenceKey: e.target.value });
+                            const cat = editingMasterProduct.category;
+                            const formattedRef = cat === "essence" ? formatScentTitleCase(rawRef) : rawRef;
+                            const autoName = cat === "essence" ? `Bibit ${formattedRef}` : cat === "bottle_kaca" ? `Botol Kaca ${formattedRef}` : cat === "bottle_plastik" ? `Botol Plastik ${formattedRef}` : editingMasterProduct.name;
+                            setEditingMasterProduct({ ...editingMasterProduct, referenceKey: rawRef, name: autoName });
                           } else {
-                            setNewMasterProduct({ ...newMasterProduct, referenceKey: e.target.value });
+                            const cat = newMasterProduct.category;
+                            const formattedRef = cat === "essence" ? formatScentTitleCase(rawRef) : rawRef;
+                            const autoName = cat === "essence" ? `Bibit ${formattedRef}` : cat === "bottle_kaca" ? `Botol Kaca ${formattedRef}` : cat === "bottle_plastik" ? `Botol Plastik ${formattedRef}` : newMasterProduct.name;
+                            setNewMasterProduct({ ...newMasterProduct, referenceKey: rawRef, name: autoName });
                           }
                         }}
                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800 font-medium"

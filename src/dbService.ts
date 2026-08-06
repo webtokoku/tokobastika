@@ -263,6 +263,69 @@ export async function updateScentPrice(scentName: string, newPrice: number) {
 // ==========================================
 // STOCKS SERVICES
 // ==========================================
+export function normKey(str: string | undefined): string {
+  if (!str) return "";
+  return str.trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+export function formatScentTitleCase(scentName: string | undefined): string {
+  if (!scentName) return "";
+  let clean = scentName.trim().replace(/^bibit\s+/i, "").trim();
+  if (!clean) return "";
+
+  // Known dictionary mapping for fused words
+  const knownMap: Record<string, string> = {
+    "aquabulgari": "Aqua Bulgari",
+    "avrilforbiddenrose": "Avril Forbidden Rose",
+    "baccarat": "Baccarat",
+    "blackopium": "Black Opium",
+    "hugobossorange": "Hugo Boss Orange",
+    "jaguarblue": "Jaguar Blue",
+    "myway": "My Way",
+    "pinkchiffon": "Pink Chiffon",
+    "vsaquakiss": "VS Aqua Kiss",
+    "vsromantic": "VS Romantic",
+    "dunhillblue": "Dunhill Blue",
+    "diorparfume": "Dior Parfume",
+    "sauvagedior": "Sauvage Dior",
+    "bombshell": "Bombshell",
+    "vanillalace": "Vanilla Lace",
+    "switsal": "Switsal",
+    "bacarat": "Baccarat",
+    "baccaratrouge": "Baccarat Rouge",
+    "baccaratrouge540": "Baccarat Rouge 540"
+  };
+
+  const key = normKey(clean);
+  if (knownMap[key]) {
+    return knownMap[key];
+  }
+
+  // If words contain spaces, underscores, or dashes
+  if (/[\s_\-]/.test(clean)) {
+    return clean
+      .split(/[\s_\-]+/)
+      .filter(Boolean)
+      .map(word => {
+        const lower = word.toLowerCase();
+        if (lower === "vs") return "VS";
+        return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+      })
+      .join(" ");
+  }
+
+  // If camelCase or PascalCase or single word
+  const withSpaces = clean.replace(/([a-z])([A-Z])/g, "$1 $2");
+  return withSpaces
+    .split(/\s+/)
+    .map(w => {
+      const lower = w.toLowerCase();
+      if (lower === "vs") return "VS";
+      return w.charAt(0).toUpperCase() + w.slice(1).toLowerCase();
+    })
+    .join(" ");
+}
+
 export function getNormalizedBottleStockId(size: string | undefined, bottleType: "Kaca" | "Plastik" | string | undefined): string {
   const cleanSize = (size || "30ml").trim().toLowerCase().replace(/\s+/g, "");
   const cleanType = (bottleType || "Kaca").trim().toLowerCase();
@@ -270,8 +333,8 @@ export function getNormalizedBottleStockId(size: string | undefined, bottleType:
 }
 
 export function getNormalizedEssenceStockId(scentName: string | undefined): string {
-  const cleanScent = (scentName || "").trim().replace(/\s+/g, "_").toLowerCase();
-  return `essence_${cleanScent}`;
+  const cleanKey = normKey(scentName);
+  return `essence_${cleanKey}`;
 }
 export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
   return onSnapshot(collection(db, "stocks"), (snapshot) => {
@@ -3027,20 +3090,42 @@ export async function seedMasterProductsIfEmpty() {
     });
   }
 
-  // Bidirectional sync: sync existing master_products to prices & stocks and clean up orphans
+  // Bidirectional sync: sync existing master_products to prices & stocks and clean up orphans while preserving all stock quantities
   const latestMasterSnap = await getDocs(masterRef);
+
+  // Fetch all stocks documents to merge and prevent stock data loss
+  const stocksSnap = await getDocs(collection(db, "stocks"));
+  const stockDocs = stocksSnap.docs.map(d => ({ docId: d.id, data: d.data() as StockItem }));
+
+  // Also fetch shelves data to recover stock if 0
+  const shelvesSnap = await getDocs(collection(db, "shelves"));
+  const shelfDocs = shelvesSnap.docs.map(d => d.data() as Shelf);
+
   const validEssenceScents = new Set<string>();
   const validStockIds = new Set<string>();
 
   for (const docSnap of latestMasterSnap.docs) {
     const data = docSnap.data() as MasterProduct;
     if (data.category === "essence") {
-      let scent = data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "scentname"
+      let scent = (data.referenceKey && data.referenceKey.trim() && data.referenceKey.trim().toLowerCase() !== "scentname")
         ? data.referenceKey.trim()
         : data.name.replace(/^bibit\s+/i, "").trim();
-      if (scent) {
-        validEssenceScents.add(scent.toLowerCase());
 
+      scent = formatScentTitleCase(scent);
+      if (scent) {
+        validEssenceScents.add(normKey(scent));
+
+        // Ensure master_product has professional Title Case name & referenceKey
+        const expectedName = `Bibit ${scent}`;
+        if (data.name !== expectedName || data.referenceKey !== scent) {
+          await updateDoc(docSnap.ref, {
+            name: expectedName,
+            referenceKey: scent,
+            updatedAt: new Date().toISOString()
+          }).catch(() => {});
+        }
+
+        // Sync prices table
         await setDoc(doc(db, "prices", scent), {
           scentName: scent,
           pricePerMl: data.price || 2000,
@@ -3049,15 +3134,42 @@ export async function seedMasterProductsIfEmpty() {
 
         const stockId = getNormalizedEssenceStockId(scent);
         validStockIds.add(stockId);
-        const stockRef = doc(db, "stocks", stockId);
-        const stockSnap = await getDoc(stockRef);
-        if (!stockSnap.exists()) {
-          await setDoc(stockRef, {
-            id: stockId,
-            type: "essence",
-            scentName: scent,
-            quantity: 0
-          });
+
+        // Find all stock documents in Firestore that match this scent (including legacy docs)
+        const scentNorm = normKey(scent);
+        const matchingStockDocs = stockDocs.filter(s => {
+          const sNorm = normKey(s.data.scentName || s.docId.replace(/^essence_/, ""));
+          return sNorm === scentNorm || (sNorm.length > 3 && (sNorm.includes(scentNorm) || scentNorm.includes(sNorm)));
+        });
+
+        // Sum quantities across all matching stock docs
+        let totalQuantity = matchingStockDocs.reduce((acc, curr) => acc + (curr.data.quantity || 0), 0);
+
+        // If total quantity is 0, check shelves for existence
+        if (totalQuantity === 0) {
+          const matchingShelves = shelfDocs.filter(sh => normKey(sh.scentName) === scentNorm);
+          if (matchingShelves.length > 0) {
+            totalQuantity = 250;
+          }
+        }
+
+        const targetStockRef = doc(db, "stocks", stockId);
+        const targetSnap = await getDoc(targetStockRef);
+        let existingQty = targetSnap.exists() ? (targetSnap.data().quantity || 0) : 0;
+        const finalQuantity = Math.max(existingQty, totalQuantity);
+
+        await setDoc(targetStockRef, {
+          id: stockId,
+          type: "essence",
+          scentName: scent,
+          quantity: finalQuantity
+        });
+
+        // Clean up legacy stock docs ONLY AFTER their quantity has been merged into stockId
+        for (const s of matchingStockDocs) {
+          if (s.docId !== stockId) {
+            await deleteDoc(doc(db, "stocks", s.docId)).catch(() => {});
+          }
         }
       }
     } else if (data.category === "bottle_kaca" || data.category === "bottle_plastik") {
@@ -3068,59 +3180,103 @@ export async function seedMasterProductsIfEmpty() {
       if (size) {
         const stockId = getNormalizedBottleStockId(size, bottleType);
         validStockIds.add(stockId);
+
+        const cleanSize = size.trim();
+        const normSize = cleanSize.toLowerCase().replace(/\s+/g, "");
+        const matchingStockDocs = stockDocs.filter(s => {
+          if (s.data.type !== "bottle") return false;
+          const sSizeNorm = (s.data.size || "").toLowerCase().replace(/\s+/g, "");
+          const sType = s.data.bottleType || "Kaca";
+          return sSizeNorm === normSize && sType.toLowerCase() === bottleType.toLowerCase();
+        });
+
+        let totalQty = matchingStockDocs.reduce((acc, curr) => acc + (curr.data.quantity || 0), 0);
         const stockRef = doc(db, "stocks", stockId);
         const stockSnap = await getDoc(stockRef);
-        if (!stockSnap.exists()) {
-          await setDoc(stockRef, {
-            id: stockId,
-            type: "bottle",
-            size,
-            bottleType,
-            quantity: size === "100ml" || size === "30ml" || size === "50ml" ? 50 : 0
-          });
+        let existingQty = stockSnap.exists() ? (stockSnap.data().quantity || 0) : 0;
+        let finalQty = Math.max(existingQty, totalQty);
+
+        await setDoc(stockRef, {
+          id: stockId,
+          type: "bottle",
+          size: cleanSize,
+          bottleType,
+          quantity: finalQty
+        });
+
+        for (const s of matchingStockDocs) {
+          if (s.docId !== stockId) {
+            await deleteDoc(doc(db, "stocks", s.docId)).catch(() => {});
+          }
         }
       }
     } else if (data.category === "other") {
       const name = data.name.trim();
       if (name) {
-        let stockId = `alcohol_${name.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+        let stockId = `alcohol_${normKey(name)}`;
         if (name.toLowerCase() === "absolut cair") stockId = "alcohol_cair";
         if (name.toLowerCase() === "absolut gel") stockId = "alcohol_gel";
 
         validStockIds.add(stockId);
+
+        const matchingStockDocs = stockDocs.filter(s => {
+          return s.docId === stockId || normKey(s.data.scentName) === normKey(name);
+        });
+
+        let totalQty = matchingStockDocs.reduce((acc, curr) => acc + (curr.data.quantity || 0), 0);
         const stockRef = doc(db, "stocks", stockId);
         const stockSnap = await getDoc(stockRef);
-        if (!stockSnap.exists()) {
-          await setDoc(stockRef, {
-            id: stockId,
-            type: "alcohol",
-            scentName: name,
-            quantity: name.toLowerCase() === "absolut cair" ? 300 : name.toLowerCase() === "absolut gel" ? 5000 : 0
-          });
+        let existingQty = stockSnap.exists() ? (stockSnap.data().quantity || 0) : 0;
+        let finalQty = Math.max(existingQty, totalQty);
+        if (finalQty === 0) {
+          finalQty = name.toLowerCase() === "absolut cair" ? 758 : name.toLowerCase() === "absolut gel" ? 5000 : 0;
+        }
+
+        await setDoc(stockRef, {
+          id: stockId,
+          type: "alcohol",
+          scentName: name,
+          quantity: finalQty
+        });
+
+        for (const s of matchingStockDocs) {
+          if (s.docId !== stockId) {
+            await deleteDoc(doc(db, "stocks", s.docId)).catch(() => {});
+          }
         }
       }
     }
   }
 
-  // Clean up orphaned essence items in prices
+  // Update shelves scentName to Title Case if matching
+  for (const shelfDoc of shelvesSnap.docs) {
+    const sData = shelfDoc.data() as Shelf;
+    if (sData.scentName) {
+      const formatted = formatScentTitleCase(sData.scentName);
+      if (formatted !== sData.scentName) {
+        await updateDoc(shelfDoc.ref, { scentName: formatted }).catch(() => {});
+      }
+    }
+  }
+
+  // Clean up orphaned essence items in prices (only if truly obsolete)
   if (validEssenceScents.size > 0) {
     const pricesSnap = await getDocs(collection(db, "prices"));
     for (const docSnap of pricesSnap.docs) {
       const pData = docSnap.data();
       const scentName = pData.scentName || docSnap.id;
-      if (scentName && !validEssenceScents.has(scentName.toLowerCase())) {
+      if (scentName && !validEssenceScents.has(normKey(scentName))) {
         await deleteDoc(doc(db, "prices", docSnap.id)).catch(() => {});
       }
     }
   }
 
-  // Clean up orphaned stocks items that are no longer in master_products
+  // Clean up orphaned stocks items ONLY IF their quantity is 0
   if (validStockIds.size > 0) {
-    const stocksSnap = await getDocs(collection(db, "stocks"));
-    for (const docSnap of stocksSnap.docs) {
-      const sData = docSnap.data();
-      // Only delete if it's not in validStockIds and is one of the synchronized stock types
-      if (!validStockIds.has(docSnap.id)) {
+    const reSnap = await getDocs(collection(db, "stocks"));
+    for (const docSnap of reSnap.docs) {
+      const sData = docSnap.data() as StockItem;
+      if (!validStockIds.has(docSnap.id) && (sData.quantity || 0) === 0) {
         await deleteDoc(doc(db, "stocks", docSnap.id)).catch(() => {});
       }
     }
