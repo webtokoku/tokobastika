@@ -512,7 +512,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
               essenceSnapsMap[essenceId] = await transaction.get(ref);
             }
           }
-          if (!item.noBottleStockDeduct && !item.bringOwnBottle && item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
+          if (!item.bringOwnBottle && item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
             const bottleId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
             if (!bottleRefsMap[bottleId]) {
               const ref = doc(db, "stocks", bottleId);
@@ -620,7 +620,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
             }
 
             // C. Bottle Stock Deduction
-            if (!item.noBottleStockDeduct && !item.bringOwnBottle && bSize !== "None" && bottleCountToDeduct > 0) {
+            if (!item.bringOwnBottle && bSize !== "None" && bottleCountToDeduct > 0) {
               const bottleId = getNormalizedBottleStockId(bSize, item.bottleType);
               const currentQty = localBottleStock[bottleId] ?? 0;
               if (currentQty < bottleCountToDeduct) {
@@ -686,7 +686,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
         }
 
         // Deduct bottle stock
-        if (!tx.noBottleStockDeduct && !tx.bringOwnBottle && bottleSize !== "None" && bottleCountToDeduct > 0 && bottleRef && bottleSnap) {
+        if (!tx.bringOwnBottle && bottleSize !== "None" && bottleCountToDeduct > 0 && bottleRef && bottleSnap) {
           if (bottleSnap.exists()) {
             const currentQty = bottleSnap.data().quantity;
             if (currentQty < bottleCountToDeduct) {
@@ -942,7 +942,7 @@ export async function deleteTransaction(id: string) {
           }
           if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
             // Restore bottle
-            if (!item.noBottleStockDeduct && !item.bringOwnBottle) {
+            if (!item.bringOwnBottle) {
               const botId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
               const botRef = doc(db, "stocks", botId);
               const botSnap = await transaction.get(botRef);
@@ -993,7 +993,7 @@ export async function deleteTransaction(id: string) {
         }
 
         // Add back bottle stock
-        if (!tx.noBottleStockDeduct && !tx.bringOwnBottle && bottleSize !== "None" && bottleCount > 0 && bottleRef && bottleSnap) {
+        if (!tx.bringOwnBottle && bottleSize !== "None" && bottleCount > 0 && bottleRef && bottleSnap) {
           if (bottleSnap.exists()) {
             const currentQty = bottleSnap.data().quantity;
             transaction.update(bottleRef, { quantity: currentQty + bottleCount });

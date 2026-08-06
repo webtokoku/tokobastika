@@ -8927,7 +8927,7 @@ export default function App() {
 
                           const isHB = item.scentName === "Hanya Botol";
                           const pPerMl = isHB ? 0 : getEssencePricePerMl(item.scentName, masterProducts, prices);
-                          const bFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.noBottleStockDeduct, masterProducts, bottleSizes);
+                          const bFee = getBottleUnitPrice(item.bottleSize, item.bottleType, item.bringOwnBottle, masterProducts, bottleSizes);
                           const itemCost = (((item.volumeMl || 0) * pPerMl) + bFee) * (item.bottleCount || 1);
 
                           return (
@@ -9541,7 +9541,7 @@ export default function App() {
                                         {t.items.map((it, idx) => (
                                           <div key={it.id || idx} className="text-xs text-slate-500">
                                             {it.bottleSize !== "None" 
-                                              ? `${it.bringOwnBottle || it.noBottleStockDeduct ? "Bawa Sendiri" : `Botol ${it.bottleType || "Kaca"}`} ${it.bottleSize} (${it.bottleCount}x)` 
+                                              ? `${it.bringOwnBottle ? "Bawa Sendiri" : `Botol ${it.bottleType || "Kaca"}`} ${it.bottleSize} (${it.bottleCount}x)` 
                                               : "Hanya Bibit"
                                             }
                                           </div>
@@ -9549,7 +9549,7 @@ export default function App() {
                                       </div>
                                     ) : (
                                       t.bottleSize !== "None" 
-                                        ? `${t.bringOwnBottle || t.noBottleStockDeduct ? "Bawa Sendiri" : `Botol ${t.bottleType || "Kaca"}`} ${t.bottleSize} (${t.bottleCount}x)` 
+                                        ? `${t.bringOwnBottle ? "Bawa Sendiri" : `Botol ${t.bottleType || "Kaca"}`} ${t.bottleSize} (${t.bottleCount}x)` 
                                         : "Hanya Bibit"
                                     )}
                                   </td>
