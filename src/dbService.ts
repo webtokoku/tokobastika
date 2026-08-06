@@ -1376,25 +1376,13 @@ export function subscribeToBottleSizes(callback: (sizes: BottleSize[]) => void, 
     async (snapshot) => {
       const list: BottleSize[] = [];
       snapshot.forEach((docSnap) => {
-        list.push(docSnap.data() as BottleSize);
+        const data = docSnap.data() as BottleSize;
+        list.push({
+          ...data,
+          id: docSnap.id || data.id || data.size,
+          size: data.size || docSnap.id
+        });
       });
-      
-      if (list.length === 0) {
-        // Auto-seed default bottle sizes if empty
-        const defaults: BottleSize[] = [
-          { id: "30ml", size: "30ml", price: 10000, addedAt: new Date().toISOString() },
-          { id: "50ml", size: "50ml", price: 15000, addedAt: new Date().toISOString() },
-          { id: "100ml", size: "100ml", price: 25000, addedAt: new Date().toISOString() }
-        ];
-        try {
-          for (const item of defaults) {
-            await setDoc(doc(db, "bottle_sizes", item.id), item);
-          }
-        } catch (err) {
-          console.error("Gagal auto-seed bottle_sizes:", err);
-        }
-        return;
-      }
       
       callback(list);
     },
@@ -2938,6 +2926,8 @@ export async function deleteMasterProduct(id: string) {
       if (size) {
         const stockId = getNormalizedBottleStockId(size, bottleType);
         await deleteDoc(doc(db, "stocks", stockId)).catch(() => {});
+        const bSizeId = size.toLowerCase().replace(/\s+/g, "");
+        await deleteDoc(doc(db, "bottle_sizes", bSizeId)).catch(() => {});
       }
     } else if (data.category === "other") {
       const name = data.name.trim();

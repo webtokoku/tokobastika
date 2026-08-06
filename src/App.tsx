@@ -2367,42 +2367,40 @@ export default function App() {
 
   // Auto-sync missing bottle sizes from Master Produk into Firestore bottle_sizes collection & clean up orphans
   useEffect(() => {
-    if (userRole === "admin") {
-      const masterHasBottles = masterProducts.some(mp => mp.category === "bottle_kaca" || mp.category === "bottle_plastik");
-      if (masterHasBottles) {
-        const validBottleIds = new Set(allBottleSizes.map(b => b.id));
-        
-        // Clean up orphaned items in Firestore bottle_sizes collection
-        bottleSizes.forEach(async (b) => {
-          if (!validBottleIds.has(b.id)) {
-            try {
-              await deleteBottleSize(b.id);
-            } catch (e) {
-              console.error("Clean orphaned bottle size error:", e);
-            }
+    const masterHasBottles = masterProducts.some(mp => mp.category === "bottle_kaca" || mp.category === "bottle_plastik" || mp.category === "botol" || mp.category === "bottle");
+    if (masterHasBottles) {
+      const validBottleIds = new Set(allBottleSizes.map(b => b.id));
+      
+      // Clean up orphaned items in Firestore bottle_sizes collection
+      bottleSizes.forEach(async (b) => {
+        if (b.id && !validBottleIds.has(b.id)) {
+          try {
+            await deleteBottleSize(b.id);
+          } catch (e) {
+            console.error("Clean orphaned bottle size error:", e);
           }
-        });
+        }
+      });
 
-        // Add missing sizes from allBottleSizes to bottleSizes
-        const existingIds = new Set(bottleSizes.map(b => b.id));
-        allBottleSizes.forEach(async (b) => {
-          if (!existingIds.has(b.id)) {
-            try {
-              await addBottleSize(
-                b.size,
-                b.priceKaca || b.price || 10000,
-                b.pricePlastik || 5000,
-                b.purchasePriceKaca || 5000,
-                b.purchasePricePlastik || 3000
-              );
-            } catch (e) {
-              console.error("Auto-sync bottle size error:", e);
-            }
+      // Add missing sizes from allBottleSizes to bottleSizes
+      const existingIds = new Set(bottleSizes.map(b => b.id));
+      allBottleSizes.forEach(async (b) => {
+        if (b.id && !existingIds.has(b.id)) {
+          try {
+            await addBottleSize(
+              b.size,
+              b.priceKaca || b.price || 10000,
+              b.pricePlastik || 5000,
+              b.purchasePriceKaca || 5000,
+              b.purchasePricePlastik || 3000
+            );
+          } catch (e) {
+            console.error("Auto-sync bottle size error:", e);
           }
-        });
-      }
+        }
+      });
     }
-  }, [allBottleSizes, bottleSizes, masterProducts, userRole]);
+  }, [allBottleSizes, bottleSizes, masterProducts]);
 
   // Purchase stock state
   const [purchaseCategory, setPurchaseCategory] = useState<"bibit" | "alkohol" | "botol" | "other">("bibit");
