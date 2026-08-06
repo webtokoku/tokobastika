@@ -2368,18 +2368,184 @@ export async function settleResellerTransaction(txId: string, operatorEmail: str
 // ==========================================
 // MASTER PRODUK SERVICE (Single Source of Truth)
 // ==========================================
+
+// Deduplicate bottle_sizes collection
+export async function cleanAndDeduplicateBottleSizes() {
+  try {
+    const snap = await getDocs(collection(db, "bottle_sizes"));
+    if (snap.empty) return;
+
+    const groups = new Map<string, { docId: string; data: BottleSize }[]>();
+    snap.docs.forEach((d) => {
+      const data = d.data() as BottleSize;
+      if (!data.size) return;
+      const cleanSize = data.size.trim();
+      const normKey = cleanSize.toLowerCase().replace(/\s+/g, "");
+      if (!groups.has(normKey)) {
+        groups.set(normKey, []);
+      }
+      groups.get(normKey)!.push({ docId: d.id, data });
+    });
+
+    for (const [normKey, items] of groups.entries()) {
+      if (items.length > 1 || items.some(i => i.docId !== normKey)) {
+        const canonical = items.find(i => i.docId === normKey);
+        const winner = canonical || items[0];
+        
+        const cleanSize = winner.data.size.trim();
+        const winnerId = normKey; // e.g. "6ml"
+
+        const maxPriceKaca = Math.max(...items.map(i => i.data.priceKaca ?? i.data.price ?? 10000));
+        const maxPricePlastik = Math.max(...items.map(i => i.data.pricePlastik ?? 5000));
+        const purchaseKaca = winner.data.purchasePriceKaca || 5000;
+        const purchasePlastik = winner.data.purchasePricePlastik || 3000;
+
+        const merged: BottleSize = {
+          id: winnerId,
+          size: cleanSize,
+          price: maxPriceKaca,
+          priceKaca: maxPriceKaca,
+          pricePlastik: maxPricePlastik,
+          purchasePriceKaca: purchaseKaca,
+          purchasePricePlastik: purchasePlastik,
+          addedAt: winner.data.addedAt || new Date().toISOString()
+        };
+
+        await setDoc(doc(db, "bottle_sizes", winnerId), merged);
+
+        for (const item of items) {
+          if (item.docId !== winnerId) {
+            console.log(`Deduplicating bottle_sizes: deleting ${item.docId} in favor of ${winnerId}`);
+            await deleteDoc(doc(db, "bottle_sizes", item.docId)).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error in cleanAndDeduplicateBottleSizes:", err);
+  }
+}
+
+// Deduplicate master_products collection to eliminate duplicate bottle records (e.g., b001 vs prod_bottle_kaca_6ml)
+export async function cleanAndDeduplicateMasterProducts() {
+  try {
+    const masterRef = collection(db, "master_products");
+    const masterSnap = await getDocs(masterRef);
+    if (masterSnap.empty) return;
+
+    const groups = new Map<string, { docId: string; data: MasterProduct }[]>();
+
+    for (const docSnap of masterSnap.docs) {
+      const p = docSnap.data() as MasterProduct;
+      if ((p.category as string) === "bundling") {
+        await deleteDoc(docSnap.ref).catch(() => {});
+        continue;
+      }
+
+      const cat = p.category;
+      let ref = (p.referenceKey && p.referenceKey.trim() && p.referenceKey.trim().toLowerCase() !== "size" && p.referenceKey.trim().toLowerCase() !== "scentname")
+        ? p.referenceKey.trim()
+        : "";
+      if (!ref) {
+        if (cat === "essence") {
+          ref = p.name.replace(/^bibit\s+/i, "").trim();
+        } else if (cat === "bottle_kaca" || cat === "bottle_plastik") {
+          ref = p.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+        } else {
+          ref = p.name.trim();
+        }
+      }
+
+      const normRef = ref.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      if (!normRef) continue;
+
+      const groupKey = `${cat}:${normRef}`;
+      if (!groups.has(groupKey)) {
+        groups.set(groupKey, []);
+      }
+      groups.get(groupKey)!.push({ docId: docSnap.id, data: p });
+    }
+
+    for (const [groupKey, items] of groups.entries()) {
+      if (items.length > 1 || items.some(i => !i.docId.startsWith("prod_"))) {
+        const [cat, normRef] = groupKey.split(":");
+        const canonicalId = `prod_${cat}_${normRef}`;
+
+        const canonicalItem = items.find(i => i.docId === canonicalId) || items.find(i => i.docId.startsWith("prod_"));
+        const winner = canonicalItem || items[0];
+
+        const highestPrice = Math.max(...items.map(i => i.data.price || 0));
+
+        const refDisplay = winner.data.referenceKey && winner.data.referenceKey.trim() && winner.data.referenceKey.trim().toLowerCase() !== "size" && winner.data.referenceKey.trim().toLowerCase() !== "scentname"
+          ? winner.data.referenceKey.trim()
+          : normRef.replace(/_/g, "");
+
+        let name = winner.data.name;
+        if (cat === "bottle_kaca") {
+          name = `Botol Kaca ${refDisplay}`;
+        } else if (cat === "bottle_plastik") {
+          name = `Botol Plastik ${refDisplay}`;
+        } else if (cat === "essence") {
+          name = `Bibit ${refDisplay}`;
+        }
+
+        const updatedWinnerData: MasterProduct = {
+          ...winner.data,
+          id: canonicalId,
+          name,
+          price: highestPrice > 0 ? highestPrice : (winner.data.price || 0),
+          category: cat as any,
+          referenceKey: refDisplay,
+          updatedAt: new Date().toISOString()
+        };
+
+        await setDoc(doc(db, "master_products", canonicalId), updatedWinnerData);
+
+        for (const item of items) {
+          if (item.docId !== canonicalId) {
+            console.log(`Deduplicating master_products: deleting duplicate ${item.docId} (${item.data.name}) in favor of ${canonicalId}`);
+            await deleteDoc(doc(db, "master_products", item.docId)).catch(() => {});
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error("Error in cleanAndDeduplicateMasterProducts:", err);
+  }
+}
+
 export function subscribeToMasterProducts(
   callback: (products: MasterProduct[]) => void,
   errorCallback?: (error: any) => void
 ) {
   const colRef = collection(db, "master_products");
+  
+  // Clean up any duplicate records in background
+  cleanAndDeduplicateMasterProducts();
+
   return onSnapshot(
     query(colRef, orderBy("name", "asc")),
     async (snapshot) => {
       const list: MasterProduct[] = [];
+      const seen = new Set<string>();
+
       snapshot.forEach((docSnap) => {
         const item = docSnap.data() as MasterProduct;
-        if ((item.category as string) !== "bundling") {
+        if ((item.category as string) === "bundling") return;
+
+        const cat = item.category;
+        let ref = (item.referenceKey && item.referenceKey.trim() && item.referenceKey.trim().toLowerCase() !== "size" && item.referenceKey.trim().toLowerCase() !== "scentname")
+          ? item.referenceKey.trim()
+          : "";
+        if (!ref) {
+          if (cat === "essence") ref = item.name.replace(/^bibit\s+/i, "").trim();
+          else if (cat === "bottle_kaca" || cat === "bottle_plastik") ref = item.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+          else ref = item.name.trim();
+        }
+        const key = `${cat}:${ref.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+
+        if (!seen.has(key)) {
+          seen.add(key);
           list.push(item);
         }
       });
@@ -2396,19 +2562,56 @@ export function subscribeToMasterProducts(
 }
 
 export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">) {
-  const id = product.id.trim();
+  const cat = product.category;
+  let refKey = (product.referenceKey && product.referenceKey.trim()) ? product.referenceKey.trim() : "";
+  if (!refKey) {
+    if (cat === "essence") refKey = product.name.replace(/^bibit\s+/i, "").trim();
+    else if (cat === "bottle_kaca" || cat === "bottle_plastik") refKey = product.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+    else refKey = product.name.trim();
+  }
+
+  const cleanRef = refKey.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+  const canonicalId = `prod_${cat}_${cleanRef}`;
   const now = new Date().toISOString();
-  await setDoc(doc(db, "master_products", id), {
+
+  // Delete any old/non-canonical duplicate master_products documents matching this category & referenceKey
+  const masterSnap = await getDocs(collection(db, "master_products"));
+  for (const docSnap of masterSnap.docs) {
+    const data = docSnap.data() as MasterProduct;
+    let existingRef = (data.referenceKey && data.referenceKey.trim()) ? data.referenceKey.trim() : "";
+    if (!existingRef) {
+      if (data.category === "essence") existingRef = data.name.replace(/^bibit\s+/i, "").trim();
+      else if (data.category === "bottle_kaca" || data.category === "bottle_plastik") existingRef = data.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+      else existingRef = data.name.trim();
+    }
+    if (data.category === cat && existingRef.toLowerCase().replace(/[^a-z0-9]+/g, "_") === cleanRef) {
+      if (docSnap.id !== canonicalId) {
+        console.log(`Deleting non-canonical master_product duplicate ${docSnap.id} in favor of ${canonicalId}`);
+        await deleteDoc(docSnap.ref).catch(() => {});
+      }
+    }
+  }
+
+  let finalName = product.name.trim();
+  if (cat === "bottle_kaca" && !finalName.toLowerCase().startsWith("botol kaca")) {
+    finalName = `Botol Kaca ${refKey}`;
+  } else if (cat === "bottle_plastik" && !finalName.toLowerCase().startsWith("botol plastik")) {
+    finalName = `Botol Plastik ${refKey}`;
+  } else if (cat === "essence" && !finalName.toLowerCase().startsWith("bibit")) {
+    finalName = `Bibit ${refKey}`;
+  }
+
+  await setDoc(doc(db, "master_products", canonicalId), {
     ...product,
-    id,
+    id: canonicalId,
+    name: finalName,
+    referenceKey: refKey,
     updatedAt: now
   });
 
   // Automatically sync to prices & stocks based on category
   if (product.category === "essence") {
-    let scent = product.referenceKey && product.referenceKey.trim() && product.referenceKey.trim().toLowerCase() !== "scentname"
-      ? product.referenceKey.trim()
-      : product.name.replace(/^bibit\s+/i, "").trim();
+    let scent = refKey;
     if (scent) {
       await setDoc(doc(db, "prices", scent), {
         scentName: scent,
@@ -2430,9 +2633,7 @@ export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">
     }
   } else if (product.category === "bottle_kaca" || product.category === "bottle_plastik") {
     const bottleType: "Kaca" | "Plastik" = product.category === "bottle_kaca" ? "Kaca" : "Plastik";
-    const size = (product.referenceKey && product.referenceKey.trim() && product.referenceKey.trim().toLowerCase() !== "size")
-      ? product.referenceKey.trim()
-      : product.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+    const size = refKey;
     if (size) {
       const cleanSize = size.trim();
       const bSizeId = cleanSize.toLowerCase().replace(/\s+/g, "");
@@ -2618,6 +2819,9 @@ export async function deleteMasterProduct(id: string) {
 }
 
 export async function seedMasterProductsIfEmpty() {
+  await cleanAndDeduplicateBottleSizes();
+  await cleanAndDeduplicateMasterProducts();
+
   const masterRef = collection(db, "master_products");
   const masterSnap = await getDocs(masterRef);
   

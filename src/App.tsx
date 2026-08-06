@@ -7659,13 +7659,30 @@ export default function App() {
                           showToast(`Produk master "${editingMasterProduct.name}" berhasil diperbarui!`, "success");
                           setEditingMasterProduct(null);
                         } else {
-                          // Check for duplicate ID
-                          if (masterProducts.some(p => p.id === newMasterProduct.id)) {
-                            showToast("ID Produk sudah digunakan!", "error");
-                            return;
+                          // Check if product with same category & referenceKey already exists
+                          const refKey = (newMasterProduct.referenceKey || "").trim() || newMasterProduct.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+                          const normRef = refKey.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+                          const existingProd = masterProducts.find(p => {
+                            const pRef = (p.referenceKey || "").trim() || p.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+                            return p.category === newMasterProduct.category && pRef.toLowerCase().replace(/[^a-z0-9]+/g, "_") === normRef;
+                          });
+
+                          if (existingProd) {
+                            await updateMasterProduct(existingProd.id, {
+                              name: newMasterProduct.name,
+                              price: newMasterProduct.price,
+                              category: newMasterProduct.category,
+                              referenceKey: refKey
+                            });
+                            showToast(`Data produk master "${newMasterProduct.name}" berhasil diperbarui!`, "success");
+                          } else {
+                            await addMasterProduct({
+                              ...newMasterProduct,
+                              referenceKey: refKey
+                            });
+                            showToast(`Produk master "${newMasterProduct.name}" berhasil ditambahkan!`, "success");
                           }
-                          await addMasterProduct(newMasterProduct);
-                          showToast(`Produk master "${newMasterProduct.name}" berhasil ditambahkan!`, "success");
+
                           setNewMasterProduct({
                             id: "",
                             name: "",
