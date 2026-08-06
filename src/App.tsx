@@ -2282,26 +2282,15 @@ export default function App() {
       });
   }, [masterProducts, masterSearch, masterCategoryFilter, masterSortField, masterSortDirection]);
 
-  // Unified Source of Truth for Bottle Sizes (Master Database Produk -> Bottle Sizes -> Stocks)
+  // Unified Source of Truth for Bottle Sizes (Master Database Produk -> Source of Truth)
   const allBottleSizes = useMemo(() => {
     const map = new Map<string, BottleSize>();
 
-    // 1. Include bottleSizes from Firestore bottle_sizes collection
-    bottleSizes.forEach((b) => {
-      if (b.size) {
-        const cleanSize = b.size.trim();
-        const id = cleanSize.toLowerCase().replace(/\s+/g, "");
-        map.set(id, {
-          ...b,
-          id,
-          size: cleanSize
-        });
-      }
-    });
+    const masterBottles = masterProducts.filter(mp => mp.category === "bottle_kaca" || mp.category === "bottle_plastik");
 
-    // 2. Extract bottle sizes from masterProducts (Master Database Produk - Source of Truth)
-    masterProducts.forEach((mp) => {
-      if (mp.category === "bottle_kaca" || mp.category === "bottle_plastik") {
+    if (masterBottles.length > 0) {
+      // 1. Primary Source of Truth: masterProducts ONLY
+      masterBottles.forEach((mp) => {
         let size = (mp.referenceKey && mp.referenceKey.trim() && mp.referenceKey.trim().toLowerCase() !== "size")
           ? mp.referenceKey.trim()
           : mp.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
@@ -2327,28 +2316,40 @@ export default function App() {
 
           map.set(id, existing);
         }
-      }
-    });
-
-    // 3. Extract bottle sizes from stocks
-    stocks.forEach((st) => {
-      if (st.type === "bottle" && st.size) {
-        const size = st.size.trim();
-        const id = size.toLowerCase().replace(/\s+/g, "");
-        if (!map.has(id)) {
+      });
+    } else {
+      // Fallback ONLY if masterProducts has no bottle items at all
+      bottleSizes.forEach((b) => {
+        if (b.size) {
+          const cleanSize = b.size.trim();
+          const id = cleanSize.toLowerCase().replace(/\s+/g, "");
           map.set(id, {
+            ...b,
             id,
-            size,
-            price: 10000,
-            priceKaca: 10000,
-            pricePlastik: 5000,
-            purchasePriceKaca: 5000,
-            purchasePricePlastik: 3000,
-            addedAt: new Date().toISOString()
+            size: cleanSize
           });
         }
-      }
-    });
+      });
+
+      stocks.forEach((st) => {
+        if (st.type === "bottle" && st.size) {
+          const size = st.size.trim();
+          const id = size.toLowerCase().replace(/\s+/g, "");
+          if (!map.has(id)) {
+            map.set(id, {
+              id,
+              size,
+              price: 10000,
+              priceKaca: 10000,
+              pricePlastik: 5000,
+              purchasePriceKaca: 5000,
+              purchasePricePlastik: 3000,
+              addedAt: new Date().toISOString()
+            });
+          }
+        }
+      });
+    }
 
     // Convert map to array and sort numerically by volume (6ml, 8ml, 10ml, 12ml, 15ml, 30ml, 50ml, 100ml)
     const list = Array.from(map.values());
@@ -2364,27 +2365,44 @@ export default function App() {
     return list;
   }, [bottleSizes, masterProducts, stocks]);
 
-  // Auto-sync missing bottle sizes from Master Produk into Firestore bottle_sizes collection
+  // Auto-sync missing bottle sizes from Master Produk into Firestore bottle_sizes collection & clean up orphans
   useEffect(() => {
-    if (allBottleSizes.length > 0 && userRole === "admin") {
-      const existingIds = new Set(bottleSizes.map(b => b.id));
-      allBottleSizes.forEach(async (b) => {
-        if (!existingIds.has(b.id)) {
-          try {
-            await addBottleSize(
-              b.size,
-              b.priceKaca || b.price || 10000,
-              b.pricePlastik || 5000,
-              b.purchasePriceKaca || 5000,
-              b.purchasePricePlastik || 3000
-            );
-          } catch (e) {
-            console.error("Auto-sync bottle size error:", e);
+    if (userRole === "admin") {
+      const masterHasBottles = masterProducts.some(mp => mp.category === "bottle_kaca" || mp.category === "bottle_plastik");
+      if (masterHasBottles) {
+        const validBottleIds = new Set(allBottleSizes.map(b => b.id));
+        
+        // Clean up orphaned items in Firestore bottle_sizes collection
+        bottleSizes.forEach(async (b) => {
+          if (!validBottleIds.has(b.id)) {
+            try {
+              await deleteBottleSize(b.id);
+            } catch (e) {
+              console.error("Clean orphaned bottle size error:", e);
+            }
           }
-        }
-      });
+        });
+
+        // Add missing sizes from allBottleSizes to bottleSizes
+        const existingIds = new Set(bottleSizes.map(b => b.id));
+        allBottleSizes.forEach(async (b) => {
+          if (!existingIds.has(b.id)) {
+            try {
+              await addBottleSize(
+                b.size,
+                b.priceKaca || b.price || 10000,
+                b.pricePlastik || 5000,
+                b.purchasePriceKaca || 5000,
+                b.purchasePricePlastik || 3000
+              );
+            } catch (e) {
+              console.error("Auto-sync bottle size error:", e);
+            }
+          }
+        });
+      }
     }
-  }, [allBottleSizes, bottleSizes, userRole]);
+  }, [allBottleSizes, bottleSizes, masterProducts, userRole]);
 
   // Purchase stock state
   const [purchaseCategory, setPurchaseCategory] = useState<"bibit" | "alkohol" | "botol" | "other">("bibit");
@@ -2398,6 +2416,18 @@ export default function App() {
   const [purchaseFilterStartDate, setPurchaseFilterStartDate] = useState("");
   const [purchaseFilterEndDate, setPurchaseFilterEndDate] = useState("");
   const [purchaseListCategoryFilter, setPurchaseListCategoryFilter] = useState<string>("all");
+
+  // Auto-synchronize default selected bottle sizes with available allBottleSizes
+  useEffect(() => {
+    if (allBottleSizes.length > 0) {
+      if (saleBottleSize !== "None" && !allBottleSizes.some(b => b.size === saleBottleSize)) {
+        setSaleBottleSize(allBottleSizes[0].size);
+      }
+      if (!allBottleSizes.some(b => b.size === purchaseBottleSize)) {
+        setPurchaseBottleSize(allBottleSizes[0].size);
+      }
+    }
+  }, [allBottleSizes]);
 
   // Salary form state
   const [salEmployee, setSalEmployee] = useState("");
@@ -3440,6 +3470,26 @@ export default function App() {
         newBottlePurchasePriceKaca,
         newBottlePurchasePricePlastik
       );
+
+      // Register into Master Database Produk so it stays 100% in sync
+      const nextKacaId = getNextPrimaryCode("bottle_kaca", masterProducts);
+      await addMasterProduct({
+        id: nextKacaId,
+        name: `Botol Kaca ${cleanSize}`,
+        category: "bottle_kaca",
+        price: newBottlePriceKaca,
+        referenceKey: cleanSize
+      });
+
+      const nextPlastikId = getNextPrimaryCode("bottle_plastik", masterProducts);
+      await addMasterProduct({
+        id: nextPlastikId,
+        name: `Botol Plastik ${cleanSize}`,
+        category: "bottle_plastik",
+        price: newBottlePricePlastik,
+        referenceKey: cleanSize
+      });
+
       setPurchaseBottleSize(cleanSize);
       setShowAddBottleSize(false);
       setNewBottleSize("");
