@@ -2426,14 +2426,62 @@ export async function cleanAndDeduplicateBottleSizes() {
   }
 }
 
-// Deduplicate master_products collection to eliminate duplicate bottle records (e.g., b001 vs prod_bottle_kaca_6ml)
+// Helper functions for Primary Product Codes (A001 = Essence, B001 = Bottle Kaca, C001 = Bottle Plastik, D001 = Other)
+export function getCategoryPrefix(category: string): string {
+  switch (category) {
+    case "essence":
+      return "A";
+    case "bottle_kaca":
+      return "B";
+    case "bottle_plastik":
+      return "C";
+    case "other":
+      return "D";
+    default:
+      return "A";
+  }
+}
+
+export function getNextPrimaryCode(category: string, existingProducts: MasterProduct[]): string {
+  const prefix = getCategoryPrefix(category);
+  const catProds = existingProducts.filter(p => p.category === category);
+  
+  let maxNum = 0;
+  catProds.forEach(p => {
+    const idStr = (p.id || "").trim().toUpperCase();
+    if (idStr.startsWith(prefix)) {
+      const numPart = parseInt(idStr.substring(1), 10);
+      if (!isNaN(numPart) && numPart > maxNum) {
+        maxNum = numPart;
+      }
+    }
+  });
+
+  const nextNum = maxNum + 1;
+  return `${prefix}${nextNum.toString().padStart(3, "0")}`;
+}
+
+// Deduplicate and convert master_products collection to simple primary product codes (A001, B001, C001, D001)
 export async function cleanAndDeduplicateMasterProducts() {
   try {
     const masterRef = collection(db, "master_products");
     const masterSnap = await getDocs(masterRef);
     if (masterSnap.empty) return;
 
-    const groups = new Map<string, { docId: string; data: MasterProduct }[]>();
+    const categories = ["essence", "bottle_kaca", "bottle_plastik", "other"];
+    const prefixes: Record<string, string> = {
+      essence: "A",
+      bottle_kaca: "B",
+      bottle_plastik: "C",
+      other: "D"
+    };
+
+    const categoryDocs: Record<string, { docId: string; data: MasterProduct }[]> = {
+      essence: [],
+      bottle_kaca: [],
+      bottle_plastik: [],
+      other: []
+    };
 
     for (const docSnap of masterSnap.docs) {
       const p = docSnap.data() as MasterProduct;
@@ -2441,55 +2489,72 @@ export async function cleanAndDeduplicateMasterProducts() {
         await deleteDoc(docSnap.ref).catch(() => {});
         continue;
       }
-
-      const cat = p.category;
-      let ref = (p.referenceKey && p.referenceKey.trim() && p.referenceKey.trim().toLowerCase() !== "size" && p.referenceKey.trim().toLowerCase() !== "scentname")
-        ? p.referenceKey.trim()
-        : "";
-      if (!ref) {
-        if (cat === "essence") {
-          ref = p.name.replace(/^bibit\s+/i, "").trim();
-        } else if (cat === "bottle_kaca" || cat === "bottle_plastik") {
-          ref = p.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
-        } else {
-          ref = p.name.trim();
-        }
-      }
-
-      const normRef = ref.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-      if (!normRef) continue;
-
-      const groupKey = `${cat}:${normRef}`;
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, []);
-      }
-      groups.get(groupKey)!.push({ docId: docSnap.id, data: p });
+      const cat = p.category || "essence";
+      if (!categoryDocs[cat]) categoryDocs[cat] = [];
+      categoryDocs[cat].push({ docId: docSnap.id, data: p });
     }
 
-    for (const [groupKey, items] of groups.entries()) {
-      if (items.length > 1 || items.some(i => !i.docId.startsWith("prod_"))) {
-        const [cat, normRef] = groupKey.split(":");
-        const canonicalId = `prod_${cat}_${normRef}`;
+    for (const cat of categories) {
+      const items = categoryDocs[cat] || [];
+      if (items.length === 0) continue;
 
-        const canonicalItem = items.find(i => i.docId === canonicalId) || items.find(i => i.docId.startsWith("prod_"));
-        const winner = canonicalItem || items[0];
+      const prefix = prefixes[cat] || "A";
 
-        const highestPrice = Math.max(...items.map(i => i.data.price || 0));
+      const refGroups = new Map<string, { docId: string; data: MasterProduct }[]>();
+
+      for (const item of items) {
+        const p = item.data;
+        let ref = (p.referenceKey && p.referenceKey.trim() && p.referenceKey.trim().toLowerCase() !== "size" && p.referenceKey.trim().toLowerCase() !== "scentname")
+          ? p.referenceKey.trim()
+          : "";
+        if (!ref) {
+          if (cat === "essence") ref = p.name.replace(/^bibit\s+/i, "").trim();
+          else if (cat === "bottle_kaca" || cat === "bottle_plastik") ref = p.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+          else ref = p.name.trim();
+        }
+        const normRef = ref.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+        if (!normRef) continue;
+
+        if (!refGroups.has(normRef)) refGroups.set(normRef, []);
+        refGroups.get(normRef)!.push(item);
+      }
+
+      const groupEntries = Array.from(refGroups.entries()).sort((a, b) => {
+        const nameA = a[1][0]?.data.name || "";
+        const nameB = b[1][0]?.data.name || "";
+        return nameA.localeCompare(nameB);
+      });
+
+      let counter = 1;
+
+      for (const [normRef, groupItems] of groupEntries) {
+        const existingShort = groupItems.find(i => new RegExp(`^${prefix}\\d+$`, "i").test(i.docId) || new RegExp(`^${prefix}\\d+$`, "i").test(i.data.id || ""));
+        let canonicalId = "";
+
+        if (existingShort) {
+          canonicalId = (existingShort.data.id || existingShort.docId).toUpperCase();
+          const matchNum = parseInt(canonicalId.substring(1), 10);
+          if (!isNaN(matchNum) && matchNum >= counter) {
+            counter = matchNum + 1;
+          }
+        } else {
+          canonicalId = `${prefix}${counter.toString().padStart(3, "0")}`;
+          counter++;
+        }
+
+        const winner = existingShort || groupItems[0];
+        const highestPrice = Math.max(...groupItems.map(i => i.data.price || 0));
 
         const refDisplay = winner.data.referenceKey && winner.data.referenceKey.trim() && winner.data.referenceKey.trim().toLowerCase() !== "size" && winner.data.referenceKey.trim().toLowerCase() !== "scentname"
           ? winner.data.referenceKey.trim()
           : normRef.replace(/_/g, "");
 
         let name = winner.data.name;
-        if (cat === "bottle_kaca") {
-          name = `Botol Kaca ${refDisplay}`;
-        } else if (cat === "bottle_plastik") {
-          name = `Botol Plastik ${refDisplay}`;
-        } else if (cat === "essence") {
-          name = `Bibit ${refDisplay}`;
-        }
+        if (cat === "bottle_kaca") name = `Botol Kaca ${refDisplay}`;
+        else if (cat === "bottle_plastik") name = `Botol Plastik ${refDisplay}`;
+        else if (cat === "essence") name = `Bibit ${refDisplay}`;
 
-        const updatedWinnerData: MasterProduct = {
+        const updatedData: MasterProduct = {
           ...winner.data,
           id: canonicalId,
           name,
@@ -2499,11 +2564,11 @@ export async function cleanAndDeduplicateMasterProducts() {
           updatedAt: new Date().toISOString()
         };
 
-        await setDoc(doc(db, "master_products", canonicalId), updatedWinnerData);
+        await setDoc(doc(db, "master_products", canonicalId), updatedData);
 
-        for (const item of items) {
+        for (const item of groupItems) {
           if (item.docId !== canonicalId) {
-            console.log(`Deduplicating master_products: deleting duplicate ${item.docId} (${item.data.name}) in favor of ${canonicalId}`);
+            console.log(`Deduplicating master_products: deleting duplicate doc ${item.docId} in favor of ${canonicalId}`);
             await deleteDoc(doc(db, "master_products", item.docId)).catch(() => {});
           }
         }
@@ -2570,12 +2635,18 @@ export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">
     else refKey = product.name.trim();
   }
 
+  let canonicalId = (product.id || "").trim().toUpperCase();
+  const masterSnap = await getDocs(collection(db, "master_products"));
+  const existingProds = masterSnap.docs.map(d => d.data() as MasterProduct);
+
+  if (!canonicalId || canonicalId.startsWith("PROD_")) {
+    canonicalId = getNextPrimaryCode(cat, existingProds);
+  }
+
   const cleanRef = refKey.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-  const canonicalId = `prod_${cat}_${cleanRef}`;
   const now = new Date().toISOString();
 
   // Delete any old/non-canonical duplicate master_products documents matching this category & referenceKey
-  const masterSnap = await getDocs(collection(db, "master_products"));
   for (const docSnap of masterSnap.docs) {
     const data = docSnap.data() as MasterProduct;
     let existingRef = (data.referenceKey && data.referenceKey.trim()) ? data.referenceKey.trim() : "";
@@ -2828,13 +2899,15 @@ export async function seedMasterProductsIfEmpty() {
   if (masterSnap.empty) {
     console.log("Seeding master products from existing data...");
     
-    // 1. Seed Essences (Scent Prices)
+    // 1. Seed Essences (Scent Prices -> A001, A002, ...)
     const pricesSnap = await getDocs(collection(db, "prices"));
+    let aCounter = 1;
     for (const docSnap of pricesSnap.docs) {
       const data = docSnap.data();
       const scentName = data.scentName;
       const pricePerMl = data.pricePerMl;
-      const id = "prod_essence_" + scentName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const id = `A${aCounter.toString().padStart(3, "0")}`;
+      aCounter++;
       await setDoc(doc(db, "master_products", id), {
         id,
         name: `Bibit ${scentName}`,
@@ -2845,15 +2918,18 @@ export async function seedMasterProductsIfEmpty() {
       });
     }
     
-    // 2. Seed Bottle Sizes
+    // 2. Seed Bottle Sizes (B001... for Kaca, C001... for Plastik)
     const bottlesSnap = await getDocs(collection(db, "bottle_sizes"));
+    let bCounter = 1;
+    let cCounter = 1;
     for (const docSnap of bottlesSnap.docs) {
       const data = docSnap.data();
       const size = data.size;
       const priceKaca = data.priceKaca ?? data.price ?? 10000;
       const pricePlastik = data.pricePlastik ?? Math.round((data.price ?? 10000) / 2);
       
-      const idKaca = "prod_bottle_kaca_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const idKaca = `B${bCounter.toString().padStart(3, "0")}`;
+      bCounter++;
       await setDoc(doc(db, "master_products", idKaca), {
         id: idKaca,
         name: `Botol Kaca ${size}`,
@@ -2863,7 +2939,8 @@ export async function seedMasterProductsIfEmpty() {
         updatedAt: new Date().toISOString()
       });
       
-      const idPlastik = "prod_bottle_plastik_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const idPlastik = `C${cCounter.toString().padStart(3, "0")}`;
+      cCounter++;
       await setDoc(doc(db, "master_products", idPlastik), {
         id: idPlastik,
         name: `Botol Plastik ${size}`,
@@ -2880,17 +2957,17 @@ export async function seedMasterProductsIfEmpty() {
       await deleteDoc(docSnap.ref);
     }
 
-    // 3. Seed Default Absolut (Other)
-    await setDoc(doc(db, "master_products", "prod_other_absolut_cair"), {
-      id: "prod_other_absolut_cair",
+    // 3. Seed Default Absolut (Other -> D001, D002)
+    await setDoc(doc(db, "master_products", "D001"), {
+      id: "D001",
       name: "Absolut Cair",
       price: 50,
       category: "other",
       referenceKey: "Absolut Cair",
       updatedAt: new Date().toISOString()
     });
-    await setDoc(doc(db, "master_products", "prod_other_absolut_gel"), {
-      id: "prod_other_absolut_gel",
+    await setDoc(doc(db, "master_products", "D002"), {
+      id: "D002",
       name: "Absolut Gel",
       price: 60,
       category: "other",
@@ -2905,8 +2982,11 @@ export async function seedMasterProductsIfEmpty() {
   
   if (!existingCategories.has("bottle_kaca") && !existingCategories.has("bottle_plastik")) {
     const defaultSizes = ["30ml", "50ml", "100ml"];
+    let bCount = 1;
+    let cCount = 1;
     for (const size of defaultSizes) {
-      const idKaca = "prod_bottle_kaca_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const idKaca = `B${bCount.toString().padStart(3, "0")}`;
+      bCount++;
       await setDoc(doc(db, "master_products", idKaca), {
         id: idKaca,
         name: `Botol Kaca ${size}`,
@@ -2915,7 +2995,8 @@ export async function seedMasterProductsIfEmpty() {
         referenceKey: size,
         updatedAt: new Date().toISOString()
       });
-      const idPlastik = "prod_bottle_plastik_" + size.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+      const idPlastik = `C${cCount.toString().padStart(3, "0")}`;
+      cCount++;
       await setDoc(doc(db, "master_products", idPlastik), {
         id: idPlastik,
         name: `Botol Plastik ${size}`,
@@ -2928,16 +3009,16 @@ export async function seedMasterProductsIfEmpty() {
   }
 
   if (!existingCategories.has("other")) {
-    await setDoc(doc(db, "master_products", "prod_other_absolut_cair"), {
-      id: "prod_other_absolut_cair",
+    await setDoc(doc(db, "master_products", "D001"), {
+      id: "D001",
       name: "Absolut Cair",
       price: 50,
       category: "other",
       referenceKey: "Absolut Cair",
       updatedAt: new Date().toISOString()
     });
-    await setDoc(doc(db, "master_products", "prod_other_absolut_gel"), {
-      id: "prod_other_absolut_gel",
+    await setDoc(doc(db, "master_products", "D002"), {
+      id: "D002",
       name: "Absolut Gel",
       price: 60,
       category: "other",

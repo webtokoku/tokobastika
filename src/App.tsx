@@ -75,7 +75,9 @@ import {
   addMasterProduct,
   updateMasterProduct,
   deleteMasterProduct,
-  seedMasterProductsIfEmpty
+  seedMasterProductsIfEmpty,
+  getCategoryPrefix,
+  getNextPrimaryCode
 } from "./dbService";
 import { 
   Shelf as ShelfType, 
@@ -2218,6 +2220,16 @@ export default function App() {
     referenceKey: ""
   });
   const [editingMasterProduct, setEditingMasterProduct] = useState<MasterProduct | null>(null);
+
+  // Auto fill newMasterProduct ID whenever category changes or masterProducts list updates
+  useEffect(() => {
+    if (!editingMasterProduct) {
+      const autoId = getNextPrimaryCode(newMasterProduct.category, masterProducts);
+      if (!newMasterProduct.id || /^([A-D]\d*|prod_.*)$/i.test(newMasterProduct.id)) {
+        setNewMasterProduct(prev => ({ ...prev, id: autoId }));
+      }
+    }
+  }, [newMasterProduct.category, masterProducts, editingMasterProduct]);
   const [masterSearch, setMasterSearch] = useState("");
   const [masterCategoryFilter, setMasterCategoryFilter] = useState<string>("all");
   const [masterSortField, setMasterSortField] = useState<"id" | "name" | "category" | "referenceKey" | "price">("name");
@@ -7684,7 +7696,7 @@ export default function App() {
                           }
 
                           setNewMasterProduct({
-                            id: "",
+                            id: getNextPrimaryCode("essence", masterProducts),
                             name: "",
                             price: 0,
                             category: "essence",
@@ -7698,18 +7710,26 @@ export default function App() {
                     className="space-y-4"
                   >
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">ID Produk (Unique Key)</label>
+                      <div className="flex justify-between items-center mb-1">
+                        <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider">ID Produk (Primary Code)</label>
+                        <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
+                          {getCategoryPrefix(editingMasterProduct ? editingMasterProduct.category : newMasterProduct.category)}
+                        </span>
+                      </div>
                       <input
                         type="text"
-                        placeholder="Contoh: prod_essence_bacarat"
+                        placeholder="Contoh: A001, B001, C001, D001"
                         disabled={!!editingMasterProduct}
                         value={editingMasterProduct ? editingMasterProduct.id : newMasterProduct.id}
                         onChange={(e) => {
                           if (editingMasterProduct) return;
-                          setNewMasterProduct({ ...newMasterProduct, id: e.target.value.toLowerCase().trim().replace(/[^a-z0-9_]+/g, "") });
+                          setNewMasterProduct({ ...newMasterProduct, id: e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, "") });
                         }}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white disabled:opacity-50 text-slate-800 font-medium"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white disabled:opacity-50 text-slate-800 font-mono font-bold uppercase tracking-wide"
                       />
+                      <span className="text-[10px] text-slate-400 mt-1 block font-medium">
+                        A001+ (Bibit) • B001+ (Botol Kaca) • C001+ (Botol Plastik) • D001+ (Bahan)
+                      </span>
                     </div>
 
                     <div>
@@ -7977,8 +7997,10 @@ export default function App() {
                       <tbody className="divide-y divide-slate-100 bg-white">
                         {sortedAndFilteredMasterProducts.map((p) => (
                           <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                            <td className="py-3 px-4 font-mono font-semibold text-slate-500 text-[10px]">
-                              {p.id}
+                            <td className="py-3 px-4">
+                              <span className="inline-block px-2 py-0.5 rounded font-mono font-bold text-xs bg-slate-100 text-slate-800 border border-slate-200">
+                                {p.id}
+                              </span>
                             </td>
                             <td className="py-3 px-4 font-bold text-slate-800">
                               {p.name}
