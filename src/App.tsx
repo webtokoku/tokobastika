@@ -2235,6 +2235,7 @@ export default function App() {
   const sortedAndFilteredMasterProducts = useMemo(() => {
     return masterProducts
       .filter(p => {
+        if (p.category === "bundling") return false;
         const query = masterSearch.toLowerCase().trim();
         const matchSearch = !query || 
           p.name.toLowerCase().includes(query) || 
@@ -4683,15 +4684,6 @@ export default function App() {
           ingredients: formulaCart
         });
         
-        const prodId = "prod_bundling_" + autoPackageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-        await addMasterProduct({
-          id: prodId,
-          name: `Paket Bundling ${autoPackageName}`,
-          price: price,
-          category: "bundling",
-          referenceKey: autoPackageName
-        });
-
         showToast(`Formula paket bundling "${autoPackageName}" berhasil diubah!`, "success");
         setEditingBundling(null);
       } else {
@@ -4704,15 +4696,6 @@ export default function App() {
           price,
           solventType,
           ingredients: formulaCart
-        });
-
-        const prodId = "prod_bundling_" + autoPackageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-        await addMasterProduct({
-          id: prodId,
-          name: `Paket Bundling ${autoPackageName}`,
-          price: price,
-          category: "bundling",
-          referenceKey: autoPackageName
         });
 
         showToast(`Formula paket bundling "${autoPackageName}" berhasil ditambahkan!`, "success");
@@ -4876,8 +4859,7 @@ export default function App() {
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {myPackageStocks.map(pkgStock => {
                   const pkgFormula = bundlingPackages.find(p => p.id === pkgStock.packageId);
-                  const matchedMaster = masterProducts.find(p => p.category === "bundling" && p.referenceKey === pkgStock.packageName);
-                  const price = matchedMaster ? matchedMaster.price : (pkgFormula ? pkgFormula.price : 0);
+                  const price = pkgFormula ? pkgFormula.price : 0;
                   const isSelected = resellerSaleForm.packageId === pkgStock.packageId;
 
                   return (
@@ -4944,8 +4926,7 @@ export default function App() {
               }
 
               const pkgFormula = bundlingPackages.find(p => p.id === selectedStock.packageId);
-              const matchedMaster = masterProducts.find(p => p.category === "bundling" && p.referenceKey === selectedStock.packageName);
-              const price = matchedMaster ? matchedMaster.price : (pkgFormula ? pkgFormula.price : 0);
+              const price = pkgFormula ? pkgFormula.price : 0;
               const isStockOk = selectedStock.quantity >= resellerSaleForm.quantity;
               const totalAmount = price * resellerSaleForm.quantity;
 
@@ -5443,10 +5424,7 @@ export default function App() {
                       <div className="mt-4 pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
                         <span className="font-semibold text-slate-500">Harga Jual:</span>
                         <span className="font-extrabold text-emerald-600">
-                          {(() => {
-                            const matchedMaster = masterProducts.find(p => p.category === "bundling" && p.referenceKey === pkg.packageName);
-                            return formatRupiah(matchedMaster ? matchedMaster.price : pkg.price);
-                          })()}
+                          {formatRupiah(pkg.price)}
                         </span>
                       </div>
                     </div>
@@ -7628,7 +7606,7 @@ export default function App() {
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-6">
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Total Master Produk</span>
-                  <span className="text-2xl font-extrabold text-slate-900 block mt-1">{masterProducts.length} <span className="text-xs font-semibold text-slate-500">item</span></span>
+                  <span className="text-2xl font-extrabold text-slate-900 block mt-1">{masterProducts.filter(p => p.category !== "bundling").length} <span className="text-xs font-semibold text-slate-500">item</span></span>
                 </div>
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Koleksi Bibit Aroma</span>
@@ -7643,9 +7621,9 @@ export default function App() {
                   </span>
                 </div>
                 <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Paket Bundling Aktif</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Bahan & Item Lainnya</span>
                   <span className="text-2xl font-extrabold text-indigo-600 block mt-1">
-                    {masterProducts.filter(p => p.category === "bundling").length} <span className="text-xs font-semibold text-slate-500">paket</span>
+                    {masterProducts.filter(p => p.category === "other").length} <span className="text-xs font-semibold text-slate-500">item</span>
                   </span>
                 </div>
               </div>
@@ -7747,8 +7725,7 @@ export default function App() {
                         <option value="essence">Bibit Scent Essence</option>
                         <option value="bottle_kaca">Botol Kemasan Kaca</option>
                         <option value="bottle_plastik">Botol Kemasan Plastik</option>
-                        <option value="bundling">Paket Bundling</option>
-                        <option value="other">Lain-lain</option>
+                        <option value="other">Lain-lain / Bahan Pelarut</option>
                       </select>
                     </div>
 
@@ -7756,12 +7733,12 @@ export default function App() {
                       <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1">
                         Key Referensi Relasi 
                         <span className="text-[9px] text-slate-400 font-normal lowercase block mt-0.5">
-                          (ScentName untuk bibit, Size '30ml' untuk botol, PackageName untuk bundling)
+                          (ScentName untuk bibit, Size '30ml' untuk botol)
                         </span>
                       </label>
                       <input
                         type="text"
-                        placeholder="Contoh: Bacarat, 30ml, Paket Hebat"
+                        placeholder="Contoh: Bacarat, 30ml"
                         value={editingMasterProduct ? editingMasterProduct.referenceKey : newMasterProduct.referenceKey}
                         onChange={(e) => {
                           if (editingMasterProduct) {
@@ -7818,13 +7795,13 @@ export default function App() {
                       <Info className="h-4 w-4 text-slate-400 shrink-0 mt-0.5" />
                       <div>
                         <span className="font-bold block text-slate-800">Relational Database Core</span>
-                        Master Produk bertindak sebagai satu-satunya database harga yang sah. Seluruh modul kasir, penataan rak, dan bundling paket akan menarik harga dari modul ini secara real-time.
+                        Master Produk bertindak sebagai satu-satunya database harga yang sah untuk produk dasar (Bibit, Botol Kaca/Plastik, & Bahan Tambahan). Modul kasir dan penataan rak menarik harga dari modul ini, sedangkan Paket Bundling dikelola secara dinamis pada modul Konsinyasi & Bundling.
                       </div>
                     </div>
                     <button
                       type="button"
                       onClick={async () => {
-                        if (confirm("Seeding ulang akan mengimpor seluruh bibit aroma, kemasan botol, dan bundling yang ada saat ini ke database Master Produk. Lanjutkan?")) {
+                        if (confirm("Seeding ulang akan mengimpor seluruh bibit aroma & kemasan botol ke database Master Produk. Lanjutkan?")) {
                           try {
                             await seedMasterProductsIfEmpty();
                             showToast("Sinkronisasi & Impor data master produk berhasil!", "success");
@@ -7870,7 +7847,6 @@ export default function App() {
                         <option value="essence">Bibit Scent Essence</option>
                         <option value="bottle_kaca">Botol Kaca</option>
                         <option value="bottle_plastik">Botol Plastik</option>
-                        <option value="bundling">Paket Bundling</option>
                         <option value="other">Lain-lain</option>
                       </select>
                       {/* Sort Selector */}

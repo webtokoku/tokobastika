@@ -2378,7 +2378,10 @@ export function subscribeToMasterProducts(
     async (snapshot) => {
       const list: MasterProduct[] = [];
       snapshot.forEach((docSnap) => {
-        list.push(docSnap.data() as MasterProduct);
+        const item = docSnap.data() as MasterProduct;
+        if ((item.category as string) !== "bundling") {
+          list.push(item);
+        }
       });
       callback(list);
     },
@@ -2667,24 +2670,13 @@ export async function seedMasterProductsIfEmpty() {
       });
     }
     
-    // 3. Seed Bundling Packages
-    const bundlingSnap = await getDocs(collection(db, "bundling_packages"));
-    for (const docSnap of bundlingSnap.docs) {
-      const data = docSnap.data();
-      const packageName = data.packageName;
-      const price = data.price ?? 35000;
-      const id = "prod_bundling_" + packageName.toLowerCase().replace(/[^a-z0-9]+/g, "_");
-      await setDoc(doc(db, "master_products", id), {
-        id,
-        name: `Paket Bundling ${packageName}`,
-        price: price,
-        category: "bundling",
-        referenceKey: packageName,
-        updatedAt: new Date().toISOString()
-      });
+    // Clean up any old bundling items from master_products if present
+    const masterBundlingSnap = await getDocs(query(collection(db, "master_products"), where("category", "==", "bundling")));
+    for (const docSnap of masterBundlingSnap.docs) {
+      await deleteDoc(docSnap.ref);
     }
 
-    // 4. Seed Default Absolut (Other)
+    // 3. Seed Default Absolut (Other)
     await setDoc(doc(db, "master_products", "prod_other_absolut_cair"), {
       id: "prod_other_absolut_cair",
       name: "Absolut Cair",
