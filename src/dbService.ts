@@ -1394,6 +1394,35 @@ export async function addBottleSize(
       quantity: 0
     });
   }
+
+  // 4. Ensure master products exist for this bottle size
+  const prodKacaId = "prod_bottle_kaca_" + id;
+  const prodKacaRef = doc(db, "master_products", prodKacaId);
+  const prodKacaSnap = await getDoc(prodKacaRef);
+  if (!prodKacaSnap.exists()) {
+    await setDoc(prodKacaRef, {
+      id: prodKacaId,
+      name: `Botol Kaca ${cleanSize}`,
+      price: priceKaca,
+      category: "bottle_kaca",
+      referenceKey: cleanSize,
+      updatedAt: new Date().toISOString()
+    });
+  }
+
+  const prodPlastikId = "prod_bottle_plastik_" + id;
+  const prodPlastikRef = doc(db, "master_products", prodPlastikId);
+  const prodPlastikSnap = await getDoc(prodPlastikRef);
+  if (!prodPlastikSnap.exists()) {
+    await setDoc(prodPlastikRef, {
+      id: prodPlastikId,
+      name: `Botol Plastik ${cleanSize}`,
+      price: pricePlastik,
+      category: "bottle_plastik",
+      referenceKey: cleanSize,
+      updatedAt: new Date().toISOString()
+    });
+  }
 }
 
 export async function deleteBottleSize(id: string) {
@@ -2396,6 +2425,26 @@ export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">
       ? product.referenceKey.trim()
       : product.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
     if (size) {
+      const cleanSize = size.trim();
+      const bSizeId = cleanSize.toLowerCase().replace(/\s+/g, "");
+      const bSizeRef = doc(db, "bottle_sizes", bSizeId);
+      const bSizeSnap = await getDoc(bSizeRef);
+      if (!bSizeSnap.exists()) {
+        await setDoc(bSizeRef, {
+          id: bSizeId,
+          size: cleanSize,
+          price: product.price || 10000,
+          priceKaca: bottleType === "Kaca" ? (product.price || 10000) : 10000,
+          pricePlastik: bottleType === "Plastik" ? (product.price || 5000) : 5000,
+          purchasePriceKaca: 5000,
+          purchasePricePlastik: 3000,
+          addedAt: now
+        });
+      } else {
+        const updateData = bottleType === "Kaca" ? { priceKaca: product.price } : { pricePlastik: product.price };
+        await setDoc(bSizeRef, updateData, { merge: true });
+      }
+
       const stockId = getNormalizedBottleStockId(size, bottleType);
       const stockRef = doc(db, "stocks", stockId);
       const stockSnap = await getDoc(stockRef);
@@ -2403,7 +2452,7 @@ export async function addMasterProduct(product: Omit<MasterProduct, "updatedAt">
         await setDoc(stockRef, {
           id: stockId,
           type: "bottle",
-          size,
+          size: cleanSize,
           bottleType,
           quantity: 0
         });
@@ -2469,6 +2518,26 @@ export async function updateMasterProduct(id: string, updates: Partial<Omit<Mast
         ? data.referenceKey.trim()
         : data.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
       if (size) {
+        const cleanSize = size.trim();
+        const bSizeId = cleanSize.toLowerCase().replace(/\s+/g, "");
+        const bSizeRef = doc(db, "bottle_sizes", bSizeId);
+        const bSizeSnap = await getDoc(bSizeRef);
+        if (!bSizeSnap.exists()) {
+          await setDoc(bSizeRef, {
+            id: bSizeId,
+            size: cleanSize,
+            price: data.price || 10000,
+            priceKaca: bottleType === "Kaca" ? (data.price || 10000) : 10000,
+            pricePlastik: bottleType === "Plastik" ? (data.price || 5000) : 5000,
+            purchasePriceKaca: 5000,
+            purchasePricePlastik: 3000,
+            addedAt: now
+          });
+        } else {
+          const updateData = bottleType === "Kaca" ? { priceKaca: data.price } : { pricePlastik: data.price };
+          await setDoc(bSizeRef, updateData, { merge: true });
+        }
+
         const stockId = getNormalizedBottleStockId(size, bottleType);
         const stockRef = doc(db, "stocks", stockId);
         const stockSnap = await getDoc(stockRef);
@@ -2476,7 +2545,7 @@ export async function updateMasterProduct(id: string, updates: Partial<Omit<Mast
           await setDoc(stockRef, {
             id: stockId,
             type: "bottle",
-            size,
+            size: cleanSize,
             bottleType,
             quantity: 0
           });

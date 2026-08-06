@@ -930,11 +930,16 @@ export default function App() {
   ): number => {
     if (!bottleSize || bottleSize === "None" || bringOwnBottle) return 0;
     const bCategory = bottleType === "Plastik" ? "bottle_plastik" : "bottle_kaca";
-    const matchedBottleProduct = mpList.find(p => p.category === bCategory && (p.referenceKey === bottleSize || p.name === bottleSize));
+    const matchedBottleProduct = mpList.find(p => p.category === bCategory && (
+      p.referenceKey === bottleSize || 
+      p.name === bottleSize ||
+      p.name.toLowerCase() === `botol ${bottleType?.toLowerCase() || 'kaca'} ${bottleSize.toLowerCase()}`
+    ));
     if (matchedBottleProduct && matchedBottleProduct.price > 0) {
       return matchedBottleProduct.price;
     }
-    const matchedBottle = bList.find(b => b.size === bottleSize);
+    const effectiveBList = (bList && bList.length > 0) ? bList : allBottleSizes;
+    const matchedBottle = effectiveBList.find(b => b.size === bottleSize);
     if (matchedBottle) {
       return bottleType === "Plastik"
         ? (matchedBottle.pricePlastik ?? Math.round((matchedBottle.price ?? 10000) / 2))
@@ -2258,6 +2263,110 @@ export default function App() {
         return masterSortDirection === "asc" ? comparison : -comparison;
       });
   }, [masterProducts, masterSearch, masterCategoryFilter, masterSortField, masterSortDirection]);
+
+  // Unified Source of Truth for Bottle Sizes (Master Database Produk -> Bottle Sizes -> Stocks)
+  const allBottleSizes = useMemo(() => {
+    const map = new Map<string, BottleSize>();
+
+    // 1. Include bottleSizes from Firestore bottle_sizes collection
+    bottleSizes.forEach((b) => {
+      if (b.size) {
+        const cleanSize = b.size.trim();
+        const id = cleanSize.toLowerCase().replace(/\s+/g, "");
+        map.set(id, {
+          ...b,
+          id,
+          size: cleanSize
+        });
+      }
+    });
+
+    // 2. Extract bottle sizes from masterProducts (Master Database Produk - Source of Truth)
+    masterProducts.forEach((mp) => {
+      if (mp.category === "bottle_kaca" || mp.category === "bottle_plastik") {
+        let size = (mp.referenceKey && mp.referenceKey.trim() && mp.referenceKey.trim().toLowerCase() !== "size")
+          ? mp.referenceKey.trim()
+          : mp.name.replace(/botol\s+(kaca|plastik)\s*/i, "").trim();
+
+        if (size) {
+          const id = size.toLowerCase().replace(/\s+/g, "");
+          const existing = map.get(id) || {
+            id,
+            size,
+            price: mp.price || 10000,
+            priceKaca: mp.price || 10000,
+            pricePlastik: Math.round((mp.price || 10000) / 2),
+            purchasePriceKaca: 5000,
+            purchasePricePlastik: 3000,
+            addedAt: mp.updatedAt || new Date().toISOString()
+          };
+
+          if (mp.category === "bottle_kaca") {
+            existing.priceKaca = mp.price || existing.priceKaca || 10000;
+          } else if (mp.category === "bottle_plastik") {
+            existing.pricePlastik = mp.price || existing.pricePlastik || 5000;
+          }
+
+          map.set(id, existing);
+        }
+      }
+    });
+
+    // 3. Extract bottle sizes from stocks
+    stocks.forEach((st) => {
+      if (st.type === "bottle" && st.size) {
+        const size = st.size.trim();
+        const id = size.toLowerCase().replace(/\s+/g, "");
+        if (!map.has(id)) {
+          map.set(id, {
+            id,
+            size,
+            price: 10000,
+            priceKaca: 10000,
+            pricePlastik: 5000,
+            purchasePriceKaca: 5000,
+            purchasePricePlastik: 3000,
+            addedAt: new Date().toISOString()
+          });
+        }
+      }
+    });
+
+    // Convert map to array and sort numerically by volume (6ml, 8ml, 10ml, 12ml, 15ml, 30ml, 50ml, 100ml)
+    const list = Array.from(map.values());
+    list.sort((a, b) => {
+      const numA = parseInt(a.size.replace(/[^0-9]/g, ""), 10);
+      const numB = parseInt(b.size.replace(/[^0-9]/g, ""), 10);
+      if (!isNaN(numA) && !isNaN(numB) && numA !== numB) {
+        return numA - numB;
+      }
+      return a.size.localeCompare(b.size);
+    });
+
+    return list;
+  }, [bottleSizes, masterProducts, stocks]);
+
+  // Auto-sync missing bottle sizes from Master Produk into Firestore bottle_sizes collection
+  useEffect(() => {
+    if (allBottleSizes.length > 0 && userRole === "admin") {
+      const existingIds = new Set(bottleSizes.map(b => b.id));
+      allBottleSizes.forEach(async (b) => {
+        if (!existingIds.has(b.id)) {
+          try {
+            await addBottleSize(
+              b.size,
+              b.priceKaca || b.price || 10000,
+              b.pricePlastik || 5000,
+              b.purchasePriceKaca || 5000,
+              b.purchasePricePlastik || 3000
+            );
+          } catch (e) {
+            console.error("Auto-sync bottle size error:", e);
+          }
+        }
+      });
+    }
+  }, [allBottleSizes, bottleSizes, userRole]);
 
   // Purchase stock state
   const [purchaseCategory, setPurchaseCategory] = useState<"bibit" | "alkohol" | "botol" | "other">("bibit");
@@ -5404,7 +5513,7 @@ export default function App() {
                         onChange={(e) => setCartInput(prev => ({ ...prev, size: e.target.value }))}
                         className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold cursor-pointer"
                       >
-                        {bottleSizes.map(bs => (
+                        {allBottleSizes.map(bs => (
                           <option key={bs.id} value={bs.size}>{bs.size}</option>
                         ))}
                       </select>
@@ -8324,7 +8433,7 @@ export default function App() {
                             }}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
                           >
-                            {bottleSizes.map((b) => (
+                            {allBottleSizes.map((b) => (
                               <option key={b.id} value={b.size}>
                                 Botol {b.size}
                               </option>
@@ -8582,7 +8691,7 @@ export default function App() {
                                   onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, size: e.target.value }))}
                                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 font-semibold"
                                 >
-                                  {bottleSizes.map(bs => (
+                                  {allBottleSizes.map(bs => (
                                     <option key={bs.id} value={bs.size}>{bs.size}</option>
                                   ))}
                                 </select>
@@ -9079,7 +9188,7 @@ export default function App() {
                                           const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
                                           return acc + (bottleFee * item.bottleCount);
                                         }, 0)
-                                      : (bottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount
+                                      : (allBottleSizes.find(b => b.size === saleBottleSize)?.price || 0) * saleBottleCount
                                   )}
                                 </span>
                               </div>
@@ -9660,7 +9769,7 @@ export default function App() {
                               value={purchaseBottleSize}
                               onChange={(e) => {
                                 setPurchaseBottleSize(e.target.value);
-                                const matchedB = bottleSizes.find(b => b.size === e.target.value);
+                                const matchedB = allBottleSizes.find(b => b.size === e.target.value);
                                 if (matchedB && purchaseCount > 0) {
                                   const unitCost = purchaseBottleType === "Plastik"
                                     ? (matchedB.purchasePricePlastik ?? 3000)
@@ -9670,7 +9779,7 @@ export default function App() {
                               }}
                               className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
                             >
-                              {bottleSizes.map((b) => (
+                              {allBottleSizes.map((b) => (
                                 <option key={b.id} value={b.size}>Botol {b.size}</option>
                               ))}
                             </select>
@@ -9693,7 +9802,7 @@ export default function App() {
                               type="button"
                               onClick={() => {
                                 setPurchaseBottleType("Kaca");
-                                const matchedB = bottleSizes.find(b => b.size === purchaseBottleSize);
+                                const matchedB = allBottleSizes.find(b => b.size === purchaseBottleSize);
                                 if (matchedB && purchaseCount > 0) {
                                   setPurchasePrice((matchedB.purchasePriceKaca ?? 5000) * purchaseCount);
                                 }
@@ -9710,7 +9819,7 @@ export default function App() {
                               type="button"
                               onClick={() => {
                                 setPurchaseBottleType("Plastik");
-                                const matchedB = bottleSizes.find(b => b.size === purchaseBottleSize);
+                                const matchedB = allBottleSizes.find(b => b.size === purchaseBottleSize);
                                 if (matchedB && purchaseCount > 0) {
                                   setPurchasePrice((matchedB.purchasePricePlastik ?? 3000) * purchaseCount);
                                 }
