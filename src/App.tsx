@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { toJpeg } from "html-to-image";
 import { 
   auth, 
@@ -2365,42 +2365,71 @@ export default function App() {
     return list;
   }, [bottleSizes, masterProducts, stocks]);
 
-  // Auto-sync missing bottle sizes from Master Produk into Firestore bottle_sizes collection & clean up orphans
-  useEffect(() => {
-    const masterHasBottles = masterProducts.some(mp => mp.category === "bottle_kaca" || mp.category === "bottle_plastik" || mp.category === "botol" || mp.category === "bottle");
-    if (masterHasBottles) {
-      const validBottleIds = new Set(allBottleSizes.map(b => b.id));
-      
-      // Clean up orphaned items in Firestore bottle_sizes collection
-      bottleSizes.forEach(async (b) => {
-        if (b.id && !validBottleIds.has(b.id)) {
-          try {
-            await deleteBottleSize(b.id);
-          } catch (e) {
-            console.error("Clean orphaned bottle size error:", e);
-          }
-        }
-      });
-
-      // Add missing sizes from allBottleSizes to bottleSizes
-      const existingIds = new Set(bottleSizes.map(b => b.id));
-      allBottleSizes.forEach(async (b) => {
-        if (b.id && !existingIds.has(b.id)) {
-          try {
-            await addBottleSize(
-              b.size,
-              b.priceKaca || b.price || 10000,
-              b.pricePlastik || 5000,
-              b.purchasePriceKaca || 5000,
-              b.purchasePricePlastik || 3000
-            );
-          } catch (e) {
-            console.error("Auto-sync bottle size error:", e);
-          }
-        }
+  // Unified Source of Truth for Glass Bottle Sizes (Master Database Produk)
+  const glassBottleSizes = useMemo(() => {
+    const masterGlass = masterProducts.filter(mp => mp.category === "bottle_kaca");
+    if (masterGlass.length > 0) {
+      return masterGlass.map((mp) => {
+        let size = (mp.referenceKey && mp.referenceKey.trim() && mp.referenceKey.trim().toLowerCase() !== "size")
+          ? mp.referenceKey.trim()
+          : mp.name.replace(/botol\s+kaca\s*/i, "").trim();
+        return {
+          id: size.toLowerCase().replace(/\s+/g, ""),
+          size,
+          price: mp.price || 10000,
+          priceKaca: mp.price || 10000,
+          pricePlastik: Math.round((mp.price || 10000) / 2),
+          purchasePriceKaca: 5000,
+          purchasePricePlastik: 3000,
+          addedAt: mp.updatedAt || new Date().toISOString()
+        };
+      }).sort((a, b) => {
+        const numA = parseInt(a.size.replace(/[^0-9]/g, ""), 10);
+        const numB = parseInt(b.size.replace(/[^0-9]/g, ""), 10);
+        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+        return a.size.localeCompare(b.size);
       });
     }
-  }, [allBottleSizes, bottleSizes, masterProducts]);
+    return [];
+  }, [masterProducts]);
+
+  // Unified Source of Truth for Plastic Bottle Sizes (Master Database Produk)
+  const plasticBottleSizes = useMemo(() => {
+    const masterPlastic = masterProducts.filter(mp => mp.category === "bottle_plastik");
+    if (masterPlastic.length > 0) {
+      return masterPlastic.map((mp) => {
+        let size = (mp.referenceKey && mp.referenceKey.trim() && mp.referenceKey.trim().toLowerCase() !== "size")
+          ? mp.referenceKey.trim()
+          : mp.name.replace(/botol\s+plastik\s*/i, "").trim();
+        return {
+          id: size.toLowerCase().replace(/\s+/g, ""),
+          size,
+          price: mp.price || 5000,
+          priceKaca: mp.price || 10000,
+          pricePlastik: mp.price || 5000,
+          purchasePriceKaca: 5000,
+          purchasePricePlastik: 3000,
+          addedAt: mp.updatedAt || new Date().toISOString()
+        };
+      }).sort((a, b) => {
+        const numA = parseInt(a.size.replace(/[^0-9]/g, ""), 10);
+        const numB = parseInt(b.size.replace(/[^0-9]/g, ""), 10);
+        if (!isNaN(numA) && !isNaN(numB) && numA !== numB) return numA - numB;
+        return a.size.localeCompare(b.size);
+      });
+    }
+    return [];
+  }, [masterProducts]);
+
+  // Helper to get available sizes strictly based on requested bottle type
+  const getAvailableBottleSizesForType = useCallback((type: "Kaca" | "Plastik" | string) => {
+    if (type === "Plastik") {
+      if (plasticBottleSizes.length > 0) return plasticBottleSizes;
+    } else if (type === "Kaca") {
+      if (glassBottleSizes.length > 0) return glassBottleSizes;
+    }
+    return allBottleSizes;
+  }, [glassBottleSizes, plasticBottleSizes, allBottleSizes]);
 
   // Purchase stock state
   const [purchaseCategory, setPurchaseCategory] = useState<"bibit" | "alkohol" | "botol" | "other">("bibit");
@@ -5562,7 +5591,7 @@ export default function App() {
                         onChange={(e) => setCartInput(prev => ({ ...prev, size: e.target.value }))}
                         className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold cursor-pointer"
                       >
-                        {allBottleSizes.map(bs => (
+                        {getAvailableBottleSizesForType(cartInput.bottleType).map(bs => (
                           <option key={bs.id} value={bs.size}>{bs.size}</option>
                         ))}
                       </select>
@@ -5571,7 +5600,15 @@ export default function App() {
                       <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Bahan Botol</label>
                       <select
                         value={cartInput.bottleType}
-                        onChange={(e) => setCartInput(prev => ({ ...prev, bottleType: e.target.value as "Kaca" | "Plastik" }))}
+                        onChange={(e) => {
+                          const newType = e.target.value as "Kaca" | "Plastik";
+                          const avail = getAvailableBottleSizesForType(newType);
+                          setCartInput(prev => ({
+                            ...prev,
+                            bottleType: newType,
+                            size: (avail.length > 0 && !avail.some(b => b.size === prev.size)) ? avail[0].size : prev.size
+                          }));
+                        }}
                         className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 font-semibold cursor-pointer"
                       >
                         <option value="Kaca">Kaca</option>
@@ -8527,7 +8564,7 @@ export default function App() {
                             }}
                             className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
                           >
-                            {allBottleSizes.map((b) => (
+                            {getAvailableBottleSizesForType(saleBottleType).map((b) => (
                               <option key={b.id} value={b.size}>
                                 Botol {b.size}
                               </option>
@@ -8557,7 +8594,13 @@ export default function App() {
                             <div className="grid grid-cols-2 gap-2">
                               <button
                                 type="button"
-                                onClick={() => setSaleBottleType("Kaca")}
+                                onClick={() => {
+                                  setSaleBottleType("Kaca");
+                                  const avail = getAvailableBottleSizesForType("Kaca");
+                                  if (saleBottleSize !== "None" && !avail.some(b => b.size === saleBottleSize)) {
+                                    if (avail.length > 0) setSaleBottleSize(avail[0].size);
+                                  }
+                                }}
                                 className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
                                   saleBottleType === "Kaca"
                                     ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
@@ -8568,7 +8611,13 @@ export default function App() {
                               </button>
                               <button
                                 type="button"
-                                onClick={() => setSaleBottleType("Plastik")}
+                                onClick={() => {
+                                  setSaleBottleType("Plastik");
+                                  const avail = getAvailableBottleSizesForType("Plastik");
+                                  if (saleBottleSize !== "None" && !avail.some(b => b.size === saleBottleSize)) {
+                                    if (avail.length > 0) setSaleBottleSize(avail[0].size);
+                                  }
+                                }}
                                 className={`py-2 px-4 rounded-xl text-xs font-bold border transition-all cursor-pointer text-center ${
                                   saleBottleType === "Plastik"
                                     ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
@@ -8796,7 +8845,7 @@ export default function App() {
                                   onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, size: e.target.value }))}
                                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 font-semibold"
                                 >
-                                  {allBottleSizes.map(bs => (
+                                  {getAvailableBottleSizesForType(saleBundlingCartInput.bottleType).map(bs => (
                                     <option key={bs.id} value={bs.size}>{bs.size}</option>
                                   ))}
                                 </select>
@@ -8805,7 +8854,15 @@ export default function App() {
                                 <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">Bahan</label>
                                 <select
                                   value={saleBundlingCartInput.bottleType}
-                                  onChange={(e) => setSaleBundlingCartInput(prev => ({ ...prev, bottleType: e.target.value as "Kaca" | "Plastik" }))}
+                                  onChange={(e) => {
+                                    const newType = e.target.value as "Kaca" | "Plastik";
+                                    const avail = getAvailableBottleSizesForType(newType);
+                                    setSaleBundlingCartInput(prev => ({
+                                      ...prev,
+                                      bottleType: newType,
+                                      size: (avail.length > 0 && !avail.some(b => b.size === prev.size)) ? avail[0].size : prev.size
+                                    }));
+                                  }}
                                   className="w-full bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-slate-800 font-semibold"
                                 >
                                   <option value="Kaca">Kaca</option>
@@ -9890,7 +9947,8 @@ export default function App() {
                               value={purchaseBottleSize}
                               onChange={(e) => {
                                 setPurchaseBottleSize(e.target.value);
-                                const matchedB = allBottleSizes.find(b => b.size === e.target.value);
+                                const avail = getAvailableBottleSizesForType(purchaseBottleType);
+                                const matchedB = avail.find(b => b.size === e.target.value);
                                 if (matchedB && purchaseCount > 0) {
                                   const unitCost = purchaseBottleType === "Plastik"
                                     ? (matchedB.purchasePricePlastik ?? 3000)
@@ -9900,7 +9958,7 @@ export default function App() {
                               }}
                               className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:bg-white text-slate-800"
                             >
-                              {allBottleSizes.map((b) => (
+                              {getAvailableBottleSizesForType(purchaseBottleType).map((b) => (
                                 <option key={b.id} value={b.size}>Botol {b.size}</option>
                               ))}
                             </select>
@@ -9923,7 +9981,13 @@ export default function App() {
                               type="button"
                               onClick={() => {
                                 setPurchaseBottleType("Kaca");
-                                const matchedB = allBottleSizes.find(b => b.size === purchaseBottleSize);
+                                const avail = getAvailableBottleSizesForType("Kaca");
+                                let curSize = purchaseBottleSize;
+                                if (!avail.some(b => b.size === curSize) && avail.length > 0) {
+                                  curSize = avail[0].size;
+                                  setPurchaseBottleSize(curSize);
+                                }
+                                const matchedB = avail.find(b => b.size === curSize);
                                 if (matchedB && purchaseCount > 0) {
                                   setPurchasePrice((matchedB.purchasePriceKaca ?? 5000) * purchaseCount);
                                 }
@@ -9940,7 +10004,13 @@ export default function App() {
                               type="button"
                               onClick={() => {
                                 setPurchaseBottleType("Plastik");
-                                const matchedB = allBottleSizes.find(b => b.size === purchaseBottleSize);
+                                const avail = getAvailableBottleSizesForType("Plastik");
+                                let curSize = purchaseBottleSize;
+                                if (!avail.some(b => b.size === curSize) && avail.length > 0) {
+                                  curSize = avail[0].size;
+                                  setPurchaseBottleSize(curSize);
+                                }
+                                const matchedB = avail.find(b => b.size === curSize);
                                 if (matchedB && purchaseCount > 0) {
                                   setPurchasePrice((matchedB.purchasePricePlastik ?? 3000) * purchaseCount);
                                 }

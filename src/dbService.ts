@@ -1445,35 +1445,6 @@ export async function addBottleSize(
       quantity: 0
     });
   }
-
-  // 4. Ensure master products exist for this bottle size
-  const prodKacaId = "prod_bottle_kaca_" + id;
-  const prodKacaRef = doc(db, "master_products", prodKacaId);
-  const prodKacaSnap = await getDoc(prodKacaRef);
-  if (!prodKacaSnap.exists()) {
-    await setDoc(prodKacaRef, {
-      id: prodKacaId,
-      name: `Botol Kaca ${cleanSize}`,
-      price: priceKaca,
-      category: "bottle_kaca",
-      referenceKey: cleanSize,
-      updatedAt: new Date().toISOString()
-    });
-  }
-
-  const prodPlastikId = "prod_bottle_plastik_" + id;
-  const prodPlastikRef = doc(db, "master_products", prodPlastikId);
-  const prodPlastikSnap = await getDoc(prodPlastikRef);
-  if (!prodPlastikSnap.exists()) {
-    await setDoc(prodPlastikRef, {
-      id: prodPlastikId,
-      name: `Botol Plastik ${cleanSize}`,
-      price: pricePlastik,
-      category: "bottle_plastik",
-      referenceKey: cleanSize,
-      updatedAt: new Date().toISOString()
-    });
-  }
 }
 
 export async function deleteBottleSize(id: string) {
