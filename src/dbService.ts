@@ -1,4 +1,4 @@
-import { DocumentSnapshot } from "firebase/firestore";
+import { DocumentSnapshot, DocumentReference } from "firebase/firestore";
 import { 
   db, 
   collection, 
@@ -340,6 +340,7 @@ export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
   return onSnapshot(collection(db, "stocks"), (snapshot) => {
     const list: StockItem[] = [];
     const legacyToMigrate: { size: string; quantity: number; docId: string }[] = [];
+    const legacyEssencesToMigrate: { scentName: string; quantity: number; docId: string; targetId: string }[] = [];
 
     snapshot.forEach((docSnap) => {
       const data = docSnap.data() as StockItem;
@@ -352,6 +353,19 @@ export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
             size: data.size || "30ml",
             quantity: data.quantity,
             docId: data.id
+          });
+        }
+      }
+
+      // If we find a legacy essence document with quantity > 0 where doc.id is non-canonical
+      if (data.type === "essence" && data.scentName && data.quantity > 0) {
+        const canonicalId = getNormalizedEssenceStockId(data.scentName);
+        if (data.id !== canonicalId) {
+          legacyEssencesToMigrate.push({
+            scentName: data.scentName,
+            quantity: data.quantity,
+            docId: data.id,
+            targetId: canonicalId
           });
         }
       }
@@ -389,6 +403,39 @@ export function subscribeToStocks(callback: (stocks: StockItem[]) => void) {
             });
           } catch (e) {
             console.error("Failed migrating legacy bottle stock:", e);
+          }
+        }
+      })();
+    }
+
+    if (legacyEssencesToMigrate.length > 0) {
+      (async () => {
+        for (const item of legacyEssencesToMigrate) {
+          const targetRef = doc(db, "stocks", item.targetId);
+          try {
+            await runTransaction(db, async (transaction) => {
+              const legacyRef = doc(db, "stocks", item.docId);
+              const legacySnap = await transaction.get(legacyRef);
+              const targetSnap = await transaction.get(targetRef);
+
+              if (legacySnap.exists() && (legacySnap.data().quantity || 0) > 0) {
+                const legacyQty = legacySnap.data().quantity || 0;
+                const currentTargetQty = targetSnap.exists() ? (targetSnap.data().quantity || 0) : 0;
+
+                transaction.set(targetRef, {
+                  id: item.targetId,
+                  type: "essence",
+                  scentName: item.scentName,
+                  quantity: currentTargetQty + legacyQty,
+                  updatedAt: new Date().toISOString()
+                }, { merge: true });
+
+                transaction.update(legacyRef, { quantity: 0 });
+                console.log(`Migrated legacy essence stock ${item.docId} (${legacyQty} ml) to ${item.targetId}`);
+              }
+            });
+          } catch (e) {
+            console.error("Failed migrating legacy essence stock:", e);
           }
         }
       })();
@@ -1891,21 +1938,38 @@ export async function sendBundlingPackageToReseller(
 
     const ingredients = getPackageIngredients(pkg);
     
-    // Create stock refs
+    // Create stock refs with fallback for legacy IDs
     const ingredientRefs = ingredients.map(ing => {
       const stockId = getStockDocId(ing);
+      const legacyStockId = ing.type === "essence" && ing.scentName ? `essence_${ing.scentName.replace(/\s+/g, "_").toLowerCase()}` : stockId;
       return {
         ref: doc(db, "stocks", stockId),
+        legacyRef: doc(db, "stocks", legacyStockId),
         ing,
-        stockId
+        stockId,
+        legacyStockId
       };
     });
 
     // Fetch all stock snapshots inside transaction (READS first!)
     const snaps: { [stockId: string]: DocumentSnapshot } = {};
+    const targetRefsMap: { [stockId: string]: DocumentReference } = {};
+
     for (const item of ingredientRefs) {
       if (!snaps[item.stockId]) {
-        snaps[item.stockId] = await transaction.get(item.ref);
+        let primarySnap = await transaction.get(item.ref);
+        let refToUse = item.ref;
+
+        if ((!primarySnap.exists() || (primarySnap.data()?.quantity || 0) === 0) && item.stockId !== item.legacyStockId) {
+          const legacySnap = await transaction.get(item.legacyRef);
+          if (legacySnap.exists() && (legacySnap.data()?.quantity || 0) > 0) {
+            primarySnap = legacySnap;
+            refToUse = item.legacyRef;
+          }
+        }
+
+        snaps[item.stockId] = primarySnap;
+        targetRefsMap[item.stockId] = refToUse;
       }
     }
 
@@ -1935,9 +1999,10 @@ export async function sendBundlingPackageToReseller(
     // Perform master stock deductions
     for (const item of ingredientRefs) {
       const snap = snaps[item.stockId];
+      const targetRef = targetRefsMap[item.stockId] || item.ref;
       const needed = item.ing.quantity * quantity;
       const current = snap.exists() ? (snap.data().quantity || 0) : 0;
-      transaction.update(item.ref, { quantity: current - needed });
+      transaction.update(targetRef, { quantity: current - needed });
     }
 
     // Increment Reseller Package Stock

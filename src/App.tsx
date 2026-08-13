@@ -4015,6 +4015,36 @@ export default function App() {
     return Array.from(map.values()).sort((a, b) => a.scentName.localeCompare(b.scentName));
   }, [masterProducts, stocks]);
 
+  const getEssenceStockQty = useCallback((scentName: string | undefined): number => {
+    if (!scentName) return 0;
+    const clean = scentName.trim().replace(/^bibit\s+/i, "").replace(/^aroma\s+/i, "").trim().toLowerCase();
+    const normKeyClean = clean.replace(/[^a-z0-9]/g, "");
+
+    // 1. Check in unifiedEssenceStocks
+    const uMatch = unifiedEssenceStocks.find(u => {
+      const uClean = u.scentName.trim().replace(/^bibit\s+/i, "").replace(/^aroma\s+/i, "").trim().toLowerCase();
+      const uNorm = uClean.replace(/[^a-z0-9]/g, "");
+      return uNorm === normKeyClean || uClean === clean || uClean.includes(clean) || clean.includes(uClean);
+    });
+    if (uMatch) return uMatch.quantity;
+
+    // 2. Direct check in stocks array
+    const targetNormId = getNormalizedEssenceStockId(scentName);
+    const legacyId = `essence_${scentName.replace(/\s+/g, "_").toLowerCase()}`;
+    const sMatch = stocks.find(s => {
+      if (s.type !== "essence") return false;
+      if (s.id === targetNormId || s.id === legacyId) return true;
+      if (s.scentName) {
+        const sClean = s.scentName.trim().replace(/^bibit\s+/i, "").replace(/^aroma\s+/i, "").trim().toLowerCase();
+        const sNorm = sClean.replace(/[^a-z0-9]/g, "");
+        return sNorm === normKeyClean || sClean === clean || sClean.includes(clean) || clean.includes(sClean);
+      }
+      return false;
+    });
+
+    return sMatch ? sMatch.quantity : 0;
+  }, [unifiedEssenceStocks, stocks]);
+
   const unifiedOtherStocks = useMemo(() => {
     const map = new Map<string, {
       id: string;
@@ -4651,11 +4681,10 @@ export default function App() {
     const bType = bottleIngredient.bottleType || "Kaca";
 
     const bottleStockId = getNormalizedBottleStockId(bottleIngredient.size || selectedPkg.bottleSize, bType);
-    const essenceStockId = getNormalizedEssenceStockId(selectedPkg.scentName);
     const alcoholStockId = (selectedPkg.solventType === "Absolut Gel" || selectedPkg.scentName === "Absolut Gel") ? "alcohol_gel" : "alcohol_cair";
 
     const availBottle = stocks.find(s => s.id === bottleStockId)?.quantity || 0;
-    const availEssence = stocks.find(s => s.id === essenceStockId)?.quantity || 0;
+    const availEssence = getEssenceStockQty(selectedPkg.scentName);
     const availAlcohol = stocks.find(s => s.id === alcoholStockId)?.quantity || 0;
 
     if (availBottle < reqBottle) {
@@ -5418,11 +5447,10 @@ export default function App() {
                   const bType = bottleIngredient.bottleType || "Kaca";
 
                   const bottleStockId = getNormalizedBottleStockId(bottleIngredient.size || selectedPkg.bottleSize, bType);
-                  const essenceStockId = getNormalizedEssenceStockId(selectedPkg.scentName);
                   const alcoholStockId = (selectedPkg.solventType === "Absolut Gel" || selectedPkg.scentName === "Absolut Gel") ? "alcohol_gel" : "alcohol_cair";
 
                   const availBottle = stocks.find(s => s.id === bottleStockId)?.quantity || 0;
-                  const availEssence = stocks.find(s => s.id === essenceStockId)?.quantity || 0;
+                  const availEssence = getEssenceStockQty(selectedPkg.scentName);
                   const availAlcohol = stocks.find(s => s.id === alcoholStockId)?.quantity || 0;
 
                   const hasEnoughBottle = availBottle >= reqBottle;
