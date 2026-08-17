@@ -1094,6 +1094,35 @@ export default function App() {
     }
   };
 
+  // Helper to format cashier name cleanly (without @domain extension)
+  const formatCashierName = (rawEmailOrName?: string): string => {
+    if (!rawEmailOrName || typeof rawEmailOrName !== "string") return "Kasir";
+    const trimmed = rawEmailOrName.trim();
+    if (!trimmed) return "Kasir";
+    const username = trimmed.includes("@") ? trimmed.split("@")[0].trim() : trimmed;
+    return username || "Kasir";
+  };
+
+  // Helper to retrieve optional transaction note/keterangan
+  const getTransactionNote = (tx: any): string => {
+    if (!tx) return "";
+    if (tx.notes && typeof tx.notes === "string" && tx.notes.trim()) {
+      return tx.notes.trim();
+    }
+    if (tx.description && typeof tx.description === "string") {
+      const desc = tx.description.trim();
+      if (
+        desc &&
+        !desc.startsWith("Penjualan: ") &&
+        !desc.startsWith("Pembelian stok ") &&
+        desc !== "Pratinjau Nota Penjualan"
+      ) {
+        return desc;
+      }
+    }
+    return "";
+  };
+
   // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands with Floyd-Steinberg dithering
   const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 256): Promise<Uint8Array | null> => {
     return new Promise((resolve) => {
@@ -1393,7 +1422,7 @@ export default function App() {
     });
     addMetaLine("TANGGAL  ", dtStr);
     addMetaLine("INVOICE  ", tx.invoiceNo || tx.id);
-    addMetaLine("KASIR    ", tx.operatorEmail ? tx.operatorEmail.split("@")[0] : (tx.createdByName || "Kasir"));
+    addMetaLine("KASIR    ", formatCashierName(tx.operatorEmail || tx.createdByName));
     if (tx.customerName) addMetaLine("PELANGGAN", tx.customerName);
     addLine("-".repeat(maxCols));
 
@@ -1486,6 +1515,13 @@ export default function App() {
     addBytes([0x1B, 0x45, 0x01]); // Bold on
     addRowWithVal("TOTAL BAYAR", `Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}`);
     addBytes([0x1B, 0x45, 0x00]); // Bold off
+
+    const txNote = getTransactionNote(tx);
+    if (txNote) {
+      addLine("-".repeat(maxCols));
+      const noteLines = wordWrap(`CATATAN: ${txNote}`, maxCols);
+      noteLines.forEach((l) => addLine(l));
+    }
     addLine("-".repeat(maxCols));
 
     // Footer
@@ -1582,7 +1618,7 @@ export default function App() {
           </div>
           <div className="flex justify-between gap-1 items-start">
             <span className="shrink-0 font-semibold">KASIR:</span>
-            <span className="text-right font-medium truncate max-w-[140px]">{tx.operatorEmail || tx.createdByName || "Kasir"}</span>
+            <span className="text-right font-medium truncate max-w-[140px]">{formatCashierName(tx.operatorEmail || tx.createdByName)}</span>
           </div>
           <div className="flex justify-between gap-1 items-start font-bold">
             <span className="shrink-0">PELANGGAN:</span>
@@ -1753,6 +1789,20 @@ export default function App() {
             <span>TOTAL BAYAR</span>
             <span className="shrink-0 whitespace-nowrap">Rp {(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}</span>
           </div>
+
+          {/* Optional Note / Keterangan */}
+          {(() => {
+            const txNote = getTransactionNote(tx);
+            if (!txNote) return null;
+            return (
+              <div className="border-t border-dotted border-slate-300 pt-1 text-slate-700" style={{ fontSize: f.metaPx }}>
+                <div className="flex gap-1 items-start leading-tight">
+                  <span className="shrink-0 font-bold text-slate-600">CATATAN:</span>
+                  <span className="font-medium text-slate-800 break-words text-right flex-1">{txNote}</span>
+                </div>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Footer Section */}
@@ -3350,7 +3400,8 @@ export default function App() {
       ? ` (Diskon: Gratis Botol + ${formatRupiah(nominalDiscount)})`
       : (saleFreeBottleDiscount ? ` (Diskon: Gratis Botol)` : (nominalDiscount > 0 ? ` (Diskon: ${formatRupiah(nominalDiscount)})` : ""));
 
-    const desc = saleDescription || `Penjualan: ${itemsDescription}${descPromoStr}`;
+    const userCustomNote = saleDescription.trim();
+    const desc = userCustomNote || `Penjualan: ${itemsDescription}${descPromoStr}`;
 
     try {
       const txId = await addTransaction({
@@ -3369,6 +3420,7 @@ export default function App() {
         noBottleStockDeduct: representativeNoBottle,
         bringOwnBottle: representativeBringOwnBottle,
         description: desc,
+        notes: userCustomNote || undefined,
         operatorEmail: opEmail,
         customerName: saleCustomerName.trim() || "Pelanggan Umum",
         items: finalItems
@@ -3391,6 +3443,7 @@ export default function App() {
         noBottleStockDeduct: representativeNoBottle,
         bringOwnBottle: representativeBringOwnBottle,
         description: desc,
+        notes: userCustomNote || undefined,
         operatorEmail: opEmail,
         customerName: saleCustomerName.trim() || "Pelanggan Umum",
         items: finalItems
@@ -3633,6 +3686,7 @@ export default function App() {
           )
         : saleDiscountNominal,
       description: saleDescription || "Pratinjau Nota Penjualan",
+      notes: saleDescription.trim() || undefined,
       operatorEmail: currentUser?.email || customEmail || "Kasir",
       customerName: saleCustomerName.trim() || "Pelanggan Umum",
       items: previewItems
@@ -11744,7 +11798,7 @@ export default function App() {
                           <span>INVOICE : TX-MOCK-2026</span>
                         </div>
                         <div className="flex justify-between">
-                          <span>KASIR   : {currentUser?.email || "admin@bastika.com"}</span>
+                          <span>KASIR   : {formatCashierName(currentUser?.email || "admin@bastika.com")}</span>
                         </div>
                       </div>
 

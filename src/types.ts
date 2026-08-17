@@ -60,6 +60,7 @@ export interface Transaction {
   discountType?: "none" | "free_bottle" | "nominal" | "free_bottle_nominal";
   discountNominal?: number;
   description: string;
+  notes?: string;
   operatorEmail: string;
   customerName?: string;
   claimPromoOnThisTx?: boolean;
