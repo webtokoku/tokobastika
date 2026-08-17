@@ -997,7 +997,14 @@ export async function deleteTransaction(id: string) {
       currentBalance = cashSnap.data().balance;
     }
 
-    // 3. Fetch essence / stocks ref if needed
+    // 3. Fetch alcohol stocks
+    const alcoholCairRef = doc(db, "stocks", "alcohol_cair");
+    const alcoholCairSnap = await transaction.get(alcoholCairRef);
+
+    const alcoholGelRef = doc(db, "stocks", "alcohol_gel");
+    const alcoholGelSnap = await transaction.get(alcoholGelRef);
+
+    // 4. Fetch single item stock refs if present
     let essenceRef = null;
     let essenceSnap = null;
     if (tx.scentName && (tx.volumeMl || 0) > 0) {
@@ -1005,12 +1012,6 @@ export async function deleteTransaction(id: string) {
       essenceRef = doc(db, "stocks", essenceId);
       essenceSnap = await transaction.get(essenceRef);
     }
-
-    const alcoholCairRef = doc(db, "stocks", "alcohol_cair");
-    const alcoholCairSnap = await transaction.get(alcoholCairRef);
-
-    const alcoholGelRef = doc(db, "stocks", "alcohol_gel");
-    const alcoholGelSnap = await transaction.get(alcoholGelRef);
 
     let bottleRef = null;
     let bottleSnap = null;
@@ -1032,32 +1033,101 @@ export async function deleteTransaction(id: string) {
       customerSnap = await transaction.get(customerRef);
     }
 
-    // 4. Perform the inverse stock / cash operations
+    // 5. Multi-item Refs & Reads (ALL READS MUST BE COMPLETED HERE BEFORE WRITES)
+    const essenceRefsMap: Record<string, any> = {};
+    const essenceSnapsMap: Record<string, any> = {};
+    const bottleRefsMap: Record<string, any> = {};
+    const bottleSnapsMap: Record<string, any> = {};
+
+    if (tx.type === "sale" && tx.items && tx.items.length > 0) {
+      for (const item of tx.items) {
+        if (item.isBundling && item.formula && item.formula.length > 0) {
+          for (const ing of item.formula) {
+            if (ing.type === "essence" && ing.scentName && (ing.quantity || 0) > 0) {
+              const essenceId = getNormalizedEssenceStockId(ing.scentName);
+              if (!essenceRefsMap[essenceId]) {
+                const ref = doc(db, "stocks", essenceId);
+                essenceRefsMap[essenceId] = ref;
+                essenceSnapsMap[essenceId] = await transaction.get(ref);
+              }
+            } else if (!item.bringOwnBottle && ing.type === "bottle" && ing.size && ing.size !== "None" && (ing.quantity || 0) > 0) {
+              const botId = getNormalizedBottleStockId(ing.size, ing.bottleType);
+              if (!bottleRefsMap[botId]) {
+                const ref = doc(db, "stocks", botId);
+                bottleRefsMap[botId] = ref;
+                bottleSnapsMap[botId] = await transaction.get(ref);
+              }
+            }
+          }
+        } else {
+          if (item.scentName && (item.volumeMl || 0) > 0) {
+            const essenceId = getNormalizedEssenceStockId(item.scentName);
+            if (!essenceRefsMap[essenceId]) {
+              const ref = doc(db, "stocks", essenceId);
+              essenceRefsMap[essenceId] = ref;
+              essenceSnapsMap[essenceId] = await transaction.get(ref);
+            }
+          }
+          if (!item.bringOwnBottle && item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
+            const botId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
+            if (!bottleRefsMap[botId]) {
+              const ref = doc(db, "stocks", botId);
+              bottleRefsMap[botId] = ref;
+              bottleSnapsMap[botId] = await transaction.get(ref);
+            }
+          }
+        }
+      }
+    }
+
+    // =========================================================================
+    // 6. PERFORM ALL WRITE OPERATIONS (NO MORE READS ALLOWED BELOW THIS LINE)
+    // =========================================================================
     let newBalance = currentBalance;
     const dateStr = new Date().toISOString();
 
     if (tx.type === "sale") {
       // Revert SALE (penjualan)
       if (tx.items && tx.items.length > 0) {
-        // Multi-item revert
+        // Multi-item restore
+        const localEssenceStock: Record<string, number> = {};
+        const localBottleStock: Record<string, number> = {};
+
+        Object.keys(essenceSnapsMap).forEach((essId) => {
+          const snap = essenceSnapsMap[essId];
+          localEssenceStock[essId] = snap && snap.exists() ? snap.data().quantity : 0;
+        });
+
+        Object.keys(bottleSnapsMap).forEach((botId) => {
+          const snap = bottleSnapsMap[botId];
+          localBottleStock[botId] = snap && snap.exists() ? snap.data().quantity : 0;
+        });
+
         let totalAlcoholRestore = 0;
+
         for (const item of tx.items) {
           if (item.isBundling && item.formula && item.formula.length > 0) {
             const bundleQty = item.bottleCount || 1;
             for (const ing of item.formula) {
               if (ing.type === "essence" && ing.scentName && (ing.quantity || 0) > 0) {
                 const essenceId = getNormalizedEssenceStockId(ing.scentName);
-                const essRef = doc(db, "stocks", essenceId);
-                const essSnap = await transaction.get(essRef);
-                if (essSnap.exists()) {
-                  transaction.update(essRef, { quantity: essSnap.data().quantity + ((ing.quantity || 0) * bundleQty) });
+                const restoreQty = (ing.quantity || 0) * bundleQty;
+                const currentQty = localEssenceStock[essenceId] ?? 0;
+                const updatedQty = currentQty + restoreQty;
+                localEssenceStock[essenceId] = updatedQty;
+                const ref = essenceRefsMap[essenceId];
+                if (ref) {
+                  transaction.update(ref, { quantity: updatedQty });
                 }
               } else if (!item.bringOwnBottle && ing.type === "bottle" && ing.size && ing.size !== "None" && (ing.quantity || 0) > 0) {
                 const botId = getNormalizedBottleStockId(ing.size, ing.bottleType);
-                const botRef = doc(db, "stocks", botId);
-                const botSnap = await transaction.get(botRef);
-                if (botSnap.exists()) {
-                  transaction.update(botRef, { quantity: botSnap.data().quantity + ((ing.quantity || 0) * bundleQty) });
+                const restoreQty = (ing.quantity || 0) * bundleQty;
+                const currentQty = localBottleStock[botId] ?? 0;
+                const updatedQty = currentQty + restoreQty;
+                localBottleStock[botId] = updatedQty;
+                const ref = bottleRefsMap[botId];
+                if (ref) {
+                  transaction.update(ref, { quantity: updatedQty });
                 }
               } else if (ing.type === "alcohol" && (ing.quantity || 0) > 0) {
                 totalAlcoholRestore += (ing.quantity || 0) * bundleQty;
@@ -1066,23 +1136,28 @@ export async function deleteTransaction(id: string) {
           } else {
             if (item.scentName && (item.volumeMl || 0) > 0) {
               const essenceId = getNormalizedEssenceStockId(item.scentName);
-              const essRef = doc(db, "stocks", essenceId);
-              const essSnap = await transaction.get(essRef);
-              if (essSnap.exists()) {
-                transaction.update(essRef, { quantity: essSnap.data().quantity + (item.volumeMl || 0) });
+              const restoreQty = item.volumeMl || 0;
+              const currentQty = localEssenceStock[essenceId] ?? 0;
+              const updatedQty = currentQty + restoreQty;
+              localEssenceStock[essenceId] = updatedQty;
+              const ref = essenceRefsMap[essenceId];
+              if (ref) {
+                transaction.update(ref, { quantity: updatedQty });
               }
             }
-            if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
-              // Restore bottle
-              if (!item.bringOwnBottle) {
-                const botId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
-                const botRef = doc(db, "stocks", botId);
-                const botSnap = await transaction.get(botRef);
-                if (botSnap.exists()) {
-                  transaction.update(botRef, { quantity: botSnap.data().quantity + item.bottleCount });
-                }
+            if (!item.bringOwnBottle && item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
+              const botId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
+              const restoreQty = item.bottleCount || 0;
+              const currentQty = localBottleStock[botId] ?? 0;
+              const updatedQty = currentQty + restoreQty;
+              localBottleStock[botId] = updatedQty;
+              const ref = bottleRefsMap[botId];
+              if (ref) {
+                transaction.update(ref, { quantity: updatedQty });
               }
-              // Calculate alcohol to restore
+            }
+            // Calculate alcohol to restore for regular perfume
+            if (item.bottleSize && item.bottleSize !== "None") {
               const bottleCapacity = parseInt(item.bottleSize);
               if (!isNaN(bottleCapacity)) {
                 const diff = bottleCapacity - (item.volumeMl || 0);
@@ -1093,17 +1168,16 @@ export async function deleteTransaction(id: string) {
             }
           }
         }
+
         if (totalAlcoholRestore > 0 && alcoholCairSnap.exists()) {
           transaction.update(alcoholCairRef, { quantity: alcoholCairSnap.data().quantity + totalAlcoholRestore });
         }
       } else {
         // Single-item fallback revert
         // Add back essence stock
-        if (tx.scentName && (tx.volumeMl || 0) > 0 && essenceRef && essenceSnap) {
-          if (essenceSnap.exists()) {
-            const currentQty = essenceSnap.data().quantity;
-            transaction.update(essenceRef, { quantity: currentQty + (tx.volumeMl || 0) });
-          }
+        if (tx.scentName && (tx.volumeMl || 0) > 0 && essenceRef && essenceSnap && essenceSnap.exists()) {
+          const currentQty = essenceSnap.data().quantity;
+          transaction.update(essenceRef, { quantity: currentQty + (tx.volumeMl || 0) });
         }
 
         // Add back alcohol stock
@@ -1126,11 +1200,9 @@ export async function deleteTransaction(id: string) {
         }
 
         // Add back bottle stock
-        if (!tx.bringOwnBottle && bottleSize !== "None" && bottleCount > 0 && bottleRef && bottleSnap) {
-          if (bottleSnap.exists()) {
-            const currentQty = bottleSnap.data().quantity;
-            transaction.update(bottleRef, { quantity: currentQty + bottleCount });
-          }
+        if (!tx.bringOwnBottle && bottleSize !== "None" && bottleCount > 0 && bottleRef && bottleSnap && bottleSnap.exists()) {
+          const currentQty = bottleSnap.data().quantity;
+          transaction.update(bottleRef, { quantity: currentQty + bottleCount });
         }
       }
 
@@ -1152,7 +1224,7 @@ export async function deleteTransaction(id: string) {
         amount: tx.totalPrice,
         balanceBefore: currentBalance,
         balanceAfter: newBalance,
-        description: `Pembatalan Penjualan: ${tx.scentName || "Parfum"} (${tx.volumeMl}ml) + Botol ${tx.bottleSize} x ${tx.bottleCount}`,
+        description: `Pembatalan Penjualan: ${tx.scentName || "Parfum"} (${tx.volumeMl || 0}ml) + Botol ${tx.bottleSize || "-"} x ${tx.bottleCount || 1}`,
         referenceId: id
       });
 
@@ -1169,12 +1241,10 @@ export async function deleteTransaction(id: string) {
     } else if (tx.type === "purchase") {
       // Revert PURCHASE (pembelian)
       // Deduct essence stock
-      if (tx.category === "bibit" && tx.scentName && (tx.volumeMl || 0) > 0 && essenceRef && essenceSnap) {
-        if (essenceSnap.exists()) {
-          const currentQty = essenceSnap.data().quantity;
-          const targetQty = Math.max(0, currentQty - (tx.volumeMl || 0));
-          transaction.update(essenceRef, { quantity: targetQty });
-        }
+      if (tx.category === "bibit" && tx.scentName && (tx.volumeMl || 0) > 0 && essenceRef && essenceSnap && essenceSnap.exists()) {
+        const currentQty = essenceSnap.data().quantity;
+        const targetQty = Math.max(0, currentQty - (tx.volumeMl || 0));
+        transaction.update(essenceRef, { quantity: targetQty });
       }
 
       // Deduct alcohol stock
@@ -1190,12 +1260,10 @@ export async function deleteTransaction(id: string) {
       }
 
       // Deduct bottle stock
-      if (tx.category === "botol" && bottleSize !== "None" && bottleCount > 0 && bottleRef && bottleSnap) {
-        if (bottleSnap.exists()) {
-          const currentQty = bottleSnap.data().quantity;
-          const targetQty = Math.max(0, currentQty - bottleCount);
-          transaction.update(bottleRef, { quantity: targetQty });
-        }
+      if (tx.category === "botol" && bottleSize !== "None" && bottleCount > 0 && bottleRef && bottleSnap && bottleSnap.exists()) {
+        const currentQty = bottleSnap.data().quantity;
+        const targetQty = Math.max(0, currentQty - bottleCount);
+        transaction.update(bottleRef, { quantity: targetQty });
       }
 
       // Add back cash balance (since we cancel purchase)
