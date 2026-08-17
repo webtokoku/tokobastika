@@ -59,6 +59,8 @@ export interface Transaction {
   totalPrice: number;
   discountType?: "none" | "free_bottle" | "nominal" | "free_bottle_nominal";
   discountNominal?: number;
+  isFreeBottlePromo?: boolean;
+  isDiscountNominalPromo?: boolean;
   description: string;
   notes?: string;
   operatorEmail: string;

@@ -1123,6 +1123,23 @@ export default function App() {
     return "";
   };
 
+  // Helper to calculate bottle discount nominal from transaction data
+  const getBottleDiscountAmount = (tx: any): number => {
+    if (!tx) return 0;
+    if (tx.items && Array.isArray(tx.items) && tx.items.length > 0) {
+      return tx.items.reduce((acc: number, item: any) => {
+        if (item.isBundling) return acc;
+        const bottlePrice = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
+        return acc + (bottlePrice * (item.bottleCount || 1));
+      }, 0);
+    }
+    if (tx.bottleSize && tx.bottleSize !== "None") {
+      const bottlePrice = getBottleUnitPrice(tx.bottleSize, tx.bottleType, false, masterProducts, bottleSizes);
+      return bottlePrice * (tx.bottleCount || 1);
+    }
+    return 0;
+  };
+
   // Helper to convert logo image URL into ESC/POS GS v 0 bit-image raster commands with Floyd-Steinberg dithering
   const convertImageUrlToEscPosRaster = (url: string, targetWidthPx: number = 256): Promise<Uint8Array | null> => {
     return new Promise((resolve) => {
@@ -1509,9 +1526,25 @@ export default function App() {
 
     addLine("-".repeat(maxCols));
     addRowWithVal("SUBTOTAL", `Rp ${calcSubtotal.toLocaleString("id-ID")}`);
-    if (tx.discountNominal) {
-      addRowWithVal("DISKON PROMO", `-Rp ${tx.discountNominal.toLocaleString("id-ID")}`);
+    
+    const isFreeBottle = tx.isFreeBottlePromo || tx.discountType === "free_bottle" || tx.discountType === "free_bottle_nominal";
+    const hasNominal = tx.isDiscountNominalPromo || tx.discountType === "nominal" || tx.discountType === "free_bottle_nominal" || tx.claimPromoOnThisTx;
+    const bottleDiscNominal = getBottleDiscountAmount(tx);
+    const extraNominal = tx.discountType === "free_bottle_nominal"
+      ? Math.max(0, (tx.discountNominal || 0) - bottleDiscNominal)
+      : (tx.discountNominal || 0);
+
+    if (isFreeBottle && !hasNominal) {
+      addRowWithVal("PROMO GRATIS BOTOL", "GRATIS");
+    } else if (isFreeBottle && hasNominal) {
+      addRowWithVal("PROMO GRATIS BOTOL", "GRATIS");
+      if (extraNominal > 0) {
+        addRowWithVal("POTONGAN HARGA", `-Rp ${extraNominal.toLocaleString("id-ID")}`);
+      }
+    } else if (tx.discountNominal) {
+      addRowWithVal(getDiscountLabel(tx), `-Rp ${tx.discountNominal.toLocaleString("id-ID")}`);
     }
+
     addBytes([0x1B, 0x45, 0x01]); // Bold on
     addRowWithVal("TOTAL BAYAR", `Rp ${(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}`);
     addBytes([0x1B, 0x45, 0x00]); // Bold off
@@ -1659,7 +1692,10 @@ export default function App() {
                         </div>
                         <div className="flex justify-between text-slate-500 pl-1 leading-tight" style={{ fontSize: f.subRowPx }}>
                           <span className="break-words">
-                            {bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling"}
+                            {item.bringOwnBottle
+                              ? (bottleDesc ? `Ukuran Botol: ${bottleDesc} (Bawa Sendiri)` : "Paket Bundling (Bawa Sendiri)")
+                              : (bottleDesc ? `Ukuran Botol: ${bottleDesc}` : "Paket Bundling")
+                            }
                           </span>
                         </div>
                       </div>
@@ -1772,19 +1808,67 @@ export default function App() {
               ).toLocaleString("id-ID")}
             </span>
           </div>
-          {tx.discountNominal ? (
-            <>
-              <div className="flex justify-between font-bold text-emerald-700 items-baseline" style={{ fontSize: f.metaPx }}>
-                <span>{getDiscountLabel(tx)}</span>
-                <span className="shrink-0 whitespace-nowrap">-Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
-              </div>
-              {tx.claimPromoOnThisTx && (
-                <div className="text-slate-500 italic text-right leading-none" style={{ fontSize: f.subRowPx }}>
-                  * Penukaran Akumulasi Loyalitas Belanja
+          {(() => {
+            const isFreeBottle = tx.isFreeBottlePromo || tx.discountType === "free_bottle" || tx.discountType === "free_bottle_nominal";
+            const hasNominal = tx.isDiscountNominalPromo || tx.discountType === "nominal" || tx.discountType === "free_bottle_nominal" || tx.claimPromoOnThisTx;
+            const bottleDiscNominal = getBottleDiscountAmount(tx);
+            const extraNominal = tx.discountType === "free_bottle_nominal"
+              ? Math.max(0, (tx.discountNominal || 0) - bottleDiscNominal)
+              : (tx.discountNominal || 0);
+
+            if (isFreeBottle && !hasNominal) {
+              return (
+                <div className="flex justify-between font-bold text-emerald-700 items-baseline" style={{ fontSize: f.metaPx }}>
+                  <span>PROMO GRATIS BOTOL</span>
+                  <span className="shrink-0 whitespace-nowrap text-emerald-700 font-bold uppercase tracking-wider text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60">
+                    GRATIS
+                  </span>
                 </div>
-              )}
-            </>
-          ) : null}
+              );
+            }
+
+            if (isFreeBottle && hasNominal) {
+              return (
+                <>
+                  <div className="flex justify-between font-bold text-emerald-700 items-baseline" style={{ fontSize: f.metaPx }}>
+                    <span>PROMO GRATIS BOTOL</span>
+                    <span className="shrink-0 whitespace-nowrap text-emerald-700 font-bold uppercase tracking-wider text-[10px] bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200/60">
+                      GRATIS
+                    </span>
+                  </div>
+                  {extraNominal > 0 && (
+                    <div className="flex justify-between font-bold text-emerald-700 items-baseline" style={{ fontSize: f.metaPx }}>
+                      <span>POTONGAN HARGA (DISKON)</span>
+                      <span className="shrink-0 whitespace-nowrap">-Rp {extraNominal.toLocaleString("id-ID")}</span>
+                    </div>
+                  )}
+                  {tx.claimPromoOnThisTx && (
+                    <div className="text-slate-500 italic text-right leading-none" style={{ fontSize: f.subRowPx }}>
+                      * Penukaran Akumulasi Loyalitas Belanja
+                    </div>
+                  )}
+                </>
+              );
+            }
+
+            if (tx.discountNominal) {
+              return (
+                <>
+                  <div className="flex justify-between font-bold text-emerald-700 items-baseline" style={{ fontSize: f.metaPx }}>
+                    <span>{getDiscountLabel(tx)}</span>
+                    <span className="shrink-0 whitespace-nowrap">-Rp {tx.discountNominal.toLocaleString("id-ID")}</span>
+                  </div>
+                  {tx.claimPromoOnThisTx && (
+                    <div className="text-slate-500 italic text-right leading-none" style={{ fontSize: f.subRowPx }}>
+                      * Penukaran Akumulasi Loyalitas Belanja
+                    </div>
+                  )}
+                </>
+              );
+            }
+
+            return null;
+          })()}
           <div className="flex justify-between font-black border-t border-dotted border-slate-400 pt-1 text-slate-900 items-baseline" style={{ fontSize: f.totalPx }}>
             <span>TOTAL BAYAR</span>
             <span className="shrink-0 whitespace-nowrap">Rp {(tx.scentName === "Klaim Promo Potongan" ? 0 : tx.totalPrice).toLocaleString("id-ID")}</span>
@@ -2245,6 +2329,7 @@ export default function App() {
   const [saleBundlingName, setSaleBundlingName] = useState<string>("");
   const [saleBundlingPrice, setSaleBundlingPrice] = useState<number | string>(0);
   const [saleBundlingCount, setSaleBundlingCount] = useState<number | string>(1);
+  const [saleBundlingBringOwnBottle, setSaleBundlingBringOwnBottle] = useState<boolean>(false);
   const [saleBundlingFormula, setSaleBundlingFormula] = useState<FormulaIngredient[]>([]);
   const [saleBundlingCartInput, setSaleBundlingCartInput] = useState<{
     type: "essence" | "alcohol" | "bottle";
@@ -3305,6 +3390,7 @@ export default function App() {
           volumeMl: bundleEssenceMl,
           bottleSize: "Bundling",
           bottleCount: bCount,
+          bringOwnBottle: saleBundlingBringOwnBottle,
           isBundling: true,
           bundlingName: saleBundlingName.trim(),
           bundlingPrice: bPrice,
@@ -3416,6 +3502,8 @@ export default function App() {
         totalPrice: saleTotalPrice,
         discountType: savedDiscountType,
         discountNominal: computedDiscount,
+        isFreeBottlePromo: saleFreeBottleDiscount,
+        isDiscountNominalPromo: nominalDiscount > 0,
         claimPromoOnThisTx: saleClaimPromo,
         noBottleStockDeduct: representativeNoBottle,
         bringOwnBottle: representativeBringOwnBottle,
@@ -3439,6 +3527,8 @@ export default function App() {
         totalPrice: saleTotalPrice,
         discountType: savedDiscountType,
         discountNominal: computedDiscount,
+        isFreeBottlePromo: saleFreeBottleDiscount,
+        isDiscountNominalPromo: nominalDiscount > 0,
         claimPromoOnThisTx: saleClaimPromo,
         noBottleStockDeduct: representativeNoBottle,
         bringOwnBottle: representativeBringOwnBottle,
@@ -3637,7 +3727,7 @@ export default function App() {
   };
 
   const handlePreviewCurrentSale = () => {
-    if (saleItems.length === 0 && !saleScent) {
+    if (saleItems.length === 0 && !saleScent && !(saleInputMode === "bundling" && saleBundlingName.trim())) {
       showToast("Belum ada item belanja atau aroma yang dipilih untuk dipreview!", "error");
       return;
     }
@@ -3646,6 +3736,24 @@ export default function App() {
     let previewItems: SaleItem[] = [];
     if (saleItems.length > 0) {
       previewItems = saleItems;
+    } else if (saleInputMode === "bundling" && saleBundlingName.trim()) {
+      const bundleEssenceMl = (saleBundlingFormula && Array.isArray(saleBundlingFormula))
+        ? saleBundlingFormula.filter(ing => ing.type === "essence").reduce((sum, ing) => sum + (ing.quantity || 0), 0)
+        : 0;
+      previewItems = [
+        {
+          id: "preview-bundle",
+          scentName: saleBundlingName.trim(),
+          volumeMl: bundleEssenceMl,
+          bottleSize: "Bundling",
+          bottleCount: Number(saleBundlingCount) || 1,
+          bringOwnBottle: saleBundlingBringOwnBottle,
+          isBundling: true,
+          bundlingName: saleBundlingName.trim(),
+          bundlingPrice: Number(saleBundlingPrice) || 0,
+          formula: saleBundlingFormula
+        }
+      ];
     } else if (saleScent) {
       previewItems = [
         {
@@ -3661,6 +3769,14 @@ export default function App() {
       ];
     }
 
+    const calculatedBottleDiscount = saleFreeBottleDiscount
+      ? (previewItems.reduce((acc, item) => {
+          if (item.isBundling) return acc;
+          const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
+          return acc + (bottleFee * (item.bottleCount || 1));
+        }, 0))
+      : 0;
+
     const draftTx: Transaction = {
       id: "INV-PREVIEW-DRAFT",
       type: "sale",
@@ -3675,16 +3791,12 @@ export default function App() {
       noBottleStockDeduct: saleNoBottle,
       bringOwnBottle: saleBringOwnBottle,
       totalPrice: saleTotalPrice,
-      discountType: saleDiscountType,
-      discountNominal: saleDiscountType === "free_bottle" 
-        ? (saleItems.length > 0 
-            ? saleItems.reduce((acc, item) => {
-                const bottleFee = getBottleUnitPrice(item.bottleSize, item.bottleType, false, masterProducts, bottleSizes);
-                return acc + (bottleFee * (item.bottleCount || 1));
-              }, 0)
-            : getBottleUnitPrice(saleBottleSize, saleBottleType, false, masterProducts, bottleSizes) * (saleBottleCount || 1)
-          )
-        : saleDiscountNominal,
+      discountType: (saleFreeBottleDiscount && (saleDiscountNominal || 0) > 0)
+        ? "free_bottle_nominal"
+        : (saleFreeBottleDiscount ? "free_bottle" : ((saleDiscountNominal || 0) > 0 ? "nominal" : "none")),
+      discountNominal: calculatedBottleDiscount + (saleDiscountNominal || 0),
+      isFreeBottlePromo: saleFreeBottleDiscount,
+      isDiscountNominalPromo: (saleDiscountNominal || 0) > 0,
       description: saleDescription || "Pratinjau Nota Penjualan",
       notes: saleDescription.trim() || undefined,
       operatorEmail: currentUser?.email || customEmail || "Kasir",
@@ -8872,6 +8984,26 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Checkbox Bawa Botol Sendiri untuk Bundling */}
+                      <label className="flex items-start gap-3 bg-white border border-slate-200 rounded-xl p-3 cursor-pointer hover:bg-slate-50 transition-colors">
+                        <input
+                          type="checkbox"
+                          checked={saleBundlingBringOwnBottle}
+                          onChange={(e) => {
+                            setSaleBundlingBringOwnBottle(e.target.checked);
+                          }}
+                          className="h-4 w-4 text-emerald-600 focus:ring-emerald-500 border-slate-300 rounded cursor-pointer mt-0.5"
+                        />
+                        <div className="text-left">
+                          <span className="text-xs font-bold text-emerald-700">
+                            Bawa Botol Sendiri (Tidak Potong Stok Botol)
+                          </span>
+                          <p className="text-[10px] text-slate-500 mt-0.5 leading-normal">
+                            Centang jika pembeli membawa botol sendiri untuk paket bundling ini sehingga sistem tidak memotong stok botol toko.
+                          </p>
+                        </div>
+                      </label>
+
                       {/* Formula Input Box for Bundling */}
                       <div className="bg-white p-3.5 rounded-xl border border-slate-200 space-y-3">
                         <span className="font-bold text-xs text-slate-800 block flex items-center gap-1.5">
@@ -9086,6 +9218,7 @@ export default function App() {
                             volumeMl: bundleEssenceMl,
                             bottleSize: "Bundling",
                             bottleCount: finalCount,
+                            bringOwnBottle: saleBundlingBringOwnBottle,
                             isBundling: true,
                             bundlingName: saleBundlingName.trim(),
                             bundlingPrice: finalPrice,
@@ -9098,6 +9231,7 @@ export default function App() {
                           setSaleBundlingName("");
                           setSaleBundlingPrice(0);
                           setSaleBundlingCount(1);
+                          setSaleBundlingBringOwnBottle(false);
                           setSaleBundlingFormula([]);
                         }}
                         className="w-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
@@ -9151,6 +9285,9 @@ export default function App() {
                                     )}
                                     {item.formula && item.formula.length > 0 && (
                                       <span className="text-slate-400">({item.formula.length} bahan formula)</span>
+                                    )}
+                                    {item.bringOwnBottle && (
+                                      <span className="bg-amber-50 text-amber-700 px-1.5 py-0.5 rounded text-[8px] font-bold">Bawa Botol Sendiri</span>
                                     )}
                                   </div>
                                 </div>

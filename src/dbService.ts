@@ -604,7 +604,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
                 essenceRefsMap[essenceId] = ref;
                 essenceSnapsMap[essenceId] = await transaction.get(ref);
               }
-            } else if (ing.type === "bottle" && ing.size && ing.size !== "None" && (ing.quantity || 0) > 0) {
+            } else if (!item.bringOwnBottle && ing.type === "bottle" && ing.size && ing.size !== "None" && (ing.quantity || 0) > 0) {
               const bottleId = getNormalizedBottleStockId(ing.size, ing.bottleType);
               if (!bottleRefsMap[bottleId]) {
                 const ref = doc(db, "stocks", bottleId);
@@ -681,7 +681,7 @@ export async function addTransaction(rawTx: Omit<Transaction, "id">) {
                 if (ref) {
                   transaction.update(ref, { quantity: updatedQty });
                 }
-              } else if (ing.type === "bottle" && ing.size && ing.size !== "None" && (ing.quantity || 0) > 0) {
+              } else if (!item.bringOwnBottle && ing.type === "bottle" && ing.size && ing.size !== "None" && (ing.quantity || 0) > 0) {
                 const bottleId = getNormalizedBottleStockId(ing.size, ing.bottleType);
                 const bottleCountToDeduct = (ing.quantity || 0) * bundleQty;
                 const currentQty = localBottleStock[bottleId] ?? 0;
@@ -1042,30 +1042,53 @@ export async function deleteTransaction(id: string) {
         // Multi-item revert
         let totalAlcoholRestore = 0;
         for (const item of tx.items) {
-          if (item.scentName && (item.volumeMl || 0) > 0) {
-            const essenceId = getNormalizedEssenceStockId(item.scentName);
-            const essRef = doc(db, "stocks", essenceId);
-            const essSnap = await transaction.get(essRef);
-            if (essSnap.exists()) {
-              transaction.update(essRef, { quantity: essSnap.data().quantity + (item.volumeMl || 0) });
-            }
-          }
-          if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
-            // Restore bottle
-            if (!item.bringOwnBottle) {
-              const botId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
-              const botRef = doc(db, "stocks", botId);
-              const botSnap = await transaction.get(botRef);
-              if (botSnap.exists()) {
-                transaction.update(botRef, { quantity: botSnap.data().quantity + item.bottleCount });
+          if (item.isBundling && item.formula && item.formula.length > 0) {
+            const bundleQty = item.bottleCount || 1;
+            for (const ing of item.formula) {
+              if (ing.type === "essence" && ing.scentName && (ing.quantity || 0) > 0) {
+                const essenceId = getNormalizedEssenceStockId(ing.scentName);
+                const essRef = doc(db, "stocks", essenceId);
+                const essSnap = await transaction.get(essRef);
+                if (essSnap.exists()) {
+                  transaction.update(essRef, { quantity: essSnap.data().quantity + ((ing.quantity || 0) * bundleQty) });
+                }
+              } else if (!item.bringOwnBottle && ing.type === "bottle" && ing.size && ing.size !== "None" && (ing.quantity || 0) > 0) {
+                const botId = getNormalizedBottleStockId(ing.size, ing.bottleType);
+                const botRef = doc(db, "stocks", botId);
+                const botSnap = await transaction.get(botRef);
+                if (botSnap.exists()) {
+                  transaction.update(botRef, { quantity: botSnap.data().quantity + ((ing.quantity || 0) * bundleQty) });
+                }
+              } else if (ing.type === "alcohol" && (ing.quantity || 0) > 0) {
+                totalAlcoholRestore += (ing.quantity || 0) * bundleQty;
               }
             }
-            // Calculate alcohol to restore
-            const bottleCapacity = parseInt(item.bottleSize);
-            if (!isNaN(bottleCapacity)) {
-              const diff = bottleCapacity - (item.volumeMl || 0);
-              if (diff > 0) {
-                totalAlcoholRestore += diff * (item.bottleCount || 0);
+          } else {
+            if (item.scentName && (item.volumeMl || 0) > 0) {
+              const essenceId = getNormalizedEssenceStockId(item.scentName);
+              const essRef = doc(db, "stocks", essenceId);
+              const essSnap = await transaction.get(essRef);
+              if (essSnap.exists()) {
+                transaction.update(essRef, { quantity: essSnap.data().quantity + (item.volumeMl || 0) });
+              }
+            }
+            if (item.bottleSize && item.bottleSize !== "None" && (item.bottleCount || 0) > 0) {
+              // Restore bottle
+              if (!item.bringOwnBottle) {
+                const botId = getNormalizedBottleStockId(item.bottleSize, item.bottleType);
+                const botRef = doc(db, "stocks", botId);
+                const botSnap = await transaction.get(botRef);
+                if (botSnap.exists()) {
+                  transaction.update(botRef, { quantity: botSnap.data().quantity + item.bottleCount });
+                }
+              }
+              // Calculate alcohol to restore
+              const bottleCapacity = parseInt(item.bottleSize);
+              if (!isNaN(bottleCapacity)) {
+                const diff = bottleCapacity - (item.volumeMl || 0);
+                if (diff > 0) {
+                  totalAlcoholRestore += diff * (item.bottleCount || 0);
+                }
               }
             }
           }
