@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback, useRef } from "react";
-import { toJpeg } from "html-to-image";
+import { toJpeg, toPng } from "html-to-image";
 import { 
   auth, 
   db,
@@ -155,7 +155,9 @@ import {
   ChevronDown,
   Keyboard,
   GripHorizontal,
-  Move
+  Move,
+  ExternalLink,
+  Copy
 } from "lucide-react";
 
 export const isSameResellerEmail = (email1?: string, email2?: string): boolean => {
@@ -2135,6 +2137,54 @@ export default function App() {
 
   const invoiceRef = useRef<HTMLDivElement>(null);
   const [isExportingJpg, setIsExportingJpg] = useState(false);
+  const [jpgPreviewModal, setJpgPreviewModal] = useState<{ url: string; fileName: string; tx: any } | null>(null);
+
+  const dataUrlToBlob = (dataUrl: string): Blob => {
+    try {
+      const parts = dataUrl.split(";base64,");
+      const contentType = parts[0]?.split(":")[1] || "image/jpeg";
+      const b64 = parts[1] || "";
+      const byteCharacters = atob(b64);
+      const byteArrays = new Uint8Array(byteCharacters.length);
+      for (let i = 0; i < byteCharacters.length; i++) {
+        byteArrays[i] = byteCharacters.charCodeAt(i);
+      }
+      return new Blob([byteArrays], { type: contentType });
+    } catch (e) {
+      console.warn("dataUrlToBlob conversion fallback:", e);
+      return new Blob([], { type: "image/jpeg" });
+    }
+  };
+
+  const generateInvoiceImage = async (node: HTMLElement): Promise<string> => {
+    const renderOpts = {
+      quality: 0.95,
+      backgroundColor: "#ffffff",
+      skipFonts: true,
+      cacheBust: false,
+      pixelRatio: 2,
+      style: {
+        margin: "0",
+        transform: "none"
+      }
+    };
+
+    try {
+      return await toJpeg(node, renderOpts);
+    } catch (jpegErr) {
+      console.warn("toJpeg failed, attempting toPng fallback:", jpegErr);
+      try {
+        return await toPng(node, renderOpts);
+      } catch (pngErr) {
+        console.warn("toPng failed with pixelRatio, trying basic toJpeg:", pngErr);
+        return await toJpeg(node, {
+          quality: 0.9,
+          backgroundColor: "#ffffff",
+          skipFonts: true
+        });
+      }
+    }
+  };
 
   const handleExportInvoiceJpg = async (tx: any, shareDirect: boolean = true) => {
     if (!invoiceRef.current) {
@@ -2143,25 +2193,26 @@ export default function App() {
     }
     setIsExportingJpg(true);
     try {
-      const dataUrl = await toJpeg(invoiceRef.current, {
-        quality: 0.95,
-        backgroundColor: "#ffffff",
-        pixelRatio: 2
-      });
+      const dataUrl = await generateInvoiceImage(invoiceRef.current);
+      const blob = dataUrlToBlob(dataUrl);
+      const isPng = blob.type.includes("png");
+      const fileExt = isPng ? "png" : "jpg";
+      const mimeType = isPng ? "image/png" : "image/jpeg";
+      const fileName = `Invoice_Bastika_${tx?.id || tx?.invoiceNo || Date.now()}.${fileExt}`;
 
-      const fileName = `Invoice_Bastika_${tx?.id || Date.now()}.jpg`;
+      let shareExecutedSuccessfully = false;
 
       if (shareDirect && typeof navigator !== "undefined" && navigator.share) {
+        const file = new File([blob], fileName, { type: mimeType });
+
+        // Method 1: Web Share API Level 2 (files sharing)
         try {
-          const res = await fetch(dataUrl);
-          const blob = await res.blob();
-          const file = new File([blob], fileName, { type: "image/jpeg" });
           if (navigator.canShare && navigator.canShare({ files: [file] })) {
             await navigator.share({
               files: [file],
-              title: `Invoice ${tx?.id || ""}`,
-              text: `Invoice Pembelian Bastika Parfum - No. ${tx?.id || ""}`
+              title: `Invoice ${tx?.id || tx?.invoiceNo || ""}`
             });
+            shareExecutedSuccessfully = true;
             showToast("Invoice JPG berhasil dibagikan!", "success");
             setIsExportingJpg(false);
             return;
@@ -2171,21 +2222,53 @@ export default function App() {
             setIsExportingJpg(false);
             return;
           }
-          console.warn("Direct share API failed, downloading file instead:", shareErr);
+          console.warn("WebShare with files failed, trying direct files:", shareErr);
+        }
+
+        // Method 2: Direct files array fallback without title
+        if (!shareExecutedSuccessfully) {
+          try {
+            await navigator.share({
+              files: [file]
+            });
+            shareExecutedSuccessfully = true;
+            showToast("Invoice JPG berhasil dibagikan!", "success");
+            setIsExportingJpg(false);
+            return;
+          } catch (shareErr2: any) {
+            if (shareErr2.name === "AbortError") {
+              setIsExportingJpg(false);
+              return;
+            }
+            console.warn("Minimal navigator.share failed:", shareErr2);
+          }
         }
       }
 
-      // Fallback: Download JPG directly
-      const link = document.createElement("a");
-      link.download = fileName;
-      link.href = dataUrl;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      showToast("Invoice berhasil diunduh sebagai gambar JPG!", "success");
+      // Download file to device storage
+      try {
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.download = fileName;
+        link.href = objectUrl;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 15000);
+      } catch (dlErr) {
+        console.warn("Direct download link trigger failed:", dlErr);
+      }
+
+      if (shareDirect) {
+        // When user clicked Bagikan JPG but environment cannot open native share sheet (e.g. PC browser, iFrame, unsupported Android WebView)
+        setJpgPreviewModal({ url: dataUrl, fileName, tx });
+        showToast("Gambar invoice telah diunduh & siap dibagikan ke WhatsApp!", "info");
+      } else {
+        showToast("Invoice berhasil diunduh sebagai gambar JPG!", "success");
+      }
     } catch (err: any) {
       console.error("Gagal export invoice ke JPG:", err);
-      showToast("Gagal memproses gambar invoice JPG", "error");
+      showToast(`Gagal memproses gambar invoice: ${err?.message || "Format tidak didukung"}`, "error");
     } finally {
       setIsExportingJpg(false);
     }
@@ -12901,6 +12984,94 @@ export default function App() {
                 </div>
               </div>
 
+            </div>
+          )}
+
+          {/* Modal Preview Gambar JPG Invoice (Untuk Direct Share / WhatsApp / Download) */}
+          {jpgPreviewModal && (
+            <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-sm z-[9999] flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+              <div className="bg-slate-900 border border-slate-700/80 rounded-2xl max-w-sm w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                {/* Header */}
+                <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/60">
+                  <div className="flex items-center gap-2">
+                    <div className="h-8 w-8 rounded-lg bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                      <Image className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-white text-sm">Invoice JPG Siap</h4>
+                      <p className="text-[11px] text-slate-400 font-mono truncate max-w-[180px]">{jpgPreviewModal.fileName}</p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setJpgPreviewModal(null)}
+                    className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <X className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Content - Image Preview */}
+                <div className="p-4 overflow-y-auto flex flex-col items-center bg-slate-950/40 space-y-3">
+                  <div className="bg-white p-2 rounded-lg shadow-inner max-w-full flex justify-center border border-slate-300">
+                    <img
+                      src={jpgPreviewModal.url}
+                      alt="Preview Invoice JPG"
+                      className="max-h-[50vh] object-contain rounded shadow select-auto"
+                    />
+                  </div>
+
+                  <div className="bg-sky-500/10 border border-sky-500/20 rounded-xl p-3 text-left w-full text-[11px] text-sky-300 leading-normal flex gap-2 items-start">
+                    <Info className="h-4 w-4 shrink-0 mt-0.5 text-sky-400" />
+                    <span>
+                      <strong>Tips di HP:</strong> Tekan & tahan (long-press) gambar di atas untuk memilih <em>"Bagikan Gambar"</em> atau <em>"Simpan Gambar"</em> langsung ke WhatsApp / Galeri.
+                    </span>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="p-3.5 border-t border-slate-800 bg-slate-950/80 flex flex-col gap-2">
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const link = document.createElement("a");
+                        link.download = jpgPreviewModal.fileName;
+                        link.href = jpgPreviewModal.url;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        showToast("Invoice berhasil diunduh ke galeri/file!", "success");
+                      }}
+                      className="flex-1 bg-sky-600 hover:bg-sky-500 text-white font-bold text-xs py-2.5 rounded-xl shadow flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <Download className="h-3.5 w-3.5" />
+                      <span>Unduh File</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const w = window.open("");
+                        if (w) {
+                          w.document.write(`<img src="${jpgPreviewModal.url}" style="max-width:100%; height:auto; display:block; margin:auto;" />`);
+                        }
+                      }}
+                      className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                      <span>Buka Tab Baru</span>
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setJpgPreviewModal(null)}
+                    className="w-full border border-slate-700 text-slate-400 hover:text-white hover:bg-slate-800 font-bold text-xs py-2 rounded-xl transition-all cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
