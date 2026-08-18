@@ -2027,73 +2027,115 @@ export async function sendBundlingPackageToReseller(
     }
     const pkg = pkgSnap.data() as BundlingPackage;
 
-    const ingredients = getPackageIngredients(pkg);
-    
-    // Create stock refs with fallback for legacy IDs
-    const ingredientRefs = ingredients.map(ing => {
+    const rawIngredients = getPackageIngredients(pkg);
+
+    // Aggregate ingredients by canonical stock ID to prevent race/overwrite issues
+    const aggregatedMap = new Map<string, {
+      stockId: string;
+      legacyStockId: string;
+      displayName: string;
+      type: "essence" | "bottle" | "alcohol";
+      scentName?: string;
+      size?: string;
+      bottleType?: "Kaca" | "Plastik" | string;
+      solventType?: string;
+      unitQty: number;
+      totalNeeded: number;
+    }>();
+
+    for (const ing of rawIngredients) {
       const stockId = getStockDocId(ing);
       const legacyStockId = ing.type === "essence" && ing.scentName ? `essence_${ing.scentName.replace(/\s+/g, "_").toLowerCase()}` : stockId;
-      return {
-        ref: doc(db, "stocks", stockId),
-        legacyRef: doc(db, "stocks", legacyStockId),
-        ing,
-        stockId,
-        legacyStockId
-      };
-    });
+      
+      let displayName = "";
+      if (ing.type === "essence") {
+        displayName = `bibit aroma ${ing.scentName || "Parfum"}`;
+      } else if (ing.type === "bottle") {
+        displayName = `botol ${ing.size || "30ml"} (${ing.bottleType || "Kaca"})`;
+      } else {
+        displayName = `cairan pelarut (${ing.solventType || "Absolut Cair"})`;
+      }
+
+      const existing = aggregatedMap.get(stockId);
+      if (existing) {
+        existing.unitQty += ing.quantity;
+        existing.totalNeeded += ing.quantity * quantity;
+      } else {
+        aggregatedMap.set(stockId, {
+          stockId,
+          legacyStockId,
+          displayName,
+          type: ing.type,
+          scentName: ing.scentName,
+          size: ing.size,
+          bottleType: ing.bottleType,
+          solventType: ing.solventType,
+          unitQty: ing.quantity,
+          totalNeeded: ing.quantity * quantity
+        });
+      }
+    }
+
+    const items = Array.from(aggregatedMap.values());
 
     // Fetch all stock snapshots inside transaction (READS first!)
     const snaps: { [stockId: string]: DocumentSnapshot } = {};
     const targetRefsMap: { [stockId: string]: DocumentReference } = {};
 
-    for (const item of ingredientRefs) {
-      if (!snaps[item.stockId]) {
-        let primarySnap = await transaction.get(item.ref);
-        let refToUse = item.ref;
+    for (const item of items) {
+      const primaryRef = doc(db, "stocks", item.stockId);
+      const legacyRef = doc(db, "stocks", item.legacyStockId);
+      
+      let primarySnap = await transaction.get(primaryRef);
+      let refToUse = primaryRef;
 
-        if ((!primarySnap.exists() || (primarySnap.data()?.quantity || 0) === 0) && item.stockId !== item.legacyStockId) {
-          const legacySnap = await transaction.get(item.legacyRef);
-          if (legacySnap.exists() && (legacySnap.data()?.quantity || 0) > 0) {
-            primarySnap = legacySnap;
-            refToUse = item.legacyRef;
-          }
+      if ((!primarySnap.exists() || (primarySnap.data()?.quantity || 0) === 0) && item.stockId !== item.legacyStockId) {
+        const legacySnap = await transaction.get(legacyRef);
+        if (legacySnap.exists() && (legacySnap.data()?.quantity || 0) > 0) {
+          primarySnap = legacySnap;
+          refToUse = legacyRef;
         }
-
-        snaps[item.stockId] = primarySnap;
-        targetRefsMap[item.stockId] = refToUse;
       }
+
+      snaps[item.stockId] = primarySnap;
+      targetRefsMap[item.stockId] = refToUse;
     }
 
     const resellerPkgStockRef = doc(db, "reseller_package_stocks", resellerPkgStockId);
     const resellerPkgStockSnap = await transaction.get(resellerPkgStockRef);
 
     // Verify availability in master stocks
-    for (const item of ingredientRefs) {
+    for (const item of items) {
       const snap = snaps[item.stockId];
-      const needed = item.ing.quantity * quantity;
-      const available = snap.exists() ? (snap.data().quantity || 0) : 0;
+      const needed = item.totalNeeded;
+      const available = (snap && snap.exists()) ? (snap.data().quantity || 0) : 0;
       if (available < needed) {
-        let displayName = "";
-        if (item.ing.type === "essence") {
-          displayName = `bibit aroma ${item.ing.scentName}`;
-        } else if (item.ing.type === "bottle") {
-          displayName = `botol ${item.ing.size} (${item.ing.bottleType})`;
-        } else {
-          displayName = `cairan pelarut (${item.ing.solventType})`;
-        }
-        throw new Error(`Stok utama ${displayName} tidak mencukupi! Tersedia: ${available} unit, Butuh: ${needed} unit`);
+        throw new Error(`Stok utama ${item.displayName} tidak mencukupi untuk dirakit ke paket reseller! Tersedia di Master: ${available}, Butuh: ${needed}`);
       }
     }
 
     // === ALL READS COMPLETED. NOW DO ALL WRITES ===
 
     // Perform master stock deductions
-    for (const item of ingredientRefs) {
+    for (const item of items) {
       const snap = snaps[item.stockId];
-      const targetRef = targetRefsMap[item.stockId] || item.ref;
-      const needed = item.ing.quantity * quantity;
-      const current = snap.exists() ? (snap.data().quantity || 0) : 0;
-      transaction.update(targetRef, { quantity: current - needed });
+      const targetRef = targetRefsMap[item.stockId] || doc(db, "stocks", item.stockId);
+      const needed = item.totalNeeded;
+      const current = (snap && snap.exists()) ? (snap.data().quantity || 0) : 0;
+      const newQty = Math.max(0, current - needed);
+      
+      if (snap && snap.exists()) {
+        transaction.update(targetRef, { quantity: newQty });
+      } else {
+        transaction.set(targetRef, {
+          id: item.stockId,
+          type: item.type,
+          scentName: item.scentName || "",
+          size: item.size || "",
+          bottleType: item.bottleType || "Kaca",
+          quantity: newQty
+        });
+      }
     }
 
     // Increment Reseller Package Stock
@@ -2106,8 +2148,8 @@ export async function sendBundlingPackageToReseller(
         resellerEmail: resellerEmail.trim().toLowerCase(),
         packageId,
         packageName: pkg.packageName,
-        scentName: pkg.scentName || (ingredients.find(i => i.type === "essence")?.scentName || "Multi Scent"),
-        bottleSize: pkg.bottleSize || (ingredients.find(i => i.type === "bottle")?.size || "Custom"),
+        scentName: pkg.scentName || (rawIngredients.find(i => i.type === "essence")?.scentName || "Multi Scent"),
+        bottleSize: pkg.bottleSize || (rawIngredients.find(i => i.type === "bottle")?.size || "Custom"),
         quantity: quantity
       });
     }
@@ -2120,10 +2162,10 @@ export async function sendBundlingPackageToReseller(
       type: "transfer",
       date: new Date().toISOString(),
       category: "bundling",
-      scentName: pkg.scentName || (ingredients.find(i => i.type === "essence")?.scentName || "Multi Scent"),
-      bottleSize: pkg.bottleSize || (ingredients.find(i => i.type === "bottle")?.size || "Custom"),
+      scentName: pkg.scentName || (rawIngredients.find(i => i.type === "essence")?.scentName || "Multi Scent"),
+      bottleSize: pkg.bottleSize || (rawIngredients.find(i => i.type === "bottle")?.size || "Custom"),
       bottleCount: quantity,
-      volumeMl: (pkg.essenceMl || (ingredients.find(i => i.type === "essence")?.quantity || 0)) * quantity,
+      volumeMl: (pkg.essenceMl || (rawIngredients.find(i => i.type === "essence")?.quantity || 0)) * quantity,
       totalPrice: 0,
       description: `Kirim Paket Bundling ${pkg.packageName} sebanyak ${quantity} unit ke ${resellerEmail}`,
       operatorEmail,
@@ -2225,56 +2267,77 @@ export async function returBundlingPackageFromReseller(
       ];
     }
 
-    // Create stock refs for ingredients to return to master stock
-    const ingredientRefs = ingredients.map(ing => {
+    // Aggregate return quantities by canonical stock ID
+    const aggregatedMap = new Map<string, {
+      stockId: string;
+      type: "essence" | "bottle" | "alcohol";
+      scentName?: string;
+      size?: string;
+      bottleType?: "Kaca" | "Plastik" | string;
+      solventType?: string;
+      totalReturned: number;
+    }>();
+
+    for (const ing of ingredients) {
       const stockId = getStockDocId(ing);
-      return {
-        ref: doc(db, "stocks", stockId),
-        ing,
-        stockId
-      };
-    });
+      const existing = aggregatedMap.get(stockId);
+      if (existing) {
+        existing.totalReturned += ing.quantity * quantityToReturn;
+      } else {
+        aggregatedMap.set(stockId, {
+          stockId,
+          type: ing.type,
+          scentName: ing.scentName,
+          size: ing.size,
+          bottleType: ing.bottleType,
+          solventType: ing.solventType,
+          totalReturned: ing.quantity * quantityToReturn
+        });
+      }
+    }
+
+    const items = Array.from(aggregatedMap.values());
 
     // Fetch snapshots inside transaction (READS first!)
     const snaps: { [stockId: string]: DocumentSnapshot } = {};
-    for (const item of ingredientRefs) {
-      if (!snaps[item.stockId]) {
-        snaps[item.stockId] = await transaction.get(item.ref);
-      }
+    for (const item of items) {
+      const stockRef = doc(db, "stocks", item.stockId);
+      snaps[item.stockId] = await transaction.get(stockRef);
     }
 
     // === ALL READS COMPLETED. NOW DO WRITES ===
 
     // Update Master Stocks (add back the ingredients)
-    for (const item of ingredientRefs) {
+    for (const item of items) {
       const snap = snaps[item.stockId];
-      const returnedQty = item.ing.quantity * quantityToReturn;
+      const stockRef = doc(db, "stocks", item.stockId);
+      const returnedQty = item.totalReturned;
       const current = (snap && snap.exists()) ? (snap.data().quantity || 0) : 0;
 
       if (snap && snap.exists()) {
-        transaction.update(item.ref, { quantity: current + returnedQty });
+        transaction.update(stockRef, { quantity: current + returnedQty });
       } else {
         // Create stock doc if it didn't exist
-        if (item.ing.type === "essence") {
-          transaction.set(item.ref, {
+        if (item.type === "essence") {
+          transaction.set(stockRef, {
             id: item.stockId,
             type: "essence",
-            scentName: item.ing.scentName,
+            scentName: item.scentName || "Bibit",
             quantity: returnedQty
           });
-        } else if (item.ing.type === "bottle") {
-          transaction.set(item.ref, {
+        } else if (item.type === "bottle") {
+          transaction.set(stockRef, {
             id: item.stockId,
             type: "bottle",
-            size: item.ing.size,
-            bottleType: item.ing.bottleType || "Kaca",
+            size: item.size || "30ml",
+            bottleType: item.bottleType || "Kaca",
             quantity: returnedQty
           });
         } else {
-          transaction.set(item.ref, {
+          transaction.set(stockRef, {
             id: item.stockId,
             type: "alcohol",
-            scentName: item.ing.solventType || "Absolut Cair",
+            scentName: item.solventType || "Absolut Cair",
             quantity: returnedQty
           });
         }

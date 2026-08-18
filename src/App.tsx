@@ -4921,38 +4921,47 @@ export default function App() {
       return;
     }
 
+    const rawIngredients: FormulaIngredient[] = selectedPkg.ingredients && selectedPkg.ingredients.length > 0
+      ? selectedPkg.ingredients
+      : [
+          ...(selectedPkg.scentName ? [{ type: "essence" as const, scentName: selectedPkg.scentName, quantity: selectedPkg.essenceMl }] : []),
+          { type: "bottle" as const, size: selectedPkg.bottleSize, bottleType: "Kaca" as const, quantity: 1 },
+          { type: "alcohol" as const, solventType: selectedPkg.solventType || "Absolut Cair", quantity: selectedPkg.alcoholMl }
+        ];
+
     // Client-side verification of stock levels
-    const reqBottle = quantity;
-    const reqEssence = selectedPkg.essenceMl * quantity;
-    const reqAlcohol = selectedPkg.alcoholMl * quantity;
-
-    const bottleIngredient = selectedPkg.ingredients?.find(i => i.type === "bottle") || { type: "bottle", size: selectedPkg.bottleSize, bottleType: "Kaca" as const };
-    const bType = bottleIngredient.bottleType || "Kaca";
-
-    const bottleStockId = getNormalizedBottleStockId(bottleIngredient.size || selectedPkg.bottleSize, bType);
-    const alcoholStockId = (selectedPkg.solventType === "Absolut Gel" || selectedPkg.scentName === "Absolut Gel") ? "alcohol_gel" : "alcohol_cair";
-
-    const availBottle = stocks.find(s => s.id === bottleStockId)?.quantity || 0;
-    const availEssence = getEssenceStockQty(selectedPkg.scentName);
-    const availAlcohol = stocks.find(s => s.id === alcoholStockId)?.quantity || 0;
-
-    if (availBottle < reqBottle) {
-      showToast(`Stok utama botol ${selectedPkg.bottleSize} (${bType}) tidak mencukupi! Tersedia: ${availBottle} pcs, Butuh: ${reqBottle} pcs`, "error");
-      return;
-    }
-    if (availEssence < reqEssence) {
-      showToast(`Stok utama bibit aroma ${selectedPkg.scentName} tidak mencukupi! Tersedia: ${availEssence} ml, Butuh: ${reqEssence} ml`, "error");
-      return;
-    }
-    if (availAlcohol < reqAlcohol) {
-      showToast(`Stok utama cairan pelarut (Absolut) tidak mencukupi! Tersedia: ${availAlcohol} ml, Butuh: ${reqAlcohol} ml`, "error");
-      return;
+    for (const ing of rawIngredients) {
+      const needed = ing.quantity * quantity;
+      if (ing.type === "essence") {
+        const avail = getEssenceStockQty(ing.scentName);
+        if (avail < needed) {
+          showToast(`Stok utama bibit aroma "${ing.scentName}" tidak mencukupi! Tersedia: ${avail} ml, Butuh: ${needed} ml`, "error");
+          return;
+        }
+      } else if (ing.type === "bottle") {
+        const bType = ing.bottleType || "Kaca";
+        const bSize = ing.size || selectedPkg.bottleSize;
+        const bId = getNormalizedBottleStockId(bSize, bType);
+        const avail = stocks.find(s => s.id === bId || (s.type === "bottle" && s.size?.toLowerCase() === bSize.toLowerCase() && (s.bottleType || "kaca").toLowerCase() === bType.toLowerCase()))?.quantity || 0;
+        if (avail < needed) {
+          showToast(`Stok utama botol "${bSize}" (${bType}) tidak mencukupi! Tersedia: ${avail} pcs, Butuh: ${needed} pcs`, "error");
+          return;
+        }
+      } else if (ing.type === "alcohol") {
+        const isGel = ing.solventType === "Absolut Gel" || ing.scentName === "Absolut Gel";
+        const alcId = isGel ? "alcohol_gel" : "alcohol_cair";
+        const avail = stocks.find(s => s.id === alcId || (s.type === "alcohol" && (isGel ? s.scentName?.toLowerCase().includes("gel") : !s.scentName?.toLowerCase().includes("gel"))))?.quantity || 0;
+        if (avail < needed) {
+          showToast(`Stok utama pelarut (${ing.solventType || "Absolut Cair"}) tidak mencukupi! Tersedia: ${avail} ml, Butuh: ${needed} ml`, "error");
+          return;
+        }
+      }
     }
 
     try {
       const operator = currentUser?.email || customEmail || "admin";
       await sendBundlingPackageToReseller(resellerEmail, packageId, quantity, operator);
-      showToast(`Berhasil mengirimkan ${quantity} unit paket bundling ke reseller!`, "success");
+      showToast(`Berhasil mengirimkan ${quantity} unit paket bundling ke reseller! Stok inventori master langsung terpotong.`, "success");
       setSendPackageForm(prev => ({ ...prev, quantity: 1, packageId: "" }));
     } catch (err: any) {
       showToast(err.message || "Gagal mengirimkan paket bundling", "error");
@@ -5688,49 +5697,71 @@ export default function App() {
                   const selectedPkg = bundlingPackages.find(p => p.id === sendPackageForm.packageId);
                   if (!selectedPkg) return null;
 
-                  const reqBottle = sendPackageForm.quantity;
-                  const reqEssence = selectedPkg.essenceMl * sendPackageForm.quantity;
-                  const reqAlcohol = selectedPkg.alcoholMl * sendPackageForm.quantity;
+                  const rawIngredients: FormulaIngredient[] = selectedPkg.ingredients && selectedPkg.ingredients.length > 0
+                    ? selectedPkg.ingredients
+                    : [
+                        ...(selectedPkg.scentName ? [{ type: "essence" as const, scentName: selectedPkg.scentName, quantity: selectedPkg.essenceMl }] : []),
+                        { type: "bottle" as const, size: selectedPkg.bottleSize, bottleType: "Kaca" as const, quantity: 1 },
+                        { type: "alcohol" as const, solventType: selectedPkg.solventType || "Absolut Cair", quantity: selectedPkg.alcoholMl }
+                      ];
 
-                  const bottleIngredient = selectedPkg.ingredients?.find(i => i.type === "bottle") || { type: "bottle", size: selectedPkg.bottleSize, bottleType: "Kaca" as const };
-                  const bType = bottleIngredient.bottleType || "Kaca";
+                  let hasEnoughAll = true;
 
-                  const bottleStockId = getNormalizedBottleStockId(bottleIngredient.size || selectedPkg.bottleSize, bType);
-                  const alcoholStockId = (selectedPkg.solventType === "Absolut Gel" || selectedPkg.scentName === "Absolut Gel") ? "alcohol_gel" : "alcohol_cair";
+                  const ingredientStatus = rawIngredients.map((ing, idx) => {
+                    const req = ing.quantity * (sendPackageForm.quantity || 0);
+                    let label = "";
+                    let avail = 0;
+                    let unit = "";
 
-                  const availBottle = stocks.find(s => s.id === bottleStockId)?.quantity || 0;
-                  const availEssence = getEssenceStockQty(selectedPkg.scentName);
-                  const availAlcohol = stocks.find(s => s.id === alcoholStockId)?.quantity || 0;
+                    if (ing.type === "essence") {
+                      label = `Bibit ${ing.scentName}`;
+                      avail = getEssenceStockQty(ing.scentName);
+                      unit = "ml";
+                    } else if (ing.type === "bottle") {
+                      const bType = ing.bottleType || "Kaca";
+                      const bSize = ing.size || selectedPkg.bottleSize;
+                      label = `Botol ${bSize} (${bType})`;
+                      const bId = getNormalizedBottleStockId(bSize, bType);
+                      avail = stocks.find(s => s.id === bId || (s.type === "bottle" && s.size?.toLowerCase() === bSize.toLowerCase() && (s.bottleType || "kaca").toLowerCase() === bType.toLowerCase()))?.quantity || 0;
+                      unit = "pcs";
+                    } else {
+                      label = `Pelarut ${ing.solventType || "Absolut Cair"}`;
+                      const isGel = ing.solventType === "Absolut Gel" || ing.scentName === "Absolut Gel";
+                      const alcId = isGel ? "alcohol_gel" : "alcohol_cair";
+                      avail = stocks.find(s => s.id === alcId || (s.type === "alcohol" && (isGel ? s.scentName?.toLowerCase().includes("gel") : !s.scentName?.toLowerCase().includes("gel"))))?.quantity || 0;
+                      unit = "ml";
+                    }
 
-                  const hasEnoughBottle = availBottle >= reqBottle;
-                  const hasEnoughEssence = availEssence >= reqEssence;
-                  const hasEnoughAlcohol = availAlcohol >= reqAlcohol;
-                  const hasEnoughAll = hasEnoughBottle && hasEnoughEssence && hasEnoughAlcohol;
+                    const hasEnough = avail >= req;
+                    if (!hasEnough) hasEnoughAll = false;
+
+                    return { idx, label, req, avail, unit, hasEnough };
+                  });
 
                   return (
-                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-1.5 text-xs">
-                      <span className="font-bold text-slate-600 block text-[10px] uppercase">Estimasi Bahan Diperlukan:</span>
-                      <div className="flex justify-between">
-                        <span>Botol {selectedPkg.bottleSize} ({bType}):</span>
-                        <span className={hasEnoughBottle ? "text-emerald-600" : "text-rose-600 font-bold"}>
-                          {reqBottle} pcs (Stok: {availBottle})
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2 text-xs">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-1">
+                        <span className="font-bold text-slate-700 block text-[10px] uppercase">Estimasi Bahan Diperlukan:</span>
+                        <span className="text-[10px] text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded font-semibold border border-emerald-200">
+                          Auto Potong Stok Master
                         </span>
                       </div>
-                      <div className="flex justify-between">
-                        <span>Bibit {selectedPkg.scentName}:</span>
-                        <span className={hasEnoughEssence ? "text-emerald-600" : "text-rose-600 font-bold"}>
-                          {reqEssence} ml (Stok: {availEssence} ml)
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span>Cairan {selectedPkg.solventType || "Absolut Cair"}:</span>
-                        <span className={hasEnoughAlcohol ? "text-emerald-600" : "text-rose-600 font-bold"}>
-                          {reqAlcohol} ml (Stok: {availAlcohol} ml)
-                        </span>
+                      <div className="space-y-1">
+                        {ingredientStatus.map((item) => (
+                          <div key={item.idx} className="flex justify-between items-center text-[11px]">
+                            <span className="text-slate-600 font-medium">{item.label}:</span>
+                            <span className={item.hasEnough ? "text-emerald-700 font-bold" : "text-rose-600 font-bold"}>
+                              {item.req} {item.unit} <span className="text-[10px] text-slate-400 font-normal">(Tersedia: {item.avail})</span>
+                            </span>
+                          </div>
+                        ))}
                       </div>
                       {!hasEnoughAll && sendPackageForm.quantity > 0 && (
-                        <p className="text-[10px] text-rose-500 italic mt-1">Peringatan: Stok bahan utama tidak cukup untuk dirakit!</p>
+                        <p className="text-[10px] text-rose-500 italic mt-1 font-semibold">⚠️ Peringatan: Stok bahan utama di inventori master tidak mencukupi untuk dirakit!</p>
                       )}
+                      <p className="text-[9.5px] text-slate-400 leading-tight pt-1 border-t border-slate-100">
+                        * Persediaan bahan di <strong>Inventori Stok Master</strong> akan langsung berkurang seketika saat pengiriman dilakukan agar stok tetap sinkron.
+                      </p>
                     </div>
                   );
                 })()}
