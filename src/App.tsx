@@ -5238,52 +5238,121 @@ export default function App() {
                 Belum ada paket bundling titipan yang dikirimkan oleh Admin ke Anda.
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {myPackageStocks.map(pkgStock => {
-                  const pkgFormula = bundlingPackages.find(p => p.id === pkgStock.packageId);
-                  const price = pkgFormula ? pkgFormula.price : 0;
-                  const isSelected = resellerSaleForm.packageId === pkgStock.packageId;
+              <div className="space-y-5">
+                {(() => {
+                  // Standardized size resolution & grouping
+                  const getPkgSize = (s: ResellerPackageStock): string => {
+                    let raw = (s.bottleSize || "").trim();
+                    if (!raw) {
+                      const pkg = bundlingPackages.find(p => p.id === s.packageId);
+                      if (pkg?.bottleSize) raw = pkg.bottleSize.trim();
+                      else if (pkg?.ingredients) {
+                        const bIng = pkg.ingredients.find(i => i.type === "bottle");
+                        if (bIng?.size) raw = bIng.size.trim();
+                      }
+                    }
+                    if (!raw) {
+                      const match = (s.packageName || "").match(/(\d+[\s_-]*(?:ml|liter|lt|gr|gram))/i) || (s.packageName || "").match(/(\d+\s*ml)/i);
+                      if (match) raw = match[0];
+                    }
+                    if (!raw) return "Lainnya";
+                    return raw.toLowerCase().replace(/[\s_-]+/g, "");
+                  };
 
-                  return (
-                    <div 
-                      key={pkgStock.id} 
-                      className={`bg-slate-950/40 border rounded-2xl p-5 transition-all flex flex-col justify-between cursor-pointer ${
-                        isSelected 
-                          ? "border-emerald-500 ring-1 ring-emerald-500 bg-slate-900/60" 
-                          : "border-slate-800 hover:border-slate-700"
-                      }`}
-                      onClick={() => {
-                        setResellerSaleForm({
-                          packageId: pkgStock.packageId,
-                          scentName: pkgStock.scentName,
-                          quantity: 1
-                        });
-                      }}
-                    >
-                      <div className="space-y-3">
-                        <div className="flex justify-between items-start gap-2">
-                          <h4 className="text-sm font-bold text-white leading-snug">{pkgStock.packageName}</h4>
-                          {isSelected && (
-                            <span className="bg-emerald-500/10 text-emerald-400 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-500/20">
-                              Terpilih
-                            </span>
-                          )}
+                  const groups: { [size: string]: ResellerPackageStock[] } = {};
+                  for (const s of myPackageStocks) {
+                    const sizeKey = getPkgSize(s);
+                    if (!groups[sizeKey]) groups[sizeKey] = [];
+                    groups[sizeKey].push(s);
+                  }
+
+                  const sortedSizes = Object.keys(groups).sort((a, b) => {
+                    if (a === "lainnya" || a === "Lainnya") return 1;
+                    if (b === "lainnya" || b === "Lainnya") return -1;
+                    const numA = parseFloat(a.match(/\d+(\.\d+)?/)?.[0] || "99999");
+                    const numB = parseFloat(b.match(/\d+(\.\d+)?/)?.[0] || "99999");
+                    if (numA !== numB) return numA - numB;
+                    return a.localeCompare(b, "id", { sensitivity: "base" });
+                  });
+
+                  return sortedSizes.map(size => {
+                    const items = [...groups[size]].sort((a, b) => {
+                      const nameA = (a.packageName || a.scentName || "").trim();
+                      const nameB = (b.packageName || b.scentName || "").trim();
+                      return nameA.localeCompare(nameB, "id", { sensitivity: "base", numeric: true });
+                    });
+                    const sizeTotalUnits = items.reduce((sum, it) => sum + (it.quantity || 0), 0);
+                    const formattedSize = size.toLowerCase() === "lainnya" ? "Ukuran Lainnya" : `Ukuran ${size.toUpperCase().replace("ML", "ml")}`;
+
+                    return (
+                      <div key={size} className="space-y-3 bg-slate-900/60 p-4 rounded-2xl border border-slate-800 shadow-sm">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                          <span className="text-xs font-extrabold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                            <Box className="h-4 w-4 text-emerald-400" />
+                            {formattedSize}
+                          </span>
+                          <span className="text-[11px] font-bold bg-emerald-500/10 text-emerald-300 border border-emerald-500/20 px-2.5 py-0.5 rounded-lg font-mono">
+                            {sizeTotalUnits} Unit • {items.length} Varian
+                          </span>
                         </div>
-                        
-                        <div className="flex justify-between items-end pt-2 border-t border-slate-800/60">
-                          <div>
-                            <span className="text-[9px] uppercase font-bold text-slate-500 block">Stok Anda</span>
-                            <span className="text-sm font-extrabold text-white">{pkgStock.quantity} pcs</span>
-                          </div>
-                          <div className="text-right">
-                            <span className="text-[9px] uppercase font-bold text-slate-500 block">Harga Jual</span>
-                            <span className="text-sm font-extrabold text-emerald-400">Rp {price.toLocaleString("id-ID")}</span>
-                          </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {items.map(pkgStock => {
+                            const pkgFormula = bundlingPackages.find(p => p.id === pkgStock.packageId);
+                            const price = pkgFormula ? pkgFormula.price : 0;
+                            const isSelected = resellerSaleForm.packageId === pkgStock.packageId;
+
+                            return (
+                              <div 
+                                key={pkgStock.id} 
+                                className={`bg-slate-950/70 border rounded-xl p-3.5 transition-all flex flex-col justify-between cursor-pointer ${
+                                  isSelected 
+                                    ? "border-emerald-500 ring-2 ring-emerald-500/40 bg-slate-900/90 shadow-md shadow-emerald-950/30" 
+                                    : "border-slate-800 hover:border-slate-700 hover:bg-slate-900/40"
+                                }`}
+                                onClick={() => {
+                                  setResellerSaleForm({
+                                    packageId: pkgStock.packageId,
+                                    scentName: pkgStock.scentName,
+                                    quantity: 1
+                                  });
+                                }}
+                              >
+                                <div className="space-y-2.5">
+                                  <div className="flex justify-between items-start gap-2">
+                                    <div>
+                                      <h4 className="text-xs font-bold text-white leading-snug">{pkgStock.packageName}</h4>
+                                      <p className="text-[10px] text-slate-400 mt-0.5">Aroma: {pkgStock.scentName || "Standar"}</p>
+                                    </div>
+                                    {isSelected ? (
+                                      <span className="bg-emerald-500/20 text-emerald-300 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-500/30 shrink-0">
+                                        Terpilih
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9px] font-semibold text-slate-400 bg-slate-800/80 px-1.5 py-0.5 rounded border border-slate-700/60 shrink-0">
+                                        {pkgStock.bottleSize || formattedSize}
+                                      </span>
+                                    )}
+                                  </div>
+                                  
+                                  <div className="flex justify-between items-end pt-2 border-t border-slate-800/70">
+                                    <div>
+                                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Stok Titipan</span>
+                                      <span className="text-xs font-extrabold text-emerald-400 font-mono">{pkgStock.quantity} pcs</span>
+                                    </div>
+                                    <div className="text-right">
+                                      <span className="text-[9px] uppercase font-bold text-slate-400 block">Harga Jual</span>
+                                      <span className="text-xs font-extrabold text-white">Rp {price.toLocaleString("id-ID")}</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             )}
           </div>
@@ -5599,40 +5668,106 @@ export default function App() {
                           {myPackageStocks.length === 0 ? (
                             <p className="text-slate-400 italic text-xs">Belum ada paket bundling yang dikirim ke reseller ini.</p>
                           ) : (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-[650px] overflow-y-auto pt-1">
-                              {myPackageStocks.map(ps => (
-                                <div key={ps.id} className="bg-white border border-slate-200 rounded-lg p-2.5 flex justify-between items-center text-xs shadow-sm">
-                                  <div>
-                                    <span className="font-bold text-slate-900 block">{ps.packageName}</span>
-                                    <span className="text-slate-500 text-[10px] block">Aroma: {ps.scentName} ({ps.bottleSize})</span>
-                                  </div>
-                                  <div className="flex items-center gap-1.5">
-                                    <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-lg font-extrabold text-[10px] h-fit">
-                                      {ps.quantity} pcs
-                                    </span>
-                                    {userRole === "admin" && (
-                                      <div className="flex items-center gap-1">
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenReturnModal(ps)}
-                                          className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors cursor-pointer"
-                                          title="Retur Paket (Kembalikan ke Stok Master)"
-                                        >
-                                          <RotateCcw className="h-3.5 w-3.5" />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleDeleteResellerPackageDirect(ps.id, ps.resellerEmail, ps.packageName)}
-                                          className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
-                                          title="Hapus Langsung Paket Titipan Reseller"
-                                        >
-                                          <Trash2 className="h-3.5 w-3.5" />
-                                        </button>
+                            <div className="space-y-4 max-h-[650px] overflow-y-auto pt-1 pr-1">
+                              {(() => {
+                                // Standardized size resolution & grouping for Admin view
+                                const getPkgSize = (s: ResellerPackageStock): string => {
+                                  let raw = (s.bottleSize || "").trim();
+                                  if (!raw) {
+                                    const pkg = bundlingPackages.find(p => p.id === s.packageId);
+                                    if (pkg?.bottleSize) raw = pkg.bottleSize.trim();
+                                    else if (pkg?.ingredients) {
+                                      const bIng = pkg.ingredients.find(i => i.type === "bottle");
+                                      if (bIng?.size) raw = bIng.size.trim();
+                                    }
+                                  }
+                                  if (!raw) {
+                                    const match = (s.packageName || "").match(/(\d+[\s_-]*(?:ml|liter|lt|gr|gram))/i) || (s.packageName || "").match(/(\d+\s*ml)/i);
+                                    if (match) raw = match[0];
+                                  }
+                                  if (!raw) return "Lainnya";
+                                  return raw.toLowerCase().replace(/[\s_-]+/g, "");
+                                };
+
+                                const groups: { [size: string]: ResellerPackageStock[] } = {};
+                                for (const s of myPackageStocks) {
+                                  const sizeKey = getPkgSize(s);
+                                  if (!groups[sizeKey]) groups[sizeKey] = [];
+                                  groups[sizeKey].push(s);
+                                }
+
+                                const sortedSizes = Object.keys(groups).sort((a, b) => {
+                                  if (a === "lainnya" || a === "Lainnya") return 1;
+                                  if (b === "lainnya" || b === "Lainnya") return -1;
+                                  const numA = parseFloat(a.match(/\d+(\.\d+)?/)?.[0] || "99999");
+                                  const numB = parseFloat(b.match(/\d+(\.\d+)?/)?.[0] || "99999");
+                                  if (numA !== numB) return numA - numB;
+                                  return a.localeCompare(b, "id", { sensitivity: "base" });
+                                });
+
+                                return sortedSizes.map(size => {
+                                  const items = [...groups[size]].sort((a, b) => {
+                                    const nameA = (a.packageName || a.scentName || "").trim();
+                                    const nameB = (b.packageName || b.scentName || "").trim();
+                                    return nameA.localeCompare(nameB, "id", { sensitivity: "base", numeric: true });
+                                  });
+                                  const sizeTotalUnits = items.reduce((sum, it) => sum + (it.quantity || 0), 0);
+                                  const formattedSize = size.toLowerCase() === "lainnya" ? "Ukuran Lainnya" : `Ukuran ${size.toUpperCase().replace("ML", "ml")}`;
+
+                                  return (
+                                    <div key={size} className="space-y-2.5 bg-slate-100/80 p-3 rounded-xl border border-slate-200 shadow-sm">
+                                      <div className="flex items-center justify-between pb-1.5 border-b border-slate-200/80">
+                                        <span className="text-[11px] font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                          <Box className="h-3.5 w-3.5 text-emerald-600" />
+                                          {formattedSize}
+                                        </span>
+                                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300/80 px-2 py-0.5 rounded-md">
+                                          {sizeTotalUnits} pcs ({items.length} varian)
+                                        </span>
                                       </div>
-                                    )}
-                                  </div>
-                                </div>
-                              ))}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                        {items.map(ps => (
+                                          <div key={ps.id} className="bg-white border border-slate-200 rounded-lg p-2.5 flex justify-between items-center text-xs shadow-sm hover:border-emerald-300 transition-colors">
+                                            <div>
+                                              <span className="font-bold text-slate-900 block">{ps.packageName}</span>
+                                              <span className="text-slate-500 text-[10px] block">Aroma: {ps.scentName || "Standar"} ({ps.bottleSize || formattedSize})</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5">
+                                              <span className={`px-2 py-0.5 rounded-lg font-extrabold text-[10px] h-fit border ${
+                                                ps.quantity > 0 
+                                                  ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                                                  : "bg-slate-100 text-slate-400 border-slate-200"
+                                              }`}>
+                                                {ps.quantity} pcs
+                                              </span>
+                                              {userRole === "admin" && (
+                                                <div className="flex items-center gap-1">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleOpenReturnModal(ps)}
+                                                    className="p-1 text-slate-400 hover:text-amber-600 hover:bg-amber-50 rounded transition-colors cursor-pointer"
+                                                    title="Retur Paket (Kembalikan ke Stok Master)"
+                                                  >
+                                                    <RotateCcw className="h-3.5 w-3.5" />
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleDeleteResellerPackageDirect(ps.id, ps.resellerEmail, ps.packageName)}
+                                                    className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition-colors cursor-pointer"
+                                                    title="Hapus Langsung Paket Titipan Reseller"
+                                                  >
+                                                    <Trash2 className="h-3.5 w-3.5" />
+                                                  </button>
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  );
+                                });
+                              })()}
                             </div>
                           )}
                         </div>
@@ -5673,9 +5808,16 @@ export default function App() {
                     required
                   >
                     <option value="">-- Pilih Paket Bundling --</option>
-                    {bundlingPackages.map(pkg => (
-                      <option key={pkg.id} value={pkg.id}>{pkg.packageName} - Rp {pkg.price.toLocaleString("id-ID")}</option>
-                    ))}
+                    {[...bundlingPackages]
+                      .sort((a, b) => {
+                        const numA = parseFloat(a.bottleSize?.match(/\d+(\.\d+)?/)?.[0] || "9999");
+                        const numB = parseFloat(b.bottleSize?.match(/\d+(\.\d+)?/)?.[0] || "9999");
+                        if (numA !== numB) return numA - numB;
+                        return a.packageName.localeCompare(b.packageName);
+                      })
+                      .map(pkg => (
+                        <option key={pkg.id} value={pkg.id}>[{pkg.bottleSize}] {pkg.packageName} - Rp {pkg.price.toLocaleString("id-ID")}</option>
+                      ))}
                   </select>
                 </div>
 
@@ -5787,51 +5929,97 @@ export default function App() {
               {bundlingPackages.length === 0 ? (
                 <p className="text-xs text-slate-500 italic py-4">Belum ada paket bundling yang dibuat.</p>
               ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {bundlingPackages.map(pkg => (
-                    <div key={pkg.id} className="border border-slate-200 rounded-xl p-4 bg-slate-50 flex flex-col justify-between">
-                      <div>
-                        <div className="flex justify-between items-start">
-                          <h4 className="text-xs font-bold text-slate-900">{pkg.packageName}</h4>
-                          <div className="flex gap-1">
-                            <button
-                              onClick={() => handleStartEditBundling(pkg)}
-                              className="text-amber-600 hover:text-amber-800 p-1"
-                              title="Edit Paket"
-                            >
-                              <Edit3 className="h-4 w-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteBundling(pkg.id, pkg.packageName)}
-                              className="text-rose-500 hover:text-rose-700 p-1"
-                              title="Hapus Paket"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </div>
-                        </div>
-                        <p className="text-[10px] text-slate-500 mt-1">Ukuran Botol: {pkg.bottleSize}</p>
-                        
-                        <div className="mt-3 pt-3 border-t border-slate-200 space-y-1 text-[11px] text-slate-700">
-                          <div className="flex justify-between">
-                            <span>Kebutuhan Bibit:</span>
-                            <span className="font-bold">{pkg.essenceMl} ml</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span>Kebutuhan Absolut:</span>
-                            <span className="font-bold">{pkg.alcoholMl} ml ({pkg.solventType || "Absolut Cair"})</span>
-                          </div>
-                        </div>
-                      </div>
+                <div className="space-y-6">
+                  {(() => {
+                    const groups: { [size: string]: BundlingPackage[] } = {};
+                    for (const pkg of bundlingPackages) {
+                      let sizeKey = (pkg.bottleSize || "").trim();
+                      if (!sizeKey && pkg.ingredients) {
+                        const bIng = pkg.ingredients.find(i => i.type === "bottle");
+                        if (bIng?.size) sizeKey = bIng.size.trim();
+                      }
+                      if (!sizeKey) sizeKey = "Lainnya";
+                      const cleanKey = sizeKey.toLowerCase().replace(/[\s_-]+/g, "");
+                      if (!groups[cleanKey]) groups[cleanKey] = [];
+                      groups[cleanKey].push(pkg);
+                    }
 
-                      <div className="mt-4 pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
-                        <span className="font-semibold text-slate-500">Harga Jual:</span>
-                        <span className="font-extrabold text-emerald-600">
-                          {formatRupiah(pkg.price)}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    const sortedSizes = Object.keys(groups).sort((a, b) => {
+                      if (a === "lainnya") return 1;
+                      if (b === "lainnya") return -1;
+                      const numA = parseFloat(a.match(/\d+(\.\d+)?/)?.[0] || "99999");
+                      const numB = parseFloat(b.match(/\d+(\.\d+)?/)?.[0] || "99999");
+                      if (numA !== numB) return numA - numB;
+                      return a.localeCompare(b, "id", { sensitivity: "base" });
+                    });
+
+                    return sortedSizes.map(size => {
+                      const items = [...groups[size]].sort((a, b) => {
+                        return (a.packageName || "").trim().localeCompare((b.packageName || "").trim(), "id", { sensitivity: "base", numeric: true });
+                      });
+                      const formattedSize = size === "lainnya" ? "Ukuran Lainnya" : `Ukuran ${size.toUpperCase().replace("ML", "ml")}`;
+
+                      return (
+                        <div key={size} className="space-y-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200 shadow-sm">
+                          <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                            <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <Box className="h-4 w-4 text-emerald-600" />
+                              {formattedSize}
+                            </span>
+                            <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300/80 px-2.5 py-0.5 rounded-md">
+                              {items.length} Formula Terdaftar
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            {items.map(pkg => (
+                              <div key={pkg.id} className="border border-slate-200 rounded-xl p-3.5 bg-white flex flex-col justify-between hover:border-emerald-300 transition-colors shadow-xs">
+                                <div>
+                                  <div className="flex justify-between items-start gap-2">
+                                    <h4 className="text-xs font-bold text-slate-900 leading-snug">{pkg.packageName}</h4>
+                                    <div className="flex gap-1 shrink-0">
+                                      <button
+                                        onClick={() => handleStartEditBundling(pkg)}
+                                        className="text-amber-600 hover:text-amber-800 p-1 rounded hover:bg-amber-50 cursor-pointer"
+                                        title="Edit Formula Paket"
+                                      >
+                                        <Edit3 className="h-3.5 w-3.5" />
+                                      </button>
+                                      <button
+                                        onClick={() => handleDeleteBundling(pkg.id, pkg.packageName)}
+                                        className="text-rose-500 hover:text-rose-700 p-1 rounded hover:bg-rose-50 cursor-pointer"
+                                        title="Hapus Formula Paket"
+                                      >
+                                        <Trash2 className="h-3.5 w-3.5" />
+                                      </button>
+                                    </div>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 mt-0.5">Ukuran Botol: {pkg.bottleSize}</p>
+                                  
+                                  <div className="mt-2.5 pt-2 border-t border-slate-100 space-y-1 text-[11px] text-slate-700">
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-500">Kebutuhan Bibit:</span>
+                                      <span className="font-semibold text-slate-800">{pkg.essenceMl} ml ({pkg.scentName || "-"})</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span className="text-slate-500">Kebutuhan Absolut:</span>
+                                      <span className="font-semibold text-slate-800">{pkg.alcoholMl} ml ({pkg.solventType || "Absolut Cair"})</span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-3 pt-2 border-t border-slate-100 flex justify-between items-center text-xs">
+                                  <span className="font-medium text-slate-500 text-[11px]">Harga Jual Reseller:</span>
+                                  <span className="font-extrabold text-emerald-600">
+                                    {formatRupiah(pkg.price)}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               )}
             </div>
